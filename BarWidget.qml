@@ -4,7 +4,6 @@ import qs.Ui
 import qs.Commons
 import "Model.js" as Model
 import "Theme.js" as Theme
-import "components" as Components
 
 // Quadrant bar slot: one compact widget covering CPU, GPU, memory, network,
 // and an optional disk segment. Owns the long-lived sampler
@@ -48,15 +47,12 @@ BarWidget {
   // while the percentage stays at caption.
   readonly property int glyphFontSize: Style.font.body
 
-  readonly property int visibleSegmentCount: {
-    var n = 0
-    if (segmentEnabled("cpu")) n++
-    if (segmentEnabled("gpu") && discreteGpuAvailable) n++
-    if (segmentEnabled("memory")) n++
-    if (segmentEnabled("disk") && diskAvailable) n++
-    if (segmentEnabled("network")) n++
-    return n
-  }
+  readonly property var visibleBarCells: Model.visibleBarCells(
+    effectiveBarSegments,
+    discreteGpuAvailable,
+    diskAvailable
+  )
+  readonly property int visibleSegmentCount: visibleBarCells.length
   readonly property bool showMonitorFallback: visibleSegmentCount === 0
 
   readonly property var effectiveBarSegments: Model.effectiveSegments(
@@ -130,31 +126,6 @@ BarWidget {
   readonly property bool memHot: memComp !== null && memComp.usedPct >= 90
   readonly property bool gpuHot: gpuDisplay !== null && gpuDisplay.pct >= 90
   readonly property bool diskHot: diskRates !== null && diskRates.utilPct >= 90
-  readonly property var cpuMeterUser: {
-    if (barPaletteMode === "vivid") return cpuHot ? Theme.series.cpuSteal : Theme.series.cpuUser
-    return cpuHot ? themePal.urgent : themePal.fill
-  }
-  readonly property var cpuMeterSystem: {
-    if (barPaletteMode === "vivid") return cpuHot ? Theme.series.cpuSteal : Theme.series.cpuSystem
-    return cpuHot ? themePal.urgent : themePal.fillStack
-  }
-  readonly property var memMeterFill: {
-    if (barPaletteMode === "vivid") return memHot ? Theme.series.cpuSteal : Theme.series.memApps
-    return memHot ? themePal.urgent : themePal.fill
-  }
-  readonly property var gpuMeterFill: {
-    if (barPaletteMode === "vivid") return gpuHot ? Theme.series.cpuSteal : Theme.series.gpu
-    return gpuHot ? themePal.urgent : themePal.fill
-  }
-  readonly property var diskMeterFill: {
-    if (barPaletteMode === "vivid") return diskHot ? Theme.series.cpuSteal : Theme.series.diskRead
-    return diskHot ? themePal.urgent : themePal.fill
-  }
-  readonly property var meterTrack: {
-    if (barPaletteMode === "vivid")
-      return Theme.trackFor(String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground))
-    return themePal.track
-  }
   readonly property string cpuValueText: cpuPct ? Model.formatPct(cpuPct.busy) : "--"
   readonly property string memValueText: memComp ? Model.formatPct(memComp.usedPct) : "--"
   readonly property string gpuValueText: {
@@ -166,26 +137,55 @@ BarWidget {
     if (barPaletteMode === "vivid") return Theme.series.cpuSteal
     return themePal.urgent
   }
-  // Caption/glyph line plus a hairline meter. Vertical bars drop the
-  // glyph, so they keep the caption height and do not grow. Network's
-  // own height is preferred when it is shown.
+  readonly property color mutedLabelColor: {
+    var c = Theme.mutedFor(String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground))
+    return c || Color.foreground
+  }
+  // Single caption/glyph line. Vertical bars drop the glyph, so they
+  // keep the caption height. Network's two-line vertical form can be taller.
   readonly property int lineBoxHeight: {
     if (root.vertical) return pctSizer.implicitHeight
-    var g = cpuGlyphSizer.implicitHeight
+    var g = Math.max(cpuGlyphSizer.implicitHeight, netGlyphSizer.implicitHeight)
     return g > pctSizer.implicitHeight ? g : pctSizer.implicitHeight
   }
-  readonly property int meterRowHeight: Style.space(Theme.metrics.barMeterThickness)
-                                        + Style.space(Theme.metrics.barMeterGap)
-  readonly property int segmentHeight: {
-    var floor = lineBoxHeight + meterRowHeight
-    if (!root.segmentEnabled("network")) return floor
-    var h = netCol.implicitHeight
-    return h > floor ? h : floor
-  }
-  readonly property int metricLabelWidth: {
+  // Each cell is its own glyph (or letter) plus one reserved value slot.
+  // Sharing the widest glyph padded narrower icons and made the gaps
+  // between percentages look uneven.
+  function metricLabelWidthFor(metric) {
     if (root.vertical || root.barLabelsMode === "none") return 0
-    return Math.max(cpuGlyphSizer.implicitWidth, gpuGlyphSizer.implicitWidth, memGlyphSizer.implicitWidth,
-                    (root.segmentEnabled("disk") && root.diskAvailable) ? diskGlyphSizer.implicitWidth : 0)
+    if (metric === "cpu") return cpuGlyphSizer.implicitWidth
+    if (metric === "gpu") return gpuGlyphSizer.implicitWidth
+    if (metric === "mem") return memGlyphSizer.implicitWidth
+    if (metric === "disk") return diskGlyphSizer.implicitWidth
+    if (metric === "net") return netGlyphSizer.implicitWidth
+    return 0
+  }
+  function metricValueWidthFor(metric) {
+    var w = pctSizer.implicitWidth
+    if (metric === "gpu" && root.reserveEstimatePrefix)
+      w += tildeSizer.implicitWidth
+    return Math.ceil(w)
+  }
+  function metricCellWidthFor(metric) {
+    var w = metricValueWidthFor(metric)
+    var lw = metricLabelWidthFor(metric)
+    if (lw > 0)
+      w += Style.space(Theme.metrics.barLabelGap) + lw
+    if (root.vertical && root.bar)
+      return Math.min(w, root.bar.barSize)
+    return w
+  }
+  // Truncating the sizer to int shrank the slot by a fraction of a pixel
+  // and ElideRight ate the download rate. Ceil plus one pixel of guard.
+  readonly property real networkRateWidth: Math.ceil(netSizer.implicitWidth) + 1
+  readonly property real networkCellWidth: {
+    var w = root.networkRateWidth
+    var lw = metricLabelWidthFor("net")
+    if (lw > 0)
+      w += Style.space(Theme.metrics.barLabelGap) + lw
+    if (root.vertical)
+      return Math.min(w, root.verticalSlot)
+    return w
   }
   // Only an Intel GPU reporting frequency-derived load ever prefixes "~".
   // Reserving it machine-wide would pad every cell on hardware that
@@ -193,16 +193,6 @@ BarWidget {
   readonly property bool reserveEstimatePrefix: {
     if (!root.segmentEnabled("gpu") || !root.discreteGpuAvailable) return false
     return root.gpu && root.gpu.vendor === "intel"
-  }
-  readonly property int metricCellWidth: {
-    var w = pctSizer.implicitWidth
-    if (root.reserveEstimatePrefix)
-      w += tildeSizer.implicitWidth
-    if (root.metricLabelWidth > 0)
-      w += Style.space(Theme.metrics.barLabelGap) + root.metricLabelWidth
-    if (root.vertical && root.bar)
-      return Math.min(w, root.bar.barSize)
-    return w
   }
   readonly property int verticalSlot: root.bar ? root.bar.barSize : Style.bar.sizeVertical
   readonly property bool discreteGpuAvailable: gpuTopologyReady && gpu !== null && gpuListFailed !== true
@@ -350,6 +340,11 @@ BarWidget {
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
+  // Quattro's default open-panel mark is 55% of the slot. Quadrant is a
+  // wide multi-segment widget, so that became a long underline. A short
+  // centered mark matches first-party icon widgets.
+  readonly property real openPanelIndicatorWidth: Math.max(Style.space(10), Math.round(Style.bar.iconSlot * 0.55))
+  readonly property real openPanelIndicatorHeight: Math.max(Style.space(10), Math.round(Style.bar.iconSlot * 0.55))
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
@@ -479,7 +474,7 @@ BarWidget {
       gpus = []
       discreteGpus = []
       integratedGpus = []
-      integratedGpu = null
+      setIntegratedGpu(null)
       gpu = null
       gpuDeviceWarning = ""
       gpuTopologyReady = true
@@ -489,7 +484,7 @@ BarWidget {
     gpus = topo.gpus
     discreteGpus = topo.discreteGpus
     integratedGpus = topo.integratedGpus
-    integratedGpu = topo.integratedGpu
+    setIntegratedGpu(topo.integratedGpu)
     gpuDeviceWarning = Model.gpuDevicePinMessage(topo.gpus, gpuDevice)
     gpu = Model.pickGpu(topo.discreteGpus, gpuDevice)
     gpuTopologyReady = true
@@ -579,10 +574,14 @@ BarWidget {
     if (gpuListReady && sysInfoReady) reconcileGpuTopology()
   }
 
-  onIntegratedGpuChanged: {
-    integratedGpuLive = null
-    integratedGpuError = ""
-    if (igpuSampleable && panelCpuOpen) pollIgpu()
+  // Same physical card, new object: keep last-good live metrics. A real
+  // identity change (or disappearance) clears the sample and re-polls.
+  function setIntegratedGpu(next) {
+    if (Model.gpuIdentityEqual(root.integratedGpu, next)) return
+    root.integratedGpu = next
+    root.integratedGpuLive = null
+    root.integratedGpuError = ""
+    if (root.igpuSampleable && root.panelCpuOpen) root.pollIgpu()
   }
 
   Process {
@@ -762,15 +761,18 @@ BarWidget {
   function applyIgpu(text) {
     var data = Model.safeJson(text)
     if (!data || data.ok !== true) {
-      root.integratedGpuLive = null
       root.integratedGpuError = (data && data.error) ? String(data.error) : "gpu-stats returned bad output"
       return
     }
     var live = null
     if (data.vendor === "intel") live = Model.normalizeIntelGpu(Model.parseKeyValues(data.payload))
     else if (data.vendor === "amd") live = Model.normalizeAmdGpu(Model.parseKeyValues(data.payload))
-    root.integratedGpuLive = live
-    root.integratedGpuError = live ? "" : "gpu-stats returned no readable iGPU metrics"
+    if (live) {
+      root.integratedGpuLive = live
+      root.integratedGpuError = ""
+      return
+    }
+    root.integratedGpuError = "gpu-stats returned no readable iGPU metrics"
   }
 
   function pollIgpu() {
@@ -801,11 +803,8 @@ BarWidget {
     }
     onExited: function(exitCode, exitStatus) {
       igpuWatchdog.stop()
-      if (exitCode !== 0) {
-        root.integratedGpuLive = null
-        if (root.integratedGpuError === "")
-          root.integratedGpuError = "gpu-stats exited with code " + exitCode
-      }
+      if (exitCode !== 0 && root.integratedGpuError === "")
+        root.integratedGpuError = "gpu-stats exited with code " + exitCode
     }
   }
 
@@ -816,7 +815,6 @@ BarWidget {
     onTriggered: {
       if (igpuProc.running) {
         igpuProc.signal(9)
-        root.integratedGpuLive = null
         root.integratedGpuError = "gpu-stats timed out"
       }
     }
@@ -848,11 +846,11 @@ BarWidget {
                 ? -1
                 : (root.showMonitorFallback
                    ? Style.bar.iconSlot
-                   : segGrid.implicitWidth + Style.spaceReal(8.5) * 2)
+                   : segGrid.implicitWidth + Style.spaceReal(Theme.metrics.barOuterPad) * 2)
     fixedHeight: root.vertical
                  ? (root.showMonitorFallback
                     ? Style.bar.iconSlot
-                    : segGrid.implicitHeight + Style.spaceReal(6) * 2)
+                    : segGrid.implicitHeight + Style.spaceReal(Theme.metrics.barOuterPad) * 2)
                  : -1
 
     onPressed: function(buttonCode) {
@@ -915,13 +913,21 @@ BarWidget {
       font.family: button.fontFamily
       font.pixelSize: root.glyphFontSize
     }
+    Text {
+      id: netGlyphSizer
+      visible: false
+      textFormat: Text.PlainText
+      text: Theme.barLabelFor(root.barLabelsMode, "net")
+      font.family: button.fontFamily
+      font.pixelSize: root.glyphFontSize
+    }
     Grid {
       id: segGrid
       z: 1
       anchors.centerIn: parent
-      columns: root.vertical ? 1 : Math.max(1, root.visibleSegmentCount)
+      columns: root.vertical ? 1 : Math.max(1, root.visibleBarCells.length)
       columnSpacing: Style.space(Theme.metrics.barSegmentGap)
-      rowSpacing: Style.space(4)
+      rowSpacing: Style.space(Theme.metrics.barSegmentGap)
       verticalItemAlignment: Grid.AlignVCenter
       horizontalItemAlignment: Grid.AlignHCenter
 
@@ -931,10 +937,6 @@ BarWidget {
         metric: "cpu"
         valueText: root.cpuValueText
         hot: root.cpuHot
-        meterSegments: [
-          { fraction: root.cpuPct ? root.cpuPct.user / 100 : 0, color: root.cpuMeterUser },
-          { fraction: root.cpuPct ? root.cpuPct.system / 100 : 0, color: root.cpuMeterSystem }
-        ]
       }
 
       MetricCell {
@@ -943,9 +945,6 @@ BarWidget {
         metric: "gpu"
         valueText: root.gpuValueText
         hot: root.gpuHot
-        meterSegments: [
-          { fraction: root.gpuDisplay ? root.gpuDisplay.pct / 100 : 0, color: root.gpuMeterFill }
-        ]
       }
 
       MetricCell {
@@ -954,9 +953,6 @@ BarWidget {
         metric: "mem"
         valueText: root.memValueText
         hot: root.memHot
-        meterSegments: [
-          { fraction: root.memComp ? root.memComp.usedPct / 100 : 0, color: root.memMeterFill }
-        ]
       }
 
       MetricCell {
@@ -965,50 +961,73 @@ BarWidget {
         metric: "disk"
         valueText: root.diskValueText
         hot: root.diskHot
-        meterSegments: [
-          { fraction: root.diskRates ? root.diskRates.utilPct / 100 : 0, color: root.diskMeterFill }
-        ]
       }
 
-      // ---- Network segment (two-line rates) ----
+      // ---- Network: glyph + inline rates; two-line only on vertical bars ----
       Item {
         visible: root.segmentEnabled("network")
-        implicitWidth: {
-          var w = netSizer.implicitWidth
-          if (root.vertical) return Math.min(w, root.verticalSlot)
-          return w
-        }
-        implicitHeight: netCol.implicitHeight
+        implicitWidth: root.networkCellWidth
+        implicitHeight: root.vertical ? netCol.implicitHeight : root.lineBoxHeight
 
         Text {
           id: netSizer
           visible: false
           textFormat: Text.PlainText
-          text: root.vertical ? "↓999T" : "↓ 999T"
+          text: root.vertical ? "↓999T" : "↑ 999T  ↓ 999T"
           font.family: button.fontFamily
           font.pixelSize: Style.font.caption
         }
 
+        Text {
+          id: netLabel
+          visible: !root.vertical && Theme.barLabelFor(root.barLabelsMode, "net") !== ""
+          textFormat: Text.PlainText
+          text: Theme.barLabelFor(root.barLabelsMode, "net")
+          color: root.mutedLabelColor
+          font.family: button.fontFamily
+          font.pixelSize: root.glyphFontSize
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+        }
+
         Column {
           id: netCol
-          width: parent.width
+          anchors.left: netLabel.visible ? netLabel.right : parent.left
+          anchors.leftMargin: netLabel.visible ? Style.space(Theme.metrics.barLabelGap) : 0
+          anchors.verticalCenter: parent.verticalCenter
+          width: netLabel.visible ? root.networkRateWidth : parent.width
           spacing: 0
+
           Text {
+            visible: root.vertical
             textFormat: Text.PlainText
             width: parent.width
             elide: Text.ElideRight
-            horizontalAlignment: Text.AlignRight
-            text: (root.vertical ? "↑" : "↑ ") + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.txBps) : "--")
+            horizontalAlignment: Text.AlignLeft
+            text: "↑" + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.txBps) : "--")
             color: button.foreground
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
           }
           Text {
+            visible: !root.vertical
             textFormat: Text.PlainText
             width: parent.width
             elide: Text.ElideRight
-            horizontalAlignment: Text.AlignRight
-            text: (root.vertical ? "↓" : "↓ ") + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.rxBps) : "--")
+            horizontalAlignment: Text.AlignLeft
+            text: "↑ " + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.txBps) : "--")
+                 + "  ↓ " + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.rxBps) : "--")
+            color: button.foreground
+            font.family: button.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+          Text {
+            visible: root.vertical
+            textFormat: Text.PlainText
+            width: parent.width
+            elide: Text.ElideRight
+            horizontalAlignment: Text.AlignLeft
+            text: "↓" + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.rxBps) : "--")
             color: button.foreground
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
@@ -1026,73 +1045,46 @@ BarWidget {
     }
   }
 
-  // Metric cell: glyph/letter + right-aligned percentage over a hairline
-  // underline meter. Width is locked by the shared sizers on `button`.
+  // Metric cell: this cell's glyph/letter + a reserved percentage slot.
+  // The value hugs the icon; leftover slot width sits after the digits.
   component MetricCell: Item {
     id: cell
 
     property string tab: ""
     property string metric: ""
     property string valueText: "--"
-    property var meterSegments: []
     property bool hot: false
 
     readonly property string label: root.vertical ? "" : Theme.barLabelFor(root.barLabelsMode, metric)
     readonly property color valueColor: cell.hot ? root.hotTextColor : button.foreground
 
-    implicitWidth: root.metricCellWidth
-    implicitHeight: root.segmentHeight
+    implicitWidth: root.metricCellWidthFor(metric)
+    implicitHeight: root.lineBoxHeight
 
-    Column {
-      width: parent.width
-      spacing: 0
+    Text {
+      id: labelText
+      visible: cell.label !== ""
+      textFormat: Text.PlainText
+      text: cell.label
+      color: root.mutedLabelColor
+      font.family: button.fontFamily
+      font.pixelSize: root.glyphFontSize
+      anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
+    }
 
-      Item {
-        width: parent.width
-        height: root.lineBoxHeight
-
-        Text {
-          id: labelText
-          visible: cell.label !== ""
-          textFormat: Text.PlainText
-          text: cell.label
-          color: button.foreground
-          font.family: button.fontFamily
-          font.pixelSize: root.glyphFontSize
-          anchors.left: parent.left
-          anchors.verticalCenter: parent.verticalCenter
-        }
-
-        Text {
-          textFormat: Text.PlainText
-          text: cell.valueText
-          color: cell.valueColor
-          font.family: button.fontFamily
-          font.pixelSize: Style.font.caption
-          horizontalAlignment: Text.AlignRight
-          elide: Text.ElideRight
-          anchors.right: parent.right
-          anchors.verticalCenter: parent.verticalCenter
-          anchors.left: labelText.visible
-                        ? labelText.right
-                        : parent.left
-          anchors.leftMargin: labelText.visible ? Style.space(Theme.metrics.barLabelGap) : 0
-        }
-      }
-
-      Item {
-        width: parent.width
-        height: root.meterRowHeight
-
-        Components.MeterBar {
-          width: parent.width
-          height: Style.space(Theme.metrics.barMeterThickness)
-          anchors.bottom: parent.bottom
-          trackColor: root.meterTrack
-          segments: cell.meterSegments
-        }
-      }
+    Text {
+      textFormat: Text.PlainText
+      text: cell.valueText
+      color: cell.valueColor
+      font.family: button.fontFamily
+      font.pixelSize: Style.font.caption
+      horizontalAlignment: Text.AlignLeft
+      elide: Text.ElideRight
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.left: labelText.visible ? labelText.right : parent.left
+      anchors.leftMargin: labelText.visible ? Style.space(Theme.metrics.barLabelGap) : 0
+      anchors.right: parent.right
     }
 
     MouseArea {

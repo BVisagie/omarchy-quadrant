@@ -102,26 +102,28 @@ or manual deletion under `~/.config/omarchy/plugins/` is required.
 
 ## Usage
 
-- **Bar segments**: CPU, GPU, and memory pair a Nerd Font
-  glyph (or `C`/`G`/`M`/`D` with `barLabels letter`) with a live percentage
-  over a hairline underline meter. CPU stacks user+system in the meter; Intel GPU
-  prefixes `~` when the value is a frequency estimate. Network is two-line
-  compact rates (`1.0K`, `99K`) in a font-sized stable slot. Each segment
-  toggles independently; the slot shrinks to fit. The GPU segment and tab are
-  **dedicated cards only** — integrated graphics live on the CPU tab. When no
-  dedicated GPU is detected, the default `gpu` token is shown as **Drives**
-  (`diskFallbackWithoutGpu`, on by default) without rewriting `segments`. A
-  **disk** segment is otherwise off by default so the slot stays compact on a
-  crowded bar; enable it from the Drives tab's **Show in bar** checkbox or via
-  `segments`. Unchecking every segment leaves a compact system-monitor
-  glyph; clicking it still opens the full panel. Vertical bars are supported
-  (segments stack; cells clamp to the 28 px slot and drop the glyph). Meter
-  fills follow the live Omarchy accent (with the theme's urgent color at
-  ≥90% load); `barPalette vivid` restores the original per-resource hues.
-  `barLabels` is `glyph` (default), `letter`, or `none`.
+- **Bar segments**: CPU, GPU, memory, disk, and network each pair a Nerd Font
+  glyph (or `C`/`G`/`M`/`D`/`N` with `barLabels letter`) with a live value
+  on one line. Intel GPU prefixes `~` when the value is a frequency
+  estimate. Network uses compact rates (`↑ 1.0K  ↓ 99K`) in a font-sized
+  stable slot; vertical bars stack those rates on two lines and drop the
+  glyphs. Each segment toggles independently; the slot shrinks to fit. Icon
+  and value sit in a tight pair; neighbouring cells share one small gap
+  rather than a divider, so the slot reads as one composition. The GPU
+  segment and tab are **dedicated cards only** — integrated graphics live
+  on the CPU tab. When no dedicated GPU is detected, the default `gpu`
+  token is shown as **Drives** (`diskFallbackWithoutGpu`, on by default)
+  without rewriting `segments`. A **disk** segment is otherwise off by
+  default so the slot stays compact on a crowded bar; enable it from the
+  Drives tab's **Show in bar** checkbox or via `segments`. Unchecking
+  every segment leaves a compact system-monitor glyph; clicking it still
+  opens the full panel. Vertical bars are supported (segments stack;
+  cells clamp to the 28 px slot and drop the glyph). Values at ≥90% load
+  use the theme urgent color; `barPalette vivid` restores the original
+  per-resource hues. `barLabels` is `glyph` (default), `letter`, or `none`.
 - **Panel**: click the widget. `←`/`→` or `1`–`N` (N = visible tabs; GPU
   is omitted when no dedicated card is present) switch tabs, `R`
-  refreshes the active tab, `Esc` closes. `Tab` keeps its Quattro meaning
+  refreshes the active tab and re-reads hardware identity, `Esc` closes. `Tab` keeps its Quattro meaning
   (switch to the adjacent bar panel) and is deliberately not used inside
   Quadrant. Each tab has a **Show in bar** checkbox (Drives off by default
   when a dedicated GPU is present) that persists the existing `segments`
@@ -156,8 +158,8 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
 | `integratedGpuDevice` | `"auto"` | Which card is integrated graphics on the CPU tab. `auto` = Intel at `00:02.x` or a known AMD APU name; `none` = treat every card as dedicated; or a specific `cardN`. |
 | `diskFallbackWithoutGpu` | `true` | When no dedicated GPU is detected, show Drives in place of the configured `gpu` bar token without rewriting `segments`. |
 | `diskDevice` | `"auto"` | `auto` = physical disk backing `/` (LUKS/LVM folded), else the largest whole device; or a sysfs name such as `nvme0n1` |
-| `barPalette` | `"theme"` | `theme` = live Omarchy accent fills, foreground track, urgent at ≥90%; `vivid` = original per-resource hues |
-| `barLabels` | `"glyph"` | `glyph` = Nerd Font icons; `letter` = C/G/M/D; `none` = percentage only |
+| `barPalette` | `"theme"` | `theme` = urgent color at ≥90% load; `vivid` = original per-resource hues |
+| `barLabels` | `"glyph"` | `glyph` = Nerd Font icons; `letter` = C/G/M/D/N; `none` = value only |
 
 ## What it measures (and what it does not)
 

@@ -34,8 +34,9 @@ Item {
 
   function refresh() {
     if (!active) return
-    if (model && model.refreshSysInfo) model.refreshSysInfo()
-    if (model && model.pollIgpu) model.pollIgpu()
+    // Hardware identity and iGPU live metrics are owned by the widget:
+    // system-info on startup / R, gpu-stats on igpuTimer. This cadence
+    // only refreshes the process roster.
     if (proc.running) return
     watchdog.restart()
     proc.running = true

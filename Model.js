@@ -133,6 +133,26 @@ function effectiveSegments(configured, topologyReady, discreteGpuAvailable, fall
   return out
 }
 
+// Ordered bar cells that actually paint. Segment tokens stay
+// cpu/gpu/memory/disk/network; cell tokens are cpu/gpu/mem/disk/net so
+// they match MetricCell.metric. GPU and disk still require live hardware.
+function visibleBarCells(effectiveList, discreteGpuAvailable, diskAvailable) {
+  var list = Array.isArray(effectiveList) ? effectiveList : []
+  var out = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var s = list[i]
+    if (s === "cpu") out.push("cpu")
+    else if (s === "gpu") {
+      if (discreteGpuAvailable) out.push("gpu")
+    } else if (s === "memory") out.push("mem")
+    else if (s === "disk") {
+      if (diskAvailable) out.push("disk")
+    } else if (s === "network") out.push("net")
+  }
+  return out
+}
+
 // ------------------------------------------------------------ stream sample
 //
 // One line of quadrant-stream output:
@@ -1222,6 +1242,16 @@ function pickIntegratedGpu(list) {
   return list[0]
 }
 
+// Topology reconciliation allocates a new object every pass. Identity is
+// card + vendor + path so a same-card rebuild does not drop live samples.
+function gpuIdentityEqual(a, b) {
+  if (a === b) return true
+  if (!a || !b) return false
+  return String(a.card || "") === String(b.card || "")
+      && String(a.vendor || "") === String(b.vendor || "")
+      && String(a.path || "") === String(b.path || "")
+}
+
 function gpuDevicePinMessage(gpus, setting) {
   var wanted = normalizeDeviceSetting(setting)
   if (wanted === "auto" || wanted === "") return ""
@@ -1586,6 +1616,7 @@ if (typeof module !== "undefined" && module.exports) {
     toggleSegment: toggleSegment,
     parseBoolSetting: parseBoolSetting,
     effectiveSegments: effectiveSegments,
+    visibleBarCells: visibleBarCells,
     parseStreamLine: parseStreamLine,
     cpuDelta: cpuDelta,
     netRates: netRates,
@@ -1621,6 +1652,7 @@ if (typeof module !== "undefined" && module.exports) {
     amdLooksIntegrated: amdLooksIntegrated,
     classifyGpuRole: classifyGpuRole,
     pickIntegratedGpu: pickIntegratedGpu,
+    gpuIdentityEqual: gpuIdentityEqual,
     gpuDevicePinMessage: gpuDevicePinMessage,
     reconcileGpuTopology: reconcileGpuTopology,
     parseLspciMm: parseLspciMm,

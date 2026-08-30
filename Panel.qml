@@ -112,7 +112,14 @@ Panel {
         if (dx !== 0) root.stepTab(dx)
       }
       onTextKey: function(t) {
-        if (t === "r" || t === "R") { root.refreshActiveTab(); return }
+        if (t === "r" || t === "R") {
+          if (root.hostWidget && typeof root.hostWidget.refreshSysInfo === "function")
+            root.hostWidget.refreshSysInfo()
+          if (root.hostWidget && typeof root.hostWidget.pollIgpu === "function")
+            root.hostWidget.pollIgpu()
+          root.refreshActiveTab()
+          return
+        }
         if (t >= "1" && t <= "9") {
           var n = parseInt(t, 10)
           if (n >= 1 && n <= root.tabs.length) root.selectTabIndex(n - 1)

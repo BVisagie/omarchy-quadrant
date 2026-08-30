@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Quadrant",
-    "description": "CPU, GPU, memory, and network meters with a tabbed detail panel (Drives tab included; dedicated GPU only in the bar; disk fills the GPU slot when none is present)",
+    "description": "CPU, GPU, memory, and network readouts with a tabbed detail panel (Drives tab included; dedicated GPU only in the bar; disk fills the GPU slot when none is present)",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
@@ -90,13 +90,13 @@
         "key": "barPalette",
         "type": "string",
         "label": "Bar palette (theme or vivid)",
-        "description": "theme (default) paints bar meters with the live Omarchy accent, a foreground-derived track, and urgent at ≥90% load. vivid keeps the original per-resource Tokyo-night hues."
+        "description": "theme (default) paints ≥90% values with the theme urgent color. vivid keeps the original per-resource Tokyo-night hues."
       },
       {
         "key": "barLabels",
         "type": "string",
         "label": "Bar labels (glyph, letter, or none)",
-        "description": "How CPU, GPU, memory, and disk cells are labelled. glyph (default) uses Nerd Font icons; letter falls back to C/G/M/D; none shows only the percentage."
+        "description": "How CPU, GPU, memory, disk, and network cells are labelled. glyph (default) uses Nerd Font icons; letter falls back to C/G/M/D/N; none shows only the value."
       }
     ]
   }

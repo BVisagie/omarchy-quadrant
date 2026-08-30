@@ -23,11 +23,12 @@ var series = {
 }
 
 // Sizes are px at the shell's base scale; QML wraps them in Style.space().
+// barLabelGap hugs icon to value; barSegmentGap is the gap between cells;
+// barOuterPad is the slot inset.
 var metrics = {
-  barMeterThickness: 3,
-  barMeterGap: 3,
   barLabelGap: 3,
-  barSegmentGap: 8,
+  barSegmentGap: 6,
+  barOuterPad: 6,
   graphHeight: 96,
   ringSize: 92,
   largeRingSize: 108,
@@ -38,17 +39,20 @@ var metrics = {
 
 // Nerd Fonts v3 private-use glyphs for bar metric cells. Literal UTF-8,
 // matching the existing ↑ / °C style. Verified against glyphnames.json:
-//   cpu  md-cpu_64_bit      U+F0EE0
-//   gpu  md-expansion_card  U+F08AE
-//   mem  fa-memory          U+EFC5   (DIMM silhouette; not md-memory,
-//                                    which collides with the CPU die)
-//   disk    md-harddisk           U+F02CA
-//   monitor md-monitor-dashboard  U+F0A07  (icon-only bar fallback)
+//   cpu     md-chip                 U+F061A  (simple die; not md-cpu_64_bit,
+//                                            which paints a tiny "64" at caption size)
+//   gpu     md-expansion_card       U+F08AE
+//   mem     fa-memory               U+EFC5   (DIMM silhouette; not md-memory,
+//                                            which collides with the CPU die)
+//   disk    md-harddisk             U+F02CA
+//   net     md-lan                  U+F0317  (neutral; not wifi/ethernet)
+//   monitor md-monitor-dashboard    U+F0A07  (icon-only bar fallback)
 var barGlyphs = {
-  cpu: "󰻠",
+  cpu: "󰘚",
   gpu: "󰢮",
   mem: "",
   disk: "󰋊",
+  net: "󰌗",
   monitor: "󰨇"
 }
 
@@ -56,7 +60,8 @@ var barLetters = {
   cpu: "C",
   gpu: "G",
   mem: "M",
-  disk: "D"
+  disk: "D",
+  net: "N"
 }
 
 // Resolve a bar-cell label. Unknown modes fall back to glyphs so a typo
@@ -94,6 +99,12 @@ function trackFor(barForeground) {
   return alphaHex(normalizeHex(barForeground) || barForeground, 0.10) || "#1acacccc"
 }
 
+// Secondary bar labels (glyphs/letters). Quiet enough to sit behind the
+// value, opaque enough to stay readable at caption-adjacent size.
+function mutedFor(barForeground) {
+  return alphaHex(normalizeHex(barForeground) || "#cacccc", 0.62) || "#9ecacccc"
+}
+
 // Strip Qt's #AARRGGBB (alpha prefix) and accept plain #RRGGBB. Returns
 // null for anything else so callers can fall back to a vivid constant.
 function normalizeHex(hex) {
@@ -105,12 +116,10 @@ function normalizeHex(hex) {
   return null
 }
 
-// Theme-native bar meter palette. Accent is the fill; a 0.45-alpha accent
-// is the stacked CPU "system" layer; the track is foreground at 0.14 (the
-// first-party Util.alpha(fg, 0.18) idiom, slightly quieter for a thin
-// meter). Urgent is the high-load fill. Malformed input falls back
-// field-by-field to the vivid constants so a bad color can never blank
-// the bars.
+// Theme-native high-load palette. Urgent is the ≥90% text color. Fill
+// and track remain for tests and any caller that still wants the old
+// meter colors. Malformed input falls back field-by-field to the vivid
+// constants so a bad color can never blank the values.
 function barPaletteFor(fgHex, accentHex, urgentHex) {
   var fill = normalizeHex(accentHex) || series.gpu
   var fillStack = alphaHex(fill, 0.45) || fill
@@ -129,6 +138,7 @@ if (typeof module !== "undefined" && module.exports) {
     alphaHex: alphaHex,
     gridFor: gridFor,
     trackFor: trackFor,
+    mutedFor: mutedFor,
     normalizeHex: normalizeHex,
     barPaletteFor: barPaletteFor
   }
