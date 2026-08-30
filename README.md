@@ -290,7 +290,7 @@ before it is opened.
 ```sh
 node --test tests/model.test.js          # pure-logic tests
 bash tests/intel-freq-paths.sh           # Intel sysfs path lookup
-shellcheck scripts/*                     # script lint
+shellcheck -x scripts/*                  # script lint (follows sourced helpers)
 mawk -f tests/check-plaintext.awk BarWidget.qml Panel.qml tabs/*.qml components/*.qml
 ```
 
