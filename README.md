@@ -33,12 +33,35 @@ GPUs.
 
 ## Install
 
+Quadrant is a third-party plugin and runs unsandboxed with your user
+permissions. Review the repository before enabling it.
+
+### From the Omarchy menu
+
+1. Open the Omarchy menu.
+2. Choose **Setup → Plugins → Add**.
+3. Enter:
+
+   ```text
+   https://github.com/BVisagie/omarchy-quadrant.git
+   ```
+
+4. Read and accept Omarchy's plugin warning, then choose whether to enable
+   Quadrant.
+
+The Add action opens a terminal so the warning, confirmation, and install
+output remain visible.
+
+### From a terminal
+
 ```sh
 omarchy plugin add https://github.com/BVisagie/omarchy-quadrant.git
 ```
 
-The plugin lands **disabled**. Review the code — it will run unsandboxed
-inside the shell — then enable it:
+Without `--enable`, Omarchy asks whether to enable the plugin after cloning
+and validating it. Choosing no lets you inspect the installed checkout at
+`~/.config/omarchy/plugins/dev.bvisagie.quadrant/` first. Enable it later
+with:
 
 ```sh
 omarchy plugin enable dev.bvisagie.quadrant
@@ -46,6 +69,29 @@ omarchy plugin enable dev.bvisagie.quadrant
 
 The widget starts in the right bar section (`barWidget.defaultSection`).
 Move it with `omarchy bar move dev.bvisagie.quadrant --section center`.
+
+### Update
+
+```sh
+omarchy plugin update dev.bvisagie.quadrant
+```
+
+Omarchy shows the incoming diff, validates the revision, and only then
+fast-forwards the installed checkout.
+
+### Uninstall
+
+From the Omarchy menu, choose **Setup → Plugins → Remove**, then select
+**Quadrant**.
+
+Or remove it from a terminal:
+
+```sh
+omarchy plugin remove dev.bvisagie.quadrant
+```
+
+Omarchy disables Quadrant before removing its git checkout. No sudo command
+or manual deletion under `~/.config/omarchy/plugins/` is required.
 
 ## Usage
 
@@ -56,8 +102,9 @@ Move it with `omarchy bar move dev.bvisagie.quadrant --section center`.
   there. Vertical bars are supported (segments stack). Meter fills follow
   the live Omarchy accent (with the theme's urgent color at ≥90% load);
   `barPalette vivid` restores the original per-resource hues. Network rates
-  use a fixed-width compact format (`1.0K`, `99K`) so the slot does not
-  resize as the magnitude changes. C/M/G meters stretch to the two-line
+  use a compact format (`1.0K`, `99K`) in a font-sized stable slot, so the
+  widget neither leaves a large gap nor resizes as the magnitude changes.
+  C/M/G meters stretch to the two-line
   network stack and sit vertically centered in the slot.
 - **Panel**: click the widget. `←`/`→` or `1`–`N` (N = visible tabs; GPU
   is omitted when no supported card is present) switch tabs, `R`
