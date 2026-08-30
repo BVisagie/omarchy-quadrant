@@ -21,6 +21,7 @@ BarWidget {
   }
   readonly property int barIntervalMs: Model.clamp(setting("barIntervalMs", 1000), 250, 60000)
   readonly property int panelIntervalMs: Model.clamp(setting("panelIntervalMs", 2000), 500, 60000)
+  readonly property int historyLimit: Math.ceil(60000 / barIntervalMs) + 1
   readonly property int processCount: Model.clamp(setting("processCount", 5), 1, 10)
   readonly property string networkInterface: String(setting("networkInterface", "auto"))
   readonly property string gpuDevice: String(setting("gpuDevice", "auto"))
@@ -53,6 +54,9 @@ BarWidget {
   property var sample: null
   property var prevSample: null
   property bool streamLive: false
+  property double lastSampleAtMs: 0
+  property double streamStartedAtMs: 0
+  property string streamError: ""
   property var cpuPct: null
   property var memComp: null
   property var swapRate: ({ inKBs: 0, outKBs: 0 })
@@ -65,6 +69,7 @@ BarWidget {
   property var gpu: null
   property var nvidiaGpu: null
   property string nvidiaError: ""
+  property string gpuDetectionError: ""
 
   // ---- hardware identity (one-shot, re-run on R) ----
   property var sysInfo: null
@@ -227,17 +232,24 @@ BarWidget {
       if (rates[i].name === effectiveInterface) { ifaceRates = rates[i]; break }
     }
     if (cpuPct)
-      cpuHistory = Model.pushCapped(cpuHistory, { u: cpuPct.user, s: cpuPct.system, io: cpuPct.iowait }, 60)
+      cpuHistory = Model.pushTimedWindow(
+        cpuHistory, { u: cpuPct.user, s: cpuPct.system, io: cpuPct.iowait },
+        s.ts, 60, historyLimit)
     if (ifaceRates)
-      netHistory = Model.pushCapped(netHistory, { rx: ifaceRates.rxBps, tx: ifaceRates.txBps }, 60)
+      netHistory = Model.pushTimedWindow(
+        netHistory, { rx: ifaceRates.rxBps, tx: ifaceRates.txBps },
+        s.ts, 60, historyLimit)
     prevSample = s
     sample = s
     streamLive = true
+    lastSampleAtMs = Date.now()
+    streamError = ""
   }
 
   function restartStream() {
     streamProc.intentionalStop = true
     streamProc.running = false
+    streamLive = false
     streamRelaunchTimer.restart()
   }
 
@@ -257,6 +269,7 @@ BarWidget {
     stdout: SplitParser {
       onRead: function(line) { root.handleSample(line) }
     }
+    onRunningChanged: if (running) root.streamStartedAtMs = Date.now()
     onExited: function(exitCode, exitStatus) {
       root.streamLive = false
       if (streamProc.intentionalStop) {
@@ -264,8 +277,28 @@ BarWidget {
       } else {
         // Crashed or killed: relaunch. Never present a dead sampler as
         // "all zeros" — streamLive=false drives the offline tooltip.
+        if (root.streamError === "")
+          root.streamError = "System sampler exited with code " + exitCode
         streamCrashTimer.restart()
       }
+    }
+  }
+
+  // An alive Process can still wedge on a kernel/sysfs read. Detect missing
+  // ticks, keep the last-good data visible, and let onExited relaunch it.
+  Timer {
+    id: streamWatchdog
+    interval: Math.max(2000, root.barIntervalMs * 3)
+    repeat: true
+    running: true
+    onTriggered: {
+      if (!streamProc.running) return
+      var reference = root.lastSampleAtMs > root.streamStartedAtMs
+        ? root.lastSampleAtMs : root.streamStartedAtMs
+      if (reference > 0 && Date.now() - reference <= interval) return
+      root.streamLive = false
+      root.streamError = "System sampler stopped producing data; restarting"
+      streamProc.signal(9)
     }
   }
 
@@ -286,9 +319,15 @@ BarWidget {
   // ---- GPU detection + on-demand NVIDIA sampling ----
   function applyGpuList(text) {
     var data = Model.safeJson(text)
-    if (!data || data.ok !== true) return
+    if (!data || data.ok !== true) {
+      gpuDetectionError = (data && data.error)
+        ? "GPU detection failed: " + String(data.error)
+        : "GPU detection returned invalid output"
+      return
+    }
     gpus = Model.normalizeGpuList(data)
     gpu = Model.pickGpu(gpus, gpuDevice)
+    gpuDetectionError = ""
   }
 
   function persistGpuDevice(card) {
@@ -322,6 +361,10 @@ BarWidget {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.applyGpuList(text)
+    }
+    onExited: function(exitCode, exitStatus) {
+      if (exitCode !== 0 && root.gpuDetectionError === "")
+        root.gpuDetectionError = "GPU detection exited with code " + exitCode
     }
   }
 

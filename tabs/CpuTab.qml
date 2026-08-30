@@ -140,6 +140,7 @@ Item {
       width: parent.width
       stacked: true
       fixedMax: 100
+      capacity: root.model ? root.model.historyLimit : 60
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       gridColor: Theme.gridFor(root.panel ? root.panel.barForeground : "#cacccc")
       series: [

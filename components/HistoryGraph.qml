@@ -7,12 +7,15 @@ import "../Theme.js" as Theme
 //   series   — [{ label, color, values: [Number] }]
 //   stacked  — cumulative filled areas (CPU user+system+iowait)
 //   fixedMax — y-axis ceiling; 0 means auto-scale to the visible peak
+//   capacity — expected points in the time window; partial history is
+//              right-aligned instead of being stretched across the full graph
 Canvas {
   id: root
 
   property var series: []
   property bool stacked: false
   property real fixedMax: 0
+  property int capacity: 60
   property color gridColor: Theme.gridFor("#cacccc")
   property color foreground: "#cacccc"
 
@@ -22,6 +25,7 @@ Canvas {
   onSeriesChanged: requestPaint()
   onStackedChanged: requestPaint()
   onFixedMaxChanged: requestPaint()
+  onCapacityChanged: requestPaint()
   onWidthChanged: requestPaint()
   onHeightChanged: requestPaint()
 
@@ -78,7 +82,10 @@ Canvas {
 
     if (n < 2 || series.length === 0) return
 
-    var stepX = w / (n - 1)
+    var slots = Math.max(n, root.capacity, 2)
+    var stepX = w / (slots - 1)
+    var xStart = w - (n - 1) * stepX
+    var xFor = function (i) { return xStart + i * stepX }
     var yFor = function (v) { return h - (v / max) * (h - 2) - 1 }
 
     if (root.stacked) {
@@ -93,9 +100,9 @@ Canvas {
         ctx.fillStyle = series[s].color
         ctx.globalAlpha = 0.85
         ctx.beginPath()
-        ctx.moveTo(0, yFor(cum[0]))
-        for (i = 1; i < n; i++) ctx.lineTo(i * stepX, yFor(cum[i]))
-        for (i = n - 1; i >= 0; i--) ctx.lineTo(i * stepX, yFor(prev[i]))
+        ctx.moveTo(xFor(0), yFor(cum[0]))
+        for (i = 1; i < n; i++) ctx.lineTo(xFor(i), yFor(cum[i]))
+        for (i = n - 1; i >= 0; i--) ctx.lineTo(xFor(i), yFor(prev[i]))
         ctx.closePath()
         ctx.fill()
         ctx.globalAlpha = 1
@@ -106,18 +113,18 @@ Canvas {
         ctx.fillStyle = series[s].color
         ctx.globalAlpha = 0.15
         ctx.beginPath()
-        ctx.moveTo(0, yFor(valueAt(s, 0)))
-        for (i = 1; i < n; i++) ctx.lineTo(i * stepX, yFor(valueAt(s, i)))
-        ctx.lineTo((n - 1) * stepX, h)
-        ctx.lineTo(0, h)
+        ctx.moveTo(xFor(0), yFor(valueAt(s, 0)))
+        for (i = 1; i < n; i++) ctx.lineTo(xFor(i), yFor(valueAt(s, i)))
+        ctx.lineTo(xFor(n - 1), h)
+        ctx.lineTo(xFor(0), h)
         ctx.closePath()
         ctx.fill()
         ctx.globalAlpha = 1
         ctx.strokeStyle = series[s].color
         ctx.lineWidth = 1.5
         ctx.beginPath()
-        ctx.moveTo(0, yFor(valueAt(s, 0)))
-        for (i = 1; i < n; i++) ctx.lineTo(i * stepX, yFor(valueAt(s, i)))
+        ctx.moveTo(xFor(0), yFor(valueAt(s, 0)))
+        for (i = 1; i < n; i++) ctx.lineTo(xFor(i), yFor(valueAt(s, i)))
         ctx.stroke()
       }
     }

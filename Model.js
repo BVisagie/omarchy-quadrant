@@ -1016,6 +1016,28 @@ function pushCapped(history, point, maxLen) {
   return next
 }
 
+// Append a timestamped point while preserving a real time window even when
+// barIntervalMs is customized. A clock/counter reset starts a fresh window.
+function pushTimedWindow(history, point, timestamp, windowSeconds, maxLen) {
+  var ts = num(timestamp, null)
+  if (ts === null) return Array.isArray(history) ? history.slice() : []
+  var seconds = Math.max(1, num(windowSeconds, 60))
+  var limit = Math.max(2, Math.round(num(maxLen, 242)))
+  var next = Array.isArray(history) ? history.slice() : []
+  if (next.length > 0 && num(next[next.length - 1].t, ts) > ts) next = []
+  var stamped = {}
+  if (point && typeof point === "object") {
+    for (var key in point)
+      if (Object.prototype.hasOwnProperty.call(point, key)) stamped[key] = point[key]
+  }
+  stamped.t = ts
+  next.push(stamped)
+  var cutoff = ts - seconds
+  while (next.length > 0 && num(next[0].t, ts) < cutoff) next.shift()
+  while (next.length > limit) next.shift()
+  return next
+}
+
 // ------------------------------------------------------- node test shim
 // QML ignores this branch (`module` is undefined there); node uses it.
 
@@ -1058,6 +1080,7 @@ if (typeof module !== "undefined" && module.exports) {
     formatWatts: formatWatts,
     formatLoad: formatLoad,
     formatUptime: formatUptime,
-    pushCapped: pushCapped
+    pushCapped: pushCapped,
+    pushTimedWindow: pushTimedWindow
   }
 }

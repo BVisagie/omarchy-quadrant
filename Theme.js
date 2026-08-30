@@ -32,8 +32,10 @@ var metrics = {
   processIcon: 16
 }
 
-// "#RRGGBB" + alpha 0..1 -> "#RRGGBBAA". Returns null for bad input so the
-// caller can fall back to a theme color.
+// "#RRGGBB" + alpha 0..1 -> Qt's "#AARRGGBB". QML uses the alpha-first
+// QColor notation, not CSS's alpha-last "#RRGGBBAA". Getting this order
+// wrong makes a muted gray track become an opaque yellow/green color.
+// Returns null for bad input so the caller can fall back to a theme color.
 function alphaHex(hex, alpha) {
   var s = String(hex || "")
   var m = s.match(/^#([0-9A-Fa-f]{6})$/)
@@ -43,16 +45,16 @@ function alphaHex(hex, alpha) {
   a = a < 0 ? 0 : (a > 1 ? 1 : a)
   var byte = Math.round(a * 255)
   var hexA = (byte < 16 ? "0" : "") + byte.toString(16)
-  return "#" + m[1] + hexA
+  return "#" + hexA + m[1]
 }
 
 // Muted grid/track color derived from the bar foreground.
 function gridFor(barForeground) {
-  return alphaHex(barForeground, 0.14)
+  return alphaHex(normalizeHex(barForeground) || barForeground, 0.14) || "#24cacccc"
 }
 
 function trackFor(barForeground) {
-  return alphaHex(barForeground, 0.10)
+  return alphaHex(normalizeHex(barForeground) || barForeground, 0.10) || "#1acacccc"
 }
 
 // Strip Qt's #AARRGGBB (alpha prefix) and accept plain #RRGGBB. Returns
@@ -75,7 +77,7 @@ function normalizeHex(hex) {
 function barPaletteFor(fgHex, accentHex, urgentHex) {
   var fill = normalizeHex(accentHex) || series.gpu
   var fillStack = alphaHex(fill, 0.45) || fill
-  var track = alphaHex(normalizeHex(fgHex) || "#cacccc", 0.14) || "#cacccc24"
+  var track = alphaHex(normalizeHex(fgHex) || "#cacccc", 0.14) || "#24cacccc"
   var urgent = normalizeHex(urgentHex) || series.cpuSteal
   return { fill: fill, fillStack: fillStack, track: track, urgent: urgent }
 }

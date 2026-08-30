@@ -490,21 +490,39 @@ test("pushCapped bounds history", () => {
   assert.equal(h[59], 69);
 });
 
+test("pushTimedWindow preserves 60 seconds at custom cadences", () => {
+  var h = [];
+  for (var i = 0; i <= 280; i++) {
+    h = Model.pushTimedWindow(h, { value: i }, 1000 + i * 0.25, 60, 242);
+  }
+  assert.equal(h.length, 241);
+  assert.equal(h[0].t, 1010);
+  assert.equal(h.at(-1).t, 1070);
+  assert.equal(h.at(-1).value, 280);
+
+  const point = { value: 1 };
+  const reset = Model.pushTimedWindow(h, point, 5, 60, 242);
+  assert.equal(reset.length, 1);
+  assert.equal(reset[0].t, 5);
+  assert.equal(point.t, undefined); // pure: input point is not mutated
+});
+
 // -------------------------------------------------------------------- theme
 
 test("Theme.alphaHex derives muted variants", () => {
-  assert.equal(Theme.alphaHex("#cacccc", 0.5), "#cacccc80");
-  assert.equal(Theme.alphaHex("#cacccc", 0), "#cacccc00");
-  assert.equal(Theme.alphaHex("#cacccc", 1), "#caccccff");
+  // QColor/QML uses alpha-first #AARRGGBB, unlike CSS #RRGGBBAA.
+  assert.equal(Theme.alphaHex("#cacccc", 0.5), "#80cacccc");
+  assert.equal(Theme.alphaHex("#cacccc", 0), "#00cacccc");
+  assert.equal(Theme.alphaHex("#cacccc", 1), "#ffcacccc");
   assert.equal(Theme.alphaHex("red", 0.5), null);
-  assert.equal(Theme.gridFor("#101315"), "#10131524");   // 0.14 * 255 ≈ 36 = 0x24
+  assert.equal(Theme.gridFor("#101315"), "#24101315");   // 0.14 * 255 ≈ 36 = 0x24
 });
 
 test("Theme.barPaletteFor uses accent fill and falls back on bad input", () => {
   const pal = Theme.barPaletteFor("#cacccc", "#7aa2f7", "#f7768e");
   assert.equal(pal.fill, "#7aa2f7");
-  assert.equal(pal.fillStack, "#7aa2f773");             // 0.45 * 255 ≈ 115 = 0x73
-  assert.equal(pal.track, "#cacccc24");
+  assert.equal(pal.fillStack, "#737aa2f7");             // 0.45 * 255 ≈ 115 = 0x73
+  assert.equal(pal.track, "#24cacccc");
   assert.equal(pal.urgent, "#f7768e");
   // Qt color strings are often #AARRGGBB
   const fromQt = Theme.barPaletteFor("#ffcacccc", "#ff9ece6a", "#ffa55555");
