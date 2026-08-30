@@ -20,6 +20,8 @@ Item {
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "net"
   readonly property string ifname: model ? model.effectiveInterface : ""
   readonly property var ifaceRates: model ? model.ifaceRates : null
+  readonly property string interfaceError: model ? model.networkInterfaceError : ""
+  readonly property bool interfaceValid: ifname !== "" && interfaceError === ""
 
   property var rows: []
   property string errorText: ""
@@ -38,10 +40,21 @@ Item {
     rows = []
     if (active) refresh()
   }
+  onInterfaceErrorChanged: {
+    if (interfaceError !== "") {
+      prevSockets = null
+      prevIf = null
+      prevTs = 0
+      rows = []
+      errorText = ""
+    } else if (active) {
+      refresh()
+    }
+  }
 
   function refresh() {
     if (!active) return
-    if (ifname === "") return
+    if (!interfaceValid) return
     if (proc.running) return
     watchdog.restart()
     proc.running = true
@@ -103,7 +116,7 @@ Item {
     id: cadence
     interval: root.panel ? root.panel.panelIntervalMs : 2000
     repeat: true
-    running: root.active && root.ifname !== ""
+    running: root.active && root.interfaceValid
     onTriggered: root.refresh()
   }
 
@@ -123,6 +136,17 @@ Item {
     id: column
     width: root.width
     spacing: Style.space(8)
+
+    Text {
+      textFormat: Text.PlainText
+      visible: root.interfaceError !== ""
+      text: root.interfaceError
+      color: Color.urgent
+      font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      font.pixelSize: Style.font.body
+      width: parent.width
+      wrapMode: Text.WordWrap
+    }
 
     Components.StatRow {
       width: parent.width
@@ -195,7 +219,10 @@ Item {
       width: parent.width
       rows: root.rows
       valueHeader: "NET"
-      emptyText: root.ifname === "" ? "No network interface" : (root.active ? "Sampling…" : "Open this tab to sample")
+      emptyText: root.interfaceError !== ""
+                 ? "Choose auto or an available interface in Quadrant settings"
+                 : (root.ifname === "" ? "No network interface"
+                                       : (root.active ? "Sampling…" : "Open this tab to sample"))
       errorText: root.errorText
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family

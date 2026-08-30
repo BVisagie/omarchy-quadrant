@@ -135,6 +135,17 @@ BarWidget {
     if (networkInterface !== "auto" && networkInterface !== "") return networkInterface
     return sample ? Model.pickInterface(sample.r4, sample.r6, sample.net) : ""
   }
+  readonly property bool pinnedInterface: networkInterface !== "auto" && networkInterface !== ""
+  readonly property bool effectiveInterfaceAvailable: {
+    if (!sample || effectiveInterface === "") return false
+    for (var i = 0; i < sample.net.length; i++)
+      if (sample.net[i].n === effectiveInterface) return true
+    return false
+  }
+  readonly property string networkInterfaceError: {
+    if (!pinnedInterface || !sample || effectiveInterfaceAvailable) return ""
+    return "Pinned interface " + networkInterface + " is not available"
+  }
 
   // GPU segment value: { pct, estimated } or null when unknown.
   readonly property var gpuDisplay: {

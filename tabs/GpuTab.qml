@@ -15,6 +15,7 @@ Item {
   property var panel: null
   property var model: null
 
+  readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "gpu"
   readonly property var gpu: model ? model.gpu : null
   readonly property string vendor: gpu ? gpu.vendor : ""
   // Unified live view: nvidia rows arrive via model.nvidiaGpu; amd/intel
@@ -32,6 +33,8 @@ Item {
 
   implicitWidth: 200
   implicitHeight: column.implicitHeight
+
+  onActiveChanged: if (active) refresh()
 
   function refresh() {
     // Stream-fed vendors need no panel sampler; NVIDIA polls from the
