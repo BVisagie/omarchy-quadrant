@@ -772,20 +772,27 @@ function parseLspciMm(text) {
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i]
     if (line.replace(/^\s+|\s+$/g, "") === "") continue
+    // Real `lspci -D -mm` leaves the leading slot unquoted:
+    //   0000:03:00.0 "VGA compatible controller" "AMD..." "Navi..."
+    // Accept a quoted slot too for compatibility with captured/normalized
+    // output, then parse the remaining machine-format quoted fields.
+    var slotMatch = line.match(/^\s*"?([0-9a-fA-F:.]+)"?\s+/)
+    if (!slotMatch) continue
+    var slot = slotMatch[1]
+    if (!/^[0-9a-fA-F:.]+$/.test(slot)) continue
+    var payload = line.slice(slotMatch[0].length)
     var fields = []
     var re = /"((?:[^"\\]|\\.)*)"/g
     var m
-    while ((m = re.exec(line)) !== null) {
+    while ((m = re.exec(payload)) !== null) {
       fields.push(m[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\"))
     }
-    if (fields.length < 4) continue
-    var slot = fields[0]
-    if (!/^[0-9a-fA-F:.]+$/.test(slot)) continue
+    if (fields.length < 3) continue
     out.push({
       slot: slot,
-      class: clipStr(fields[1], 64),
-      vendor: clipStr(fields[2], 64),
-      device: clipStr(fields[3], 128)
+      class: clipStr(fields[0], 64),
+      vendor: clipStr(fields[1], 64),
+      device: clipStr(fields[2], 128)
     })
   }
   return out
