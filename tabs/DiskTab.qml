@@ -68,22 +68,24 @@ Item {
     return ""
   }
 
-  readonly property var primaryMount: {
+  readonly property var diskMounts: {
     var list = mounts
-    if (!list || list.length === 0) return null
-    var i, m, parent
-    if (diskName) {
-      for (i = 0; i < list.length; i++) {
-        m = list[i]
-        parent = Model.parentDiskName(String(m.source || "").replace(/^\/dev\//, ""))
-        if (parent === diskName && m.target === "/") return m
-      }
-      for (i = 0; i < list.length; i++) {
-        m = list[i]
-        parent = Model.parentDiskName(String(m.source || "").replace(/^\/dev\//, ""))
-        if (parent === diskName) return m
-      }
+    var out = []
+    if (!list || list.length === 0 || !diskName) return out
+    var backing = info && info.backing ? info.backing : {}
+    var i, m
+    for (i = 0; i < list.length; i++) {
+      m = list[i]
+      if (Model.resolveBackingDisk(m.source, backing) === diskName)
+        out.push(m)
     }
+    return out
+  }
+
+  readonly property var primaryMount: {
+    var list = diskMounts
+    if (!list || list.length === 0) return null
+    var i
     for (i = 0; i < list.length; i++) if (list[i].target === "/") return list[i]
     return list[0]
   }
@@ -241,11 +243,13 @@ Item {
 
     Row {
       width: parent.width
-      spacing: Style.space(18)
-      visible: root.primaryMount !== null
+      spacing: ring.visible ? Style.space(18) : 0
+      visible: root.primaryMount !== null || root.diskMounts.length > 0
 
       Components.RingGauge {
+        id: ring
         readonly property var m: root.primaryMount
+        visible: m !== null
         fraction: m ? Model.clamp(m.pct / 100, 0, 1) : 0
         color: Theme.series.diskRead
         trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
@@ -255,23 +259,29 @@ Item {
         fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
         anchors.verticalCenter: parent.verticalCenter
       }
-    }
 
-    Repeater {
-      model: root.mounts
+      Column {
+        id: mountCol
+        width: parent.width - (ring.visible ? ring.width + parent.spacing : 0)
+        spacing: Style.space(6)
 
-      delegate: Components.StatRow {
-        required property var modelData
-        width: column.width
-        label: String(modelData.target || "mount")
-        value: {
-          var used = Model.formatBytes(modelData.used)
-          var size = Model.formatBytes(modelData.size)
-          var pct = Model.formatPct(modelData.pct)
-          return used + " of " + size + " · " + pct
+        Repeater {
+          model: root.diskMounts
+
+          delegate: Components.StatRow {
+            required property var modelData
+            width: mountCol.width
+            label: String(modelData.target || "mount")
+            value: {
+              var used = Model.formatBytes(modelData.used)
+              var size = Model.formatBytes(modelData.size)
+              var pct = Model.formatPct(modelData.pct)
+              return used + " of " + size + " · " + pct
+            }
+            foreground: root.panel ? root.panel.barForeground : "#cacccc"
+            fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+          }
         }
-        foreground: root.panel ? root.panel.barForeground : "#cacccc"
-        fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
       }
     }
 

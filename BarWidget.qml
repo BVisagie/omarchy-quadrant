@@ -23,9 +23,9 @@ BarWidget {
   readonly property int panelIntervalMs: Model.clamp(setting("panelIntervalMs", 2000), 500, 60000)
   readonly property int historyLimit: Math.ceil(60000 / barIntervalMs) + 1
   readonly property int processCount: Model.clamp(setting("processCount", 5), 1, 10)
-  readonly property string networkInterface: String(setting("networkInterface", "auto"))
-  readonly property string gpuDevice: String(setting("gpuDevice", "auto"))
-  readonly property string diskDevice: String(setting("diskDevice", "auto"))
+  readonly property string networkInterface: Model.normalizeDeviceSetting(setting("networkInterface", "auto"))
+  readonly property string gpuDevice: Model.normalizeDeviceSetting(setting("gpuDevice", "auto"))
+  readonly property string diskDevice: Model.normalizeDeviceSetting(setting("diskDevice", "auto"))
   readonly property string barPaletteMode: {
     var v = String(setting("barPalette", "theme")).toLowerCase()
     return v === "vivid" ? "vivid" : "theme"
@@ -162,12 +162,18 @@ BarWidget {
     var rates = diskRateList
     var disks = diskInfo && diskInfo.disks ? diskInfo.disks : []
     var mounts = diskInfo && diskInfo.mounts ? diskInfo.mounts : []
-    return Model.pickDisk(disks, mounts, rates, selectedDiskName || diskDevice) || ""
+    var backing = diskInfo && diskInfo.backing ? diskInfo.backing : {}
+    return Model.pickDisk(disks, mounts, rates, selectedDiskName || diskDevice, backing) || ""
   }
   readonly property bool pinnedDisk: diskDevice !== "auto" && diskDevice !== ""
   readonly property string diskDeviceError: {
     if (!pinnedDisk || !sample) return ""
-    if (effectiveDisk === diskDevice) return ""
+    var backing = diskInfo && diskInfo.backing ? diskInfo.backing : {}
+    var disks = diskInfo && diskInfo.disks ? diskInfo.disks : []
+    var rates = diskRateList
+    var name = Model.resolveBackingDisk(diskDevice, backing)
+    if (Model.diskNamePresent(name, disks, rates)) return ""
+    if (Model.diskNamePresent(diskDevice, disks, rates)) return ""
     return "Pinned disk " + diskDevice + " is not available"
   }
   readonly property bool nvidiaSelected: gpu !== null && gpu.vendor === "nvidia"
@@ -316,7 +322,8 @@ BarWidget {
       diskInfo && diskInfo.disks ? diskInfo.disks : [],
       diskInfo && diskInfo.mounts ? diskInfo.mounts : [],
       dRates,
-      selectedDiskName || diskDevice
+      selectedDiskName || diskDevice,
+      diskInfo && diskInfo.backing ? diskInfo.backing : {}
     )
     diskRates = null
     for (var d = 0; d < dRates.length; d++) {

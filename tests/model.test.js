@@ -144,6 +144,9 @@ test("isPartitionName and parentDiskName cover common layouts", () => {
   assert.equal(Model.isExcludedDiskName("loop0"), true);
   assert.equal(Model.isExcludedDiskName("zram0"), true);
   assert.equal(Model.isExcludedDiskName("sda"), false);
+  assert.equal(Model.isVirtualDiskName("dm-0"), true);
+  assert.equal(Model.isVirtualDiskName("md0"), true);
+  assert.equal(Model.isVirtualDiskName("nvme0n1"), false);
 });
 
 test("parseDiskstats keeps whole devices and drops partitions and virtuals", () => {
@@ -208,6 +211,7 @@ test("parseDiskInfo validates disks and parses the df payload", () => {
   assert.equal(evil.sizeBytes, null);
   assert.equal(info.mounts.length, 1);
   assert.equal(info.mounts[0].target, "/");
+  assert.deepEqual(info.backing, {});
   assert.equal(Model.parseDiskInfo(null), null);
   assert.equal(Model.parseDiskInfo({ ok: false }), null);
 });
@@ -224,6 +228,54 @@ test("pickDisk prefers the root disk, then the largest, then a pin", () => {
   assert.equal(Model.pickDisk(disks, mounts, rates, "sda"), "sda");
   assert.equal(Model.pickDisk(disks, mounts, rates, "nope"), null);
   assert.equal(Model.pickDisk([], [], [{ name: "vda" }], "auto"), "vda");
+});
+
+test("normalizeDeviceSetting strips wrapping quotes", () => {
+  assert.equal(Model.normalizeDeviceSetting("nvme0n1"), "nvme0n1");
+  assert.equal(Model.normalizeDeviceSetting('"nvme0n1"'), "nvme0n1");
+  assert.equal(Model.normalizeDeviceSetting("  "), "auto");
+  assert.equal(Model.normalizeDeviceSetting(""), "auto");
+  assert.equal(Model.normalizeDeviceSetting(null), "auto");
+  assert.equal(Model.normalizeDeviceSetting("auto"), "auto");
+});
+
+test("resolveBackingDisk maps mapper and partition sources", () => {
+  const backing = { "dm-0": "nvme0n1", cryptroot: "nvme0n1" };
+  assert.equal(Model.resolveBackingDisk("/dev/dm-0", backing), "nvme0n1");
+  assert.equal(Model.resolveBackingDisk("/dev/mapper/cryptroot", backing), "nvme0n1");
+  assert.equal(Model.resolveBackingDisk("/dev/nvme0n1p2", backing), "nvme0n1");
+  assert.equal(Model.resolveBackingDisk("/dev/nvme1n1p1", backing), "nvme1n1");
+  assert.equal(Model.resolveBackingDisk("nvme0n1", backing), "nvme0n1");
+});
+
+test("parseDiskInfo folds mapper disks onto the backing NVMe", () => {
+  const info = Model.parseDiskInfo(JSON.parse(fixture("disk-info-luks.json")));
+  assert.ok(info);
+  assert.deepEqual(info.disks.map((d) => d.name), ["nvme0n1", "nvme1n1"]);
+  assert.equal(info.backing["dm-0"], "nvme0n1");
+  assert.equal(info.backing.cryptroot, "nvme0n1");
+  const targets = info.mounts.map((m) => m.target);
+  assert.deepEqual(targets, ["/", "/boot", "/home"]);
+});
+
+test("pickDisk remaps mapper pins and quoted names through backing", () => {
+  const info = Model.parseDiskInfo(JSON.parse(fixture("disk-info-luks.json")));
+  const rates = [{ name: "nvme0n1" }, { name: "nvme1n1" }, { name: "dm-0" }];
+  assert.equal(Model.pickDisk(info.disks, info.mounts, rates, "auto", info.backing), "nvme0n1");
+  assert.equal(Model.pickDisk(info.disks, info.mounts, rates, "dm-0", info.backing), "nvme0n1");
+  assert.equal(Model.pickDisk(info.disks, info.mounts, rates, '"dm-0"', info.backing), "nvme0n1");
+  assert.equal(Model.pickDisk(info.disks, info.mounts, rates, '"nvme1n1"', info.backing), "nvme1n1");
+  assert.equal(Model.diskNamePresent("nvme0n1", info.disks, rates), true);
+  assert.equal(Model.diskNamePresent("dm-0", info.disks, rates), true);
+});
+
+test("pickDisk keeps a multi-parent RAID device selectable", () => {
+  const info = Model.parseDiskInfo(JSON.parse(fixture("disk-info-raid.json")));
+  const rates = [{ name: "nvme0n1" }, { name: "nvme1n1" }, { name: "md0" }];
+  assert.deepEqual(info.disks.map((d) => d.name), ["nvme0n1", "nvme1n1", "md0"]);
+  assert.equal(Model.pickDisk(info.disks, info.mounts, rates, "auto", info.backing), "md0");
+  assert.equal(Model.pickDisk(info.disks, info.mounts, rates, "md0", info.backing), "md0");
+  assert.equal(Model.pickDisk(info.disks, [], rates, "auto", info.backing), "nvme0n1");
 });
 
 test("parseStreamLine treats a missing disk array as empty", () => {

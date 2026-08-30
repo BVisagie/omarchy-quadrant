@@ -2,12 +2,16 @@
 # disk-info — one-shot block-device identity and mount capacity for Quadrant.
 #
 # Emits one JSON envelope on stdout:
-#   {"ok":true,"disks":[{name,model,rotational,sizeBytes,tempC}],"dfPayload":"..."}
+#   {"ok":true,"disks":[{name,model,rotational,sizeBytes,tempC}],
+#    "backing":{"dm-0":"nvme0n1",...},"dfPayload":"..."}
 #
 # Disks are whole block devices under /sys/block (loop/ram/zram/fd/nbd/sr
-# dropped, matching quadrant-stream). Capacity is the raw `df -P -B1 -T`
-# payload so Model.js can parse and fixture-test it. NVMe temperature is
-# read from the `nvme` hwmon only — never a first-readable-sensor fallback.
+# dropped, matching quadrant-stream). Mapper/md devices with a single
+# physical parent are omitted from disks[] and recorded in backing so
+# the Drives tab follows the NVMe (or other whole disk) underneath.
+# Capacity is the raw `df -P -B1 -T` payload so Model.js can parse and
+# fixture-test it. NVMe temperature is read from the `nvme` hwmon only —
+# never a first-readable-sensor fallback.
 #
 # Usage: disk-info
 
@@ -85,10 +89,102 @@ nvme_temp_mc() {
   done
 }
 
+is_virtual_disk() {
+  local n=$1
+  [[ $n == dm-* || $n == md[0-9]* ]]
+}
+
+# Partition → whole disk, matching Model.parentDiskName.
+parent_disk_name() {
+  local n=$1
+  if [[ $n =~ ^(nvme[0-9]+n[0-9]+)p[0-9]+$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return
+  fi
+  if [[ $n =~ ^(mmcblk[0-9]+)p[0-9]+$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return
+  fi
+  if [[ $n =~ ^((sd|hd|vd|xvd)[a-z]+)[0-9]+$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return
+  fi
+  printf '%s\n' "$n"
+}
+
+# Unique whole-disk parent via /sys/block/<name>/slaves, depth-capped.
+# Returns 1 when there is no unique physical parent (e.g. md RAID).
+physical_parent() {
+  local start=$1
+  local current=$start
+  local depth=0
+  local -A seen=()
+  local s slave parent p first v r
+  local -a physical virtual
+
+  while (( depth < 8 )); do
+    [[ -n ${seen[$current]+x} ]] && return 1
+    seen[$current]=1
+    depth=$(( depth + 1 ))
+
+    physical=()
+    virtual=()
+    if [[ -d /sys/block/$current/slaves ]]; then
+      for s in /sys/block/"$current"/slaves/*; do
+        [[ -e $s || -L $s ]] || continue
+        slave=${s##*/}
+        [[ $slave =~ ^[A-Za-z0-9._+-]+$ ]] || continue
+        if is_virtual_disk "$slave"; then
+          virtual+=("$slave")
+        else
+          parent=$(parent_disk_name "$slave")
+          [[ $parent =~ ^[A-Za-z0-9._+-]+$ ]] || continue
+          physical+=("$parent")
+        fi
+      done
+    fi
+
+    if (( ${#physical[@]} > 0 )); then
+      first=${physical[0]}
+      for p in "${physical[@]}"; do
+        [[ $p == "$first" ]] || return 1
+      done
+      if (( ${#virtual[@]} > 0 )); then
+        for v in "${virtual[@]}"; do
+          r=$(physical_parent "$v") || return 1
+          [[ $r == "$first" ]] || return 1
+        done
+      fi
+      printf '%s\n' "$first"
+      return 0
+    fi
+
+    if (( ${#virtual[@]} == 1 )); then
+      current=${virtual[0]}
+      continue
+    fi
+    if (( ${#virtual[@]} > 1 )); then
+      first=""
+      for v in "${virtual[@]}"; do
+        r=$(physical_parent "$v") || return 1
+        if [[ -z $first ]]; then first=$r
+        elif [[ $r != "$first" ]]; then return 1
+        fi
+      done
+      [[ -n $first ]] || return 1
+      printf '%s\n' "$first"
+      return 0
+    fi
+    return 1
+  done
+  return 1
+}
+
 # --- disks -----------------------------------------------------------------
 
 disk_fields=()
 disk_count=0
+backing_pairs=()
 for dev in /sys/block/*; do
   [[ -d $dev ]] || continue
   name=${dev##*/}
@@ -96,6 +192,20 @@ for dev in /sys/block/*; do
   case $name in
     loop*|ram*|zram*|fd*|nbd*|sr*) continue ;;
   esac
+
+  if is_virtual_disk "$name"; then
+    parent=$(physical_parent "$name" || true)
+    if [[ -n ${parent:-} && $parent != "$name" && $parent =~ ^[A-Za-z0-9._+-]+$ ]]; then
+      backing_pairs+=("$name" "$parent")
+      dmname=""
+      read_line_file "/sys/block/$name/dm/name" dmname
+      if [[ -n $dmname && $dmname =~ ^[A-Za-z0-9._+-]+$ && $dmname != "$name" ]]; then
+        backing_pairs+=("$dmname" "$parent")
+      fi
+      continue
+    fi
+  fi
+
   model=""
   read_line_file "$dev/device/model" model
   if [[ -z $model && $name =~ ^(nvme[0-9]+)n[0-9]+$ ]]; then
@@ -145,6 +255,14 @@ else
                 else ($ARGS.positional[$i + 4] | tonumber) end) }]' "${disk_fields[@]}")
 fi
 
+if (( ${#backing_pairs[@]} == 0 )); then
+  backing_json='{}'
+else
+  backing_json=$("$JQ" -cn --args '
+    reduce range(0; $ARGS.positional | length; 2) as $i ({};
+      .[$ARGS.positional[$i]] = $ARGS.positional[$i + 1])' "${backing_pairs[@]}")
+fi
+
 # --- mounts ----------------------------------------------------------------
 
 dfPayload=""
@@ -157,5 +275,6 @@ fi
 
 "$JQ" -n \
   --argjson disks "$disk_json" \
+  --argjson backing "$backing_json" \
   --arg dfPayload "$dfPayload" \
-  '{ ok: true, disks: $disks, dfPayload: $dfPayload }'
+  '{ ok: true, disks: $disks, backing: $backing, dfPayload: $dfPayload }'
