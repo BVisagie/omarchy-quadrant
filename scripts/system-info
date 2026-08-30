@@ -207,7 +207,7 @@ else
         vendor: $ARGS.positional[$i + 1],
         slot: $ARGS.positional[$i + 2],
         driver: $ARGS.positional[$i + 3],
-        pciId: $ARGS.positional[$i + 4] }]') "${gpu_fields[@]}"
+        pciId: $ARGS.positional[$i + 4] }]' "${gpu_fields[@]}")
 fi
 
 lspciPayload=""
@@ -265,7 +265,7 @@ else
     [range(0; ($ARGS.positional | length); 3) as $i |
       { file: $ARGS.positional[$i],
         kind: $ARGS.positional[$i + 1],
-        sizeKb: ($ARGS.positional[$i + 2] | tonumber) }]') "${swap_fields[@]}"
+        sizeKb: ($ARGS.positional[$i + 2] | tonumber) }]' "${swap_fields[@]}")
 fi
 
 zram_fields=()
@@ -295,7 +295,7 @@ else
     [range(0; ($ARGS.positional | length); 3) as $i |
       { dev: $ARGS.positional[$i],
         alg: $ARGS.positional[$i + 1],
-        diskBytes: ($ARGS.positional[$i + 2] | tonumber) }]') "${zram_fields[@]}"
+        diskBytes: ($ARGS.positional[$i + 2] | tonumber) }]' "${zram_fields[@]}")
 fi
 
 # --- Host ------------------------------------------------------------------
