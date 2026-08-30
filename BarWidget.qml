@@ -24,6 +24,10 @@ BarWidget {
   readonly property int processCount: Model.clamp(setting("processCount", 5), 1, 10)
   readonly property string networkInterface: String(setting("networkInterface", "auto"))
   readonly property string gpuDevice: String(setting("gpuDevice", "auto"))
+  readonly property string barPaletteMode: {
+    var v = String(setting("barPalette", "theme")).toLowerCase()
+    return v === "vivid" ? "vivid" : "theme"
+  }
 
   readonly property int visibleSegmentCount: {
     var n = 0
@@ -61,6 +65,40 @@ BarWidget {
   property var gpu: null
   property var nvidiaGpu: null
   property string nvidiaError: ""
+
+  // ---- hardware identity (one-shot, re-run on R) ----
+  property var sysInfo: null
+  readonly property var cpuFreqMhz: sample && sample.cpuFreqMhz !== undefined ? sample.cpuFreqMhz : null
+
+  readonly property var themePal: Theme.barPaletteFor(
+    String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground),
+    String(Color.accent),
+    String(root.bar ? root.bar.urgent : Color.urgent)
+  )
+  readonly property bool cpuHot: cpuPct !== null && cpuPct.busy >= 90
+  readonly property bool memHot: memComp !== null && memComp.usedPct >= 90
+  readonly property bool gpuHot: gpuDisplay !== null && gpuDisplay.pct >= 90
+  readonly property var cpuMeterUser: {
+    if (barPaletteMode === "vivid") return cpuHot ? Theme.series.cpuSteal : Theme.series.cpuUser
+    return cpuHot ? themePal.urgent : themePal.fill
+  }
+  readonly property var cpuMeterSystem: {
+    if (barPaletteMode === "vivid") return cpuHot ? Theme.series.cpuSteal : Theme.series.cpuSystem
+    return cpuHot ? themePal.urgent : themePal.fillStack
+  }
+  readonly property var memMeterFill: {
+    if (barPaletteMode === "vivid") return memHot ? Theme.series.cpuSteal : Theme.series.memApps
+    return memHot ? themePal.urgent : themePal.fill
+  }
+  readonly property var gpuMeterFill: {
+    if (barPaletteMode === "vivid") return gpuHot ? Theme.series.cpuSteal : Theme.series.gpu
+    return gpuHot ? themePal.urgent : themePal.fill
+  }
+  readonly property var meterTrack: {
+    if (barPaletteMode === "vivid")
+      return Theme.trackFor(String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground))
+    return themePal.track
+  }
   readonly property bool gpuAvailable: gpu !== null
   readonly property bool nvidiaSelected: gpu !== null && gpu.vendor === "nvidia"
   // Position of the selected card among the NVIDIA cards — nvidia-smi -i
@@ -278,6 +316,27 @@ BarWidget {
     }
   }
 
+  function applySysInfo(text) {
+    var data = Model.safeJson(text)
+    if (!data || data.ok !== true) return
+    sysInfo = Model.parseSystemInfo(data)
+  }
+
+  function refreshSysInfo() {
+    if (sysInfoProc.running) return
+    sysInfoProc.running = true
+  }
+
+  Process {
+    id: sysInfoProc
+    command: [root.localPath("scripts/system-info")]
+    running: true
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applySysInfo(text)
+    }
+  }
+
   function applyNvidia(text) {
     var data = Model.safeJson(text)
     if (!data || data.ok !== true) {
@@ -396,10 +455,10 @@ BarWidget {
             anchors.verticalCenter: parent.verticalCenter
           }
           Components.MeterBar {
-            trackColor: Theme.trackFor(button.foreground)
+            trackColor: root.meterTrack
             segments: [
-              { fraction: root.cpuPct ? root.cpuPct.user / 100 : 0, color: Theme.series.cpuUser },
-              { fraction: root.cpuPct ? root.cpuPct.system / 100 : 0, color: Theme.series.cpuSystem }
+              { fraction: root.cpuPct ? root.cpuPct.user / 100 : 0, color: root.cpuMeterUser },
+              { fraction: root.cpuPct ? root.cpuPct.system / 100 : 0, color: root.cpuMeterSystem }
             ]
             anchors.verticalCenter: parent.verticalCenter
           }
@@ -432,9 +491,9 @@ BarWidget {
             anchors.verticalCenter: parent.verticalCenter
           }
           Components.MeterBar {
-            trackColor: Theme.trackFor(button.foreground)
+            trackColor: root.meterTrack
             segments: [
-              { fraction: root.memComp ? root.memComp.usedPct / 100 : 0, color: Theme.series.memApps }
+              { fraction: root.memComp ? root.memComp.usedPct / 100 : 0, color: root.memMeterFill }
             ]
             anchors.verticalCenter: parent.verticalCenter
           }
@@ -467,9 +526,9 @@ BarWidget {
             anchors.verticalCenter: parent.verticalCenter
           }
           Components.MeterBar {
-            trackColor: Theme.trackFor(button.foreground)
+            trackColor: root.meterTrack
             segments: [
-              { fraction: root.gpuDisplay ? root.gpuDisplay.pct / 100 : 0, color: Theme.series.gpu }
+              { fraction: root.gpuDisplay ? root.gpuDisplay.pct / 100 : 0, color: root.gpuMeterFill }
             ]
             anchors.verticalCenter: parent.verticalCenter
           }
@@ -487,27 +546,32 @@ BarWidget {
       // ---- Network segment (two-line rates) ----
       Item {
         visible: root.segmentEnabled("network")
-        implicitWidth: netCol.implicitWidth
+        implicitWidth: Style.space(Theme.metrics.barNetWidth)
         implicitHeight: netCol.implicitHeight
 
         Column {
           id: netCol
+          width: parent.width
           spacing: 0
           Text {
             textFormat: Text.PlainText
-            text: "↑ " + (root.ifaceRates ? Model.formatRate(root.ifaceRates.txBps) : "--")
+            width: parent.width
+            elide: Text.ElideRight
+            horizontalAlignment: Text.AlignRight
+            text: "↑ " + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.txBps) : "--")
             color: button.foreground
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
-            anchors.right: parent.right
           }
           Text {
             textFormat: Text.PlainText
-            text: "↓ " + (root.ifaceRates ? Model.formatRate(root.ifaceRates.rxBps) : "--")
+            width: parent.width
+            elide: Text.ElideRight
+            horizontalAlignment: Text.AlignRight
+            text: "↓ " + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.rxBps) : "--")
             color: button.foreground
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
-            anchors.right: parent.right
           }
         }
 

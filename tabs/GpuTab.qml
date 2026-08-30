@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Ui
 import "../Model.js" as Model
 import "../Theme.js" as Theme
 import "../components" as Components
@@ -24,6 +25,10 @@ Item {
     return model.sample ? model.sample.gpu : null
   }
   readonly property string nvidiaError: model ? model.nvidiaError : ""
+  readonly property var gpuInfo: {
+    if (!model || !model.sysInfo || !model.sysInfo.gpusByCard || !gpu) return null
+    return model.sysInfo.gpusByCard[gpu.card] || null
+  }
 
   implicitWidth: 200
   implicitHeight: column.implicitHeight
@@ -31,7 +36,35 @@ Item {
   function refresh() {
     // Stream-fed vendors need no panel sampler; NVIDIA polls from the
     // widget while this tab is open — nudge it for an immediate refresh.
+    if (model && model.refreshSysInfo) model.refreshSysInfo()
     if (model && vendor === "nvidia" && model.pollNvidia) model.pollNvidia()
+  }
+
+  readonly property string gpuTitle: {
+    if (vendor === "nvidia" && live && live.name) return live.name
+    if (gpuInfo && gpuInfo.name) return gpuInfo.name
+    if (gpuInfo && gpuInfo.pciId) return Model.gpuVendorLabel(vendor) + " · " + gpuInfo.pciId
+    if (vendor) return Model.gpuVendorLabel(vendor)
+    return "GPU"
+  }
+
+  readonly property string gpuMeta: {
+    var parts = []
+    if (vendor) parts.push(Model.gpuVendorLabel(vendor))
+    if (gpu && gpu.card) parts.push(gpu.card)
+    if (gpuInfo && gpuInfo.driver) parts.push("driver " + gpuInfo.driver)
+    if (gpuInfo && gpuInfo.slot) parts.push(gpuInfo.slot)
+    return parts.join(" · ")
+  }
+
+  readonly property string gpuDetail: {
+    if (!live) return ""
+    if (vendor === "nvidia") {
+      if (live.memTotalM === null || live.memTotalM === undefined) return ""
+      return live.memTotalM + " MiB VRAM"
+    }
+    if (live.vramTotal === null || live.vramTotal === undefined) return ""
+    return Model.formatBytes(live.vramTotal) + " VRAM"
   }
 
   function busyText() {
@@ -68,6 +101,16 @@ Item {
     width: root.width
     spacing: Style.space(8)
 
+    PanelHero {
+      width: parent.width
+      visible: root.vendor !== ""
+      title: root.gpuTitle
+      meta: root.gpuMeta
+      detail: root.gpuDetail
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
+
     // Multi-GPU selector — only when more than one card was detected.
     Row {
       visible: root.model && root.model.gpus.length > 1
@@ -91,8 +134,8 @@ Item {
           width: cardLabel.implicitWidth + Style.space(12)
           height: cardLabel.implicitHeight + Style.space(6)
           radius: Style.cornerRadius
-          color: current ? Style.selectedFillFor(root.panel ? root.panel.barForeground : "#cacccc", "#7aa2f7")
-                         : Style.normalFillFor(root.panel ? root.panel.barForeground : "#cacccc", "#7aa2f7")
+          color: current ? Style.selectedFillFor(root.panel ? root.panel.barForeground : "#cacccc", Color.accent)
+                         : Style.normalFillFor(root.panel ? root.panel.barForeground : "#cacccc", Color.accent)
 
           Text {
             id: cardLabel
@@ -117,7 +160,7 @@ Item {
       textFormat: Text.PlainText
       visible: root.nvidiaError !== ""
       text: root.nvidiaError
-      color: "#f7768e"
+      color: Color.urgent
       font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
       font.pixelSize: Style.font.body
       width: parent.width
@@ -162,6 +205,24 @@ Item {
         fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
         anchors.verticalCenter: parent.verticalCenter
       }
+    }
+
+    Components.StatRow {
+      width: parent.width
+      label: "Driver"
+      visible: root.gpuInfo && root.gpuInfo.driver !== ""
+      value: root.gpuInfo ? root.gpuInfo.driver : "--"
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
+
+    Components.StatRow {
+      width: parent.width
+      label: "PCI slot"
+      visible: root.gpuInfo && root.gpuInfo.slot !== ""
+      value: root.gpuInfo ? root.gpuInfo.slot : "--"
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
     Components.StatRow {

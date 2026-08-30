@@ -19,6 +19,8 @@ Item {
   readonly property var comp: model ? model.memComp : null
   readonly property var swap: sample ? Model.swapUsage(sample.mem) : null
   readonly property var swapRate: model ? model.swapRate : null
+  readonly property var sysMem: model && model.sysInfo ? model.sysInfo.mem : null
+  readonly property var sysHost: model && model.sysInfo ? model.sysInfo.host : null
 
   property var rows: []
   property string errorText: ""
@@ -30,9 +32,76 @@ Item {
 
   function refresh() {
     if (!active) return
+    if (model && model.refreshSysInfo) model.refreshSysInfo()
     if (proc.running) return
     watchdog.restart()
     proc.running = true
+  }
+
+  readonly property string memTitle: {
+    if (comp) return Model.formatKiB(comp.totalK) + " installed"
+    return "Memory"
+  }
+
+  readonly property string memMeta: {
+    var m = sysMem
+    if (m && m.zram && m.zram.length > 0) {
+      var z = m.zram[0]
+      var bits = [z.dev]
+      if (z.alg) bits.push(z.alg)
+      if (z.diskBytes) bits.push(Model.formatBytes(z.diskBytes))
+      return bits.join(" · ")
+    }
+    if (m && m.swaps && m.swaps.length > 0) {
+      var s = m.swaps[0]
+      var parts = [s.kind]
+      if (s.file) parts.push(s.file)
+      if (s.sizeKb) parts.push(Model.formatKiB(s.sizeKb))
+      return parts.join(" · ")
+    }
+    if (swap && swap.totalK <= 0) return "no swap"
+    return ""
+  }
+
+  readonly property var swapDeviceRows: {
+    var out = []
+    var m = sysMem
+    var zramByDev = {}
+    var i
+    if (m && m.zram) {
+      for (i = 0; i < m.zram.length; i++) zramByDev[m.zram[i].dev] = m.zram[i]
+    }
+    if (m && m.swaps) {
+      for (i = 0; i < m.swaps.length; i++) {
+        var sw = m.swaps[i]
+        var label = sw.kind
+        var value = sw.file
+        if (sw.kind === "zram") {
+          var base = sw.file.replace(/^.*\//, "")
+          var z = zramByDev[base]
+          label = base || "zram"
+          var bits = []
+          if (z && z.alg) bits.push(z.alg)
+          bits.push(Model.formatKiB(sw.sizeKb))
+          value = bits.join(" · ")
+        } else {
+          value = (sw.file ? sw.file + " · " : "") + Model.formatKiB(sw.sizeKb)
+        }
+        out.push({ label: label, value: value })
+      }
+    }
+    return out
+  }
+
+  readonly property string hostLine: {
+    var h = sysHost
+    if (!h) return ""
+    var parts = []
+    if (h.sysVendor && h.productName) parts.push(h.sysVendor + " " + h.productName)
+    else if (h.productName) parts.push(h.productName)
+    else if (h.sysVendor) parts.push(h.sysVendor)
+    if (h.kernel) parts.push("Linux " + h.kernel)
+    return parts.join(" · ")
   }
 
   function apply(text) {
@@ -96,6 +165,14 @@ Item {
     id: column
     width: root.width
     spacing: Style.space(8)
+
+    PanelHero {
+      width: parent.width
+      title: root.memTitle
+      meta: root.memMeta
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
 
     Row {
       width: parent.width
@@ -198,6 +275,30 @@ Item {
              : "--"
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
+
+    Repeater {
+      model: root.swapDeviceRows
+
+      delegate: Components.StatRow {
+        required property var modelData
+        width: column.width
+        label: String(modelData.label || "Swap")
+        value: String(modelData.value || "--")
+        foreground: root.panel ? root.panel.barForeground : "#cacccc"
+        fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      }
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      visible: root.hostLine !== ""
+      text: root.hostLine
+      color: root.panel ? Qt.darker(root.panel.barForeground, 1.6) : "#cacccc"
+      font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      font.pixelSize: Style.font.caption
+      width: parent.width
+      wrapMode: Text.WordWrap
     }
 
     PanelSeparator {
