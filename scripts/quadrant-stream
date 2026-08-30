@@ -269,10 +269,10 @@ read_netdev() {
 read_diskstats() {
   # Rewrites global DISK_JSON with {"n","rd","rs","wr","ws","io"} fragments.
   # Whole block devices only (/sys/block/<name>); drop loop/ram/zram/fd/nbd/sr.
-  local major minor name reads _m1 rsect _rt writes _m2 wsect _wt _infl io_ticks _rest
+  local _maj _min name reads _m1 rsect _rt writes _m2 wsect _wt _infl io_ticks _rest
   local count=0
   DISK_JSON=""
-  while read -r major minor name reads _m1 rsect _rt writes _m2 wsect _wt _infl io_ticks _rest; do
+  while read -r _maj _min name reads _m1 rsect _rt writes _m2 wsect _wt _infl io_ticks _rest; do
     [[ $name =~ ^[A-Za-z0-9._+-]+$ ]] || continue
     case $name in
       loop*|ram*|zram*|fd*|nbd*|sr*) continue ;;
