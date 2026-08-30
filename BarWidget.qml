@@ -9,15 +9,17 @@ import "components" as Components
 // Quadrant bar slot: one compact widget covering CPU, GPU, memory, network,
 // and an optional disk segment. Owns the long-lived sampler
 // (quadrant-stream), the 60s history buffers, and GPU/disk detection; the
-// nested Panel reads everything through hostWidget.
+// nested Panel reads everything through hostWidget. An empty segments list
+// collapses the slot to a system-monitor glyph; the panel stays complete.
 BarWidget {
   id: root
   moduleName: "dev.bvisagie.quadrant"
 
   // ---- settings (manifest barWidget.defaults mirrored as fallbacks) ----
+  property var localSegments: null
   readonly property var segmentsSetting: {
-    var v = setting("segments", null)
-    return Array.isArray(v) ? v : ["cpu", "gpu", "memory", "network"]
+    if (Array.isArray(root.localSegments)) return root.localSegments
+    return Model.segmentsFromSetting(setting("segments", null))
   }
   readonly property int barIntervalMs: Model.clamp(setting("barIntervalMs", 1000), 250, 60000)
   readonly property int panelIntervalMs: Model.clamp(setting("panelIntervalMs", 2000), 500, 60000)
@@ -42,8 +44,9 @@ BarWidget {
     if (segmentEnabled("memory")) n++
     if (segmentEnabled("disk") && diskAvailable) n++
     if (segmentEnabled("network")) n++
-    return Math.max(1, n)
+    return n
   }
+  readonly property bool showMonitorFallback: visibleSegmentCount === 0
 
   function segmentEnabled(name) {
     return segmentsSetting.indexOf(name) !== -1
@@ -424,6 +427,23 @@ BarWidget {
     gpuDetectionError = ""
   }
 
+  function persistSegments(list) {
+    if (!root.bar || typeof root.bar.run !== "function") return
+    var value = JSON.stringify(list)
+    if (typeof value !== "string" || value.charAt(0) !== "[") return
+    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
+      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
+    var quotedValue = (typeof Util !== "undefined" && Util.shellQuote)
+      ? Util.shellQuote(value) : ("'" + value.replace(/'/g, "'\\''") + "'")
+    root.bar.run("omarchy bar set " + quotedId + " segments " + quotedValue)
+  }
+
+  function setBarSegment(name, enabled) {
+    var next = Model.toggleSegment(root.segmentsSetting, name, enabled)
+    root.localSegments = next
+    persistSegments(next)
+  }
+
   function persistGpuDevice(card) {
     if (!root.bar || typeof root.bar.run !== "function") return
     if (typeof card !== "string" || !/^card[0-9]+$/.test(card)) return
@@ -681,16 +701,45 @@ BarWidget {
       font.family: button.fontFamily
       font.pixelSize: Style.font.caption
     }
+    Text {
+      id: monitorSizer
+      visible: false
+      textFormat: Text.PlainText
+      text: Theme.barGlyphs.monitor
+      font.family: button.fontFamily
+      font.pixelSize: Style.font.caption
+    }
 
     Grid {
       id: segGrid
       z: 1
       anchors.centerIn: parent
-      columns: root.vertical ? 1 : root.visibleSegmentCount
+      columns: root.vertical ? 1 : Math.max(1, root.visibleSegmentCount)
       columnSpacing: Style.space(Theme.metrics.barSegmentGap)
       rowSpacing: Style.space(4)
       verticalItemAlignment: Grid.AlignVCenter
       horizontalItemAlignment: Grid.AlignHCenter
+
+      Item {
+        visible: root.showMonitorFallback
+        implicitWidth: {
+          var w = monitorSizer.implicitWidth
+          if (root.vertical) return Math.min(w, root.verticalSlot)
+          return w
+        }
+        implicitHeight: root.vertical
+                        ? Math.min(monitorSizer.implicitHeight, root.verticalSlot)
+                        : root.segmentHeight
+
+        Text {
+          textFormat: Text.PlainText
+          anchors.centerIn: parent
+          text: Theme.barGlyphs.monitor
+          color: button.foreground
+          font.family: button.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
 
       MetricCell {
         visible: root.segmentEnabled("cpu")

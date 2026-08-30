@@ -31,6 +31,9 @@ Panel {
     return all.filter(function (t) { return t !== "gpu" })
   }
   readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "MEMORY", "disk": "DRIVES", "net": "NETWORK" })
+  readonly property string barSegmentKey: Model.segmentKeyForTab(currentTab)
+  readonly property bool barSegmentEnabled: hostWidget && barSegmentKey !== ""
+                                            ? hostWidget.segmentEnabled(barSegmentKey) : false
 
   onTabsChanged: {
     if (tabs.indexOf(currentTab) < 0) currentTab = tabs[0]
@@ -123,48 +126,104 @@ Panel {
         spacing: Style.space(10)
 
         // ---- tab strip ----
-        Row {
+        Item {
           id: tabStrip
           Layout.fillWidth: true
-          spacing: Style.space(14)
+          implicitHeight: Math.max(tabRow.implicitHeight, barToggle.implicitHeight)
 
-          Repeater {
-            model: root.tabs
+          Row {
+            id: tabRow
+            anchors.left: parent.left
+            anchors.right: barToggle.left
+            anchors.rightMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(14)
+            clip: true
 
-            delegate: Item {
-              id: tabButton
-              required property string modelData
-              required property int index
+            Repeater {
+              model: root.tabs
 
-              readonly property bool current: root.currentTab === modelData
+              delegate: Item {
+                id: tabButton
+                required property string modelData
+                required property int index
 
-              implicitWidth: tabLabel.implicitWidth
-              implicitHeight: tabLabel.implicitHeight + Style.space(4)
+                readonly property bool current: root.currentTab === modelData
 
-              Text {
-                id: tabLabel
-                textFormat: Text.PlainText
-                text: root.tabLabels[tabButton.modelData] || tabButton.modelData
-                color: tabButton.current ? root.barForeground : Qt.darker(root.barForeground, 1.5)
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.body
-                font.bold: tabButton.current
+                implicitWidth: tabLabel.implicitWidth
+                implicitHeight: tabLabel.implicitHeight + Style.space(4)
+
+                Text {
+                  id: tabLabel
+                  textFormat: Text.PlainText
+                  text: root.tabLabels[tabButton.modelData] || tabButton.modelData
+                  color: tabButton.current ? root.barForeground : Qt.darker(root.barForeground, 1.5)
+                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                  font.pixelSize: Style.font.body
+                  font.bold: tabButton.current
+                }
+
+                Rectangle {
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.bottom: parent.bottom
+                  height: Style.space(2)
+                  radius: 1
+                  color: Color.accent
+                  visible: tabButton.current
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.currentTab = tabButton.modelData
+                }
               }
+            }
+          }
+
+          MouseArea {
+            id: barToggle
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: barToggleRow.implicitWidth
+            height: barToggleRow.implicitHeight
+            implicitWidth: barToggleRow.implicitWidth
+            implicitHeight: barToggleRow.implicitHeight
+            visible: root.hostWidget && root.barSegmentKey !== ""
+            hoverEnabled: false
+            cursorShape: Qt.PointingHandCursor
+            acceptedButtons: Qt.LeftButton
+            onClicked: {
+              if (root.hostWidget && root.hostWidget.setBarSegment)
+                root.hostWidget.setBarSegment(root.barSegmentKey, !root.barSegmentEnabled)
+            }
+
+            Row {
+              id: barToggleRow
+              spacing: Style.space(6)
 
               Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: Style.space(2)
-                radius: 1
-                color: Color.accent
-                visible: tabButton.current
+                width: Style.space(12)
+                height: Style.space(12)
+                radius: 2
+                anchors.verticalCenter: parent.verticalCenter
+                color: root.barSegmentEnabled
+                       ? Color.accent
+                       : "transparent"
+                border.width: 1
+                border.color: root.barSegmentEnabled
+                              ? Color.accent
+                              : Qt.darker(root.barForeground, 1.6)
               }
 
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.currentTab = tabButton.modelData
+              Text {
+                textFormat: Text.PlainText
+                text: "Show in bar"
+                color: root.barForeground
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.caption
+                anchors.verticalCenter: parent.verticalCenter
               }
             }
           }

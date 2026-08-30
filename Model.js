@@ -52,6 +52,57 @@ function normalizeDeviceSetting(value) {
   return s
 }
 
+// Canonical bar-segment order. Unknown names are dropped so a typo in
+// shell.json cannot invent a sixth meter. An empty list is valid and
+// means "icon-only fallback" rather than "reset to defaults".
+var BAR_SEGMENTS = ["cpu", "gpu", "memory", "disk", "network"]
+var DEFAULT_BAR_SEGMENTS = ["cpu", "gpu", "memory", "network"]
+
+function segmentKeyForTab(tab) {
+  var name = String(tab || "")
+  if (name === "mem") return "memory"
+  if (name === "net") return "network"
+  if (name === "cpu" || name === "gpu" || name === "disk") return name
+  return ""
+}
+
+function normalizeSegments(list) {
+  var seen = {}
+  var i
+  if (Array.isArray(list)) {
+    for (i = 0; i < list.length; i++) {
+      var name = String(list[i] || "")
+      if (BAR_SEGMENTS.indexOf(name) >= 0) seen[name] = true
+    }
+  }
+  var out = []
+  for (i = 0; i < BAR_SEGMENTS.length; i++) {
+    if (seen[BAR_SEGMENTS[i]]) out.push(BAR_SEGMENTS[i])
+  }
+  return out
+}
+
+function segmentsFromSetting(value) {
+  if (!Array.isArray(value)) return DEFAULT_BAR_SEGMENTS.slice()
+  return normalizeSegments(value)
+}
+
+function toggleSegment(list, name, enabled) {
+  var key = String(name || "")
+  if (BAR_SEGMENTS.indexOf(key) < 0) return normalizeSegments(list)
+  var current = normalizeSegments(list)
+  var seen = {}
+  var i
+  for (i = 0; i < current.length; i++) seen[current[i]] = true
+  if (enabled) seen[key] = true
+  else delete seen[key]
+  var out = []
+  for (i = 0; i < BAR_SEGMENTS.length; i++) {
+    if (seen[BAR_SEGMENTS[i]]) out.push(BAR_SEGMENTS[i])
+  }
+  return out
+}
+
 // ------------------------------------------------------------ stream sample
 //
 // One line of quadrant-stream output:
@@ -1388,6 +1439,10 @@ if (typeof module !== "undefined" && module.exports) {
     num: num,
     safeJson: safeJson,
     normalizeDeviceSetting: normalizeDeviceSetting,
+    segmentKeyForTab: segmentKeyForTab,
+    normalizeSegments: normalizeSegments,
+    segmentsFromSetting: segmentsFromSetting,
+    toggleSegment: toggleSegment,
     parseStreamLine: parseStreamLine,
     cpuDelta: cpuDelta,
     netRates: netRates,

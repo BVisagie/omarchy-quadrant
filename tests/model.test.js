@@ -239,6 +239,25 @@ test("normalizeDeviceSetting strips wrapping quotes", () => {
   assert.equal(Model.normalizeDeviceSetting("auto"), "auto");
 });
 
+test("toggleSegment adds, removes, and allows an empty list", () => {
+  const def = ["cpu", "gpu", "memory", "network"];
+  assert.deepEqual(Model.segmentsFromSetting(null), def);
+  assert.deepEqual(Model.segmentsFromSetting(["cpu", "foo", "disk", "cpu"]), ["cpu", "disk"]);
+  assert.deepEqual(Model.segmentsFromSetting([]), []);
+  assert.equal(Model.segmentKeyForTab("mem"), "memory");
+  assert.equal(Model.segmentKeyForTab("net"), "network");
+  assert.equal(Model.segmentKeyForTab("disk"), "disk");
+  assert.equal(Model.segmentKeyForTab("nope"), "");
+  assert.deepEqual(Model.toggleSegment(def, "disk", true), ["cpu", "gpu", "memory", "disk", "network"]);
+  assert.deepEqual(Model.toggleSegment(def, "cpu", false), ["gpu", "memory", "network"]);
+  assert.deepEqual(Model.toggleSegment(["cpu"], "cpu", false), []);
+  assert.deepEqual(Model.toggleSegment([], "cpu", true), ["cpu"]);
+  assert.deepEqual(Model.toggleSegment(def, "cpu", true), def);
+  assert.deepEqual(Model.toggleSegment(def, "nope", true), def);
+  assert.deepEqual(Model.toggleSegment(["cpu", "disk"], "memory", true), ["cpu", "memory", "disk"]);
+  assert.deepEqual(Model.toggleSegment(["network", "cpu"], "gpu", true), ["cpu", "gpu", "network"]);
+});
+
 test("resolveBackingDisk maps mapper and partition sources", () => {
   const backing = { "dm-0": "nvme0n1", cryptroot: "nvme0n1" };
   assert.equal(Model.resolveBackingDisk("/dev/dm-0", backing), "nvme0n1");
@@ -701,6 +720,7 @@ test("Theme.barLabelFor resolves glyph, letter, and none", () => {
   assert.equal(Theme.barLabelFor("glyph", "gpu"), "\u{F08AE}");
   assert.equal(Theme.barLabelFor("glyph", "mem"), "\uEFC5");
   assert.equal(Theme.barLabelFor("glyph", "disk"), "\u{F02CA}");
+  assert.equal(Theme.barGlyphs.monitor, "\u{F0A07}");
   assert.equal(Theme.barLabelFor("letter", "cpu"), "C");
   assert.equal(Theme.barLabelFor("letter", "gpu"), "G");
   assert.equal(Theme.barLabelFor("letter", "mem"), "M");
