@@ -6,7 +6,7 @@ import "../Model.js" as Model
 import "../Theme.js" as Theme
 import "../components" as Components
 
-// Memory tab: PSI pressure ring + RAM composition ring, breakdown rows,
+// Memory tab: RAM composition ring + PSI pressure ring, breakdown rows,
 // swap totals and rates, and the top-by-RSS process roster.
 Item {
   id: root
@@ -199,21 +199,6 @@ Item {
         anchors.top: parent.top
 
         Components.RingGauge {
-          id: pressureRing
-          // PSI memory "some" avg10 as pressure; absent PSI reads as no data.
-          size: Style.space(Theme.metrics.largeRingSize)
-          thickness: Style.space(Theme.metrics.largeRingThickness)
-          readonly property var psi: root.sample ? root.sample.psi : null
-          fraction: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Math.min(1, psi.ms10 / 100) : 0
-          color: Theme.series.swap
-          trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
-          centerText: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Model.formatPct(psi.ms10, 1) : "--"
-          subText: "pressure"
-          foreground: root.panel ? root.panel.barForeground : "#cacccc"
-          fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-        }
-
-        Components.RingGauge {
           id: ramRing
           size: Style.space(Theme.metrics.largeRingSize)
           thickness: Style.space(Theme.metrics.largeRingThickness)
@@ -227,6 +212,21 @@ Item {
           trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
           centerText: c ? Model.formatPct(c.usedPct) : "--"
           subText: "RAM"
+          foreground: root.panel ? root.panel.barForeground : "#cacccc"
+          fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+        }
+
+        Components.RingGauge {
+          id: pressureRing
+          // PSI memory "some" avg10 as pressure; absent PSI reads as no data.
+          size: Style.space(Theme.metrics.largeRingSize)
+          thickness: Style.space(Theme.metrics.largeRingThickness)
+          readonly property var psi: root.sample ? root.sample.psi : null
+          fraction: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Math.min(1, psi.ms10 / 100) : 0
+          color: Theme.series.swap
+          trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
+          centerText: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Model.formatPct(psi.ms10, 1) : "--"
+          subText: "pressure"
           foreground: root.panel ? root.panel.barForeground : "#cacccc"
           fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
         }

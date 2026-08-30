@@ -100,7 +100,7 @@ Panel {
       var natural = tabStrip.implicitHeight + tabSep.implicitHeight
                     + bodyColumn.implicitHeight + hintText.implicitHeight
                     + Style.space(8) + sp * 4
-      return panel.fittedContentHeight(natural, Style.space(560))
+      return panel.fittedContentHeight(natural)
     }
 
     PanelKeyCatcher {

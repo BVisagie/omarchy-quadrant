@@ -25,7 +25,7 @@ else toggles the panel on the last-used tab.
   <img src="docs/screenshots/gpu.png" alt="GPU tab: AMD Radeon RX 7900 with busy and VRAM rings" width="420">
 </p>
 <p align="center">
-  <img src="docs/screenshots/memory.png" alt="Memory tab: pressure and RAM rings with composition and top processes" width="420">
+  <img src="docs/screenshots/memory.png" alt="Memory tab: RAM and pressure rings with composition and top processes" width="420">
   <img src="docs/screenshots/drives.png" alt="Drives tab: NVMe identity, read/write history, and mounts" width="420">
 </p>
 <p align="center">
@@ -171,10 +171,11 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   busy metrics (sampled while the CPU tab is open).
 - **Memory**: composition splits RAM into Applications / Kernel
   (unreclaimable slab) / Cache (page cache + **Buffers** + SReclaimable) /
-  Free. The process column is "% of RAM". The pressure ring is PSI memory
-  `some avg10`; PSI is **optional per resource** — when `/proc/pressure/cpu`
+  Free. The RAM ring is the primary gauge; the pressure ring is PSI memory
+  `some avg10`. PSI is **optional per resource** — when `/proc/pressure/cpu`
   or `/proc/pressure/memory` is unreadable that half is JSON `null` and the
-  ring shows `--`, not zero. The tab header is installed RAM; swap devices
+  ring shows `--`, not zero. The process column is "% of RAM". The tab
+  header is installed RAM; swap devices
   from `/proc/swaps` are listed (zram includes the active compression
   algorithm and disk size).
 - **GPU**: the GPU tab and bar segment cover **dedicated** cards only.
