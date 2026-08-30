@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "disks": [
+    {"name": "nvme0n1", "model": "Samsung SSD 980 1TB", "rotational": false, "sizeBytes": 1000204886016, "tempC": 35},
+    {"name": "nvme1n1", "model": "Samsung SSD 980 PRO 1TB", "rotational": false, "sizeBytes": 1000204886016, "tempC": 38},
+    {"name": "dm-0", "model": "", "rotational": false, "sizeBytes": 997000000000, "tempC": null}
+  ],
+  "backing": {
+    "dm-0": "nvme0n1",
+    "cryptroot": "nvme0n1"
+  },
+  "dfPayload": "Filesystem     Type        1-blocks         Used    Available Capacity Mounted on\n/dev/mapper/cryptroot ext4      997000000000  160000000000  837000000000      16% /\n/dev/nvme1n1p1 vfat        2097152000     167772160  1929379840       8% /boot\n/dev/mapper/cryptroot ext4      997000000000  160000000000  837000000000      16% /home\n"
+}

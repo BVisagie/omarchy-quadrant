@@ -41,6 +41,17 @@ function safeJson(line) {
   }
 }
 
+// omarchy bar set stores JSON strings; a persist of '"nvme0n1"' can arrive
+// with the wrapping quotes still attached. Empty after strip is auto.
+function normalizeDeviceSetting(value) {
+  var s = String(value === null || value === undefined ? "" : value)
+  s = s.replace(/^\s+|\s+$/g, "")
+  if (s.length >= 2 && s.charAt(0) === '"' && s.charAt(s.length - 1) === '"')
+    s = s.slice(1, -1).replace(/^\s+|\s+$/g, "")
+  if (s === "") return "auto"
+  return s
+}
+
 // ------------------------------------------------------------ stream sample
 //
 // One line of quadrant-stream output:
@@ -314,6 +325,46 @@ function parentDiskName(name) {
   return n
 }
 
+// Device-mapper and md RAID whole devices. Folded onto a unique physical
+// parent when disk-info can name one; kept as their own disk otherwise.
+function isVirtualDiskName(name) {
+  var n = String(name || "")
+  return /^dm-/.test(n) || /^md[0-9]/.test(n)
+}
+
+function diskSourceBase(sourceOrName) {
+  var s = String(sourceOrName || "")
+  if (s.indexOf("/dev/") === 0) s = s.slice(5)
+  if (s.indexOf("mapper/") === 0) s = s.slice(7)
+  return s
+}
+
+// Map a df source or sysfs name through disk-info's backing table onto
+// the whole disk the Drives tab should follow.
+function resolveBackingDisk(sourceOrName, backing) {
+  var base = diskSourceBase(sourceOrName)
+  if (!base) return ""
+  var map = (backing && typeof backing === "object" && !Array.isArray(backing)) ? backing : {}
+  if (typeof map[base] === "string" && map[base]) return map[base]
+  var parent = parentDiskName(base)
+  if (typeof map[parent] === "string" && map[parent]) return map[parent]
+  return parent
+}
+
+function diskNamePresent(name, disks, rates) {
+  if (!name) return false
+  var i
+  if (Array.isArray(disks)) {
+    for (i = 0; i < disks.length; i++)
+      if (disks[i] && disks[i].name === name) return true
+  }
+  if (Array.isArray(rates)) {
+    for (i = 0; i < rates.length; i++)
+      if (rates[i] && rates[i].name === name) return true
+  }
+  return false
+}
+
 // Parse /proc/diskstats. Whole-device filter matches the stream: drop
 // partitions and excluded names. Counters: reads completed, sectors read,
 // writes completed, sectors written, io_ticks (ms).
@@ -445,19 +496,49 @@ function parseDiskInfoDisks(list) {
   return out
 }
 
+function parseDiskInfoBacking(obj) {
+  var out = {}
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return out
+  for (var k in obj) {
+    if (!Object.prototype.hasOwnProperty.call(obj, k)) continue
+    if (!/^[A-Za-z0-9._+-]+$/.test(k)) continue
+    var v = obj[k]
+    if (typeof v !== "string" || !/^[A-Za-z0-9._+-]+$/.test(v)) continue
+    out[k] = v
+  }
+  return out
+}
+
 function parseDiskInfo(env) {
   if (!env || typeof env !== "object" || env.ok !== true) return null
+  var backing = parseDiskInfoBacking(env.backing)
+  var disks = parseDiskInfoDisks(env.disks)
+  var listed = {}
+  var i
+  for (i = 0; i < disks.length; i++) listed[disks[i].name] = true
+  var visible = []
+  for (i = 0; i < disks.length; i++) {
+    var mapped = backing[disks[i].name]
+    if (mapped && mapped !== disks[i].name && listed[mapped]) continue
+    visible.push(disks[i])
+  }
   return {
-    disks: parseDiskInfoDisks(env.disks),
-    mounts: parseDf(env.dfPayload)
+    disks: visible,
+    mounts: parseDf(env.dfPayload),
+    backing: backing
   }
 }
 
 // diskDevice setting: "auto" prefers the disk backing `/`, then the
 // largest by sizeBytes, then the first in the rate list. A specific name
-// must exist in `disks` (identity) or `rates` (live counters).
-function pickDisk(disks, mounts, rates, setting) {
-  var wanted = typeof setting === "string" ? setting : "auto"
+// must exist in `disks` (identity) or `rates` (live counters). Mapper
+// aliases in `backing` remap onto the physical parent.
+function pickDisk(disks, mounts, rates, setting, backing) {
+  var wanted = normalizeDeviceSetting(typeof setting === "string" ? setting : "auto")
+  if (wanted !== "auto") {
+    var remapped = resolveBackingDisk(wanted, backing)
+    if (remapped) wanted = remapped
+  }
   var names = {}
   var i
   if (Array.isArray(rates)) {
@@ -474,11 +555,18 @@ function pickDisk(disks, mounts, rates, setting) {
   if (Array.isArray(mounts)) {
     for (i = 0; i < mounts.length; i++) {
       if (!mounts[i] || mounts[i].target !== "/") continue
-      var src = String(mounts[i].source || "")
-      var base = src.replace(/^\/dev\//, "").replace(/^mapper\//, "")
-      var parent = parentDiskName(base)
-      if (present(parent)) return parent
-      if (present(base)) return base
+      var resolved = resolveBackingDisk(mounts[i].source, backing)
+      if (present(resolved)) return resolved
+    }
+  }
+
+  var hasPhysical = false
+  if (Array.isArray(disks)) {
+    for (i = 0; i < disks.length; i++) {
+      if (disks[i] && present(disks[i].name) && !isVirtualDiskName(disks[i].name)) {
+        hasPhysical = true
+        break
+      }
     }
   }
 
@@ -488,13 +576,20 @@ function pickDisk(disks, mounts, rates, setting) {
     for (i = 0; i < disks.length; i++) {
       var d = disks[i]
       if (!d || !present(d.name)) continue
+      if (hasPhysical && isVirtualDiskName(d.name)) continue
       var sz = num(d.sizeBytes, 0)
       if (sz > bestSize) { bestSize = sz; bestName = d.name }
     }
   }
   if (bestName) return bestName
-  if (Array.isArray(rates) && rates.length > 0 && rates[0] && rates[0].name)
-    return rates[0].name
+  if (Array.isArray(rates) && rates.length > 0) {
+    for (i = 0; i < rates.length; i++) {
+      if (!rates[i] || !rates[i].name) continue
+      if (hasPhysical && isVirtualDiskName(rates[i].name)) continue
+      return rates[i].name
+    }
+    if (rates[0] && rates[0].name) return rates[0].name
+  }
   return null
 }
 
@@ -1292,12 +1387,16 @@ if (typeof module !== "undefined" && module.exports) {
     clamp: clamp,
     num: num,
     safeJson: safeJson,
+    normalizeDeviceSetting: normalizeDeviceSetting,
     parseStreamLine: parseStreamLine,
     cpuDelta: cpuDelta,
     netRates: netRates,
     isExcludedDiskName: isExcludedDiskName,
     isPartitionName: isPartitionName,
     parentDiskName: parentDiskName,
+    isVirtualDiskName: isVirtualDiskName,
+    resolveBackingDisk: resolveBackingDisk,
+    diskNamePresent: diskNamePresent,
     parseDiskstats: parseDiskstats,
     diskRates: diskRates,
     parseDf: parseDf,

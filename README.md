@@ -116,8 +116,7 @@ or manual deletion under `~/.config/omarchy/plugins/` is required.
   is omitted when no supported card is present) switch tabs, `R`
   refreshes the active tab, `Esc` closes. `Tab` keeps its Quattro meaning
   (switch to the adjacent bar panel) and is deliberately not used inside
-  Quadrant. DMI vendor/product and the kernel release sit in the panel
-  footer, visible from every tab.
+  Quadrant.
 - **IPC** (for scripts and keybinds):
 
 ```sh
@@ -145,7 +144,7 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
 | `panelIntervalMs` | `2000` | On-demand sampler cadence while the panel is open (500–60000) |
 | `networkInterface` | `"auto"` | `auto` = default route across IPv4 **and** IPv6, lowest metric wins, IPv4 takes ties |
 | `gpuDevice` | `"auto"` | `auto` = boot display card when determinable, else `card0`; or a specific `cardN` |
-| `diskDevice` | `"auto"` | `auto` = disk backing `/`, else the largest whole device; or a sysfs name such as `nvme0n1` |
+| `diskDevice` | `"auto"` | `auto` = physical disk backing `/` (LUKS/LVM folded), else the largest whole device; or a sysfs name such as `nvme0n1` |
 | `barPalette` | `"theme"` | `theme` = live Omarchy accent fills, foreground track, urgent at ≥90%; `vivid` = original per-resource hues |
 | `barLabels` | `"glyph"` | `glyph` = Nerd Font icons; `letter` = C/G/M/D; `none` = percentage only |
 
@@ -164,8 +163,7 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   or `/proc/pressure/memory` is unreadable that half is JSON `null` and the
   ring shows `--`, not zero. The tab header is installed RAM; swap devices
   from `/proc/swaps` are listed (zram includes the active compression
-  algorithm and disk size). DMI vendor/product and the kernel release
-  appear in the panel footer when readable, not on this tab.
+  algorithm and disk size).
 - **GPU**: AMD reads `amdgpu` sysfs (`gpu_busy_percent`, `mem_busy_percent`,
   per-engine `engine/*/busy_percent`, VRAM info, hwmon temp/power, active
   DPM sclk). NVIDIA runs `nvidia-smi` (timeout-bounded,
@@ -181,14 +179,22 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   from sysfs `uevent`. Per-process GPU attribution is v2.
 - **Disk**: `/proc/diskstats` for whole block devices (`/sys/block/<name>`),
   excluding `loop*`, `ram*`, `zram*` (zram is on the Memory tab), `fd*`,
-  `nbd*`, and `sr*`. Rates are 512-byte sectors; busy % is `io_ticks` over
-  wall time. Capacity per mount comes from `df -P -B1 -T`, skipping
-  virtual filesystems. Device model and SSD/HDD come from sysfs; NVMe
-  temperature is the `nvme` hwmon only — same whitelist rule as CPU temp,
-  never a first-readable-sensor fallback. `auto` follows the disk backing
-  `/`, else the largest whole device. Per-process disk I/O is deferred:
-  `/proc/<pid>/io` is only readable for your own processes, so a
-  half-attributed list would lie. The disk **bar segment is opt-in**.
+  `nbd*`, and `sr*`. Device-mapper (`dm-*`) and md RAID (`mdN`) with a
+  **single** physical parent are folded onto that parent — LUKS root on
+  `nvme0n1p2` is shown as `nvme0n1`, not as `dm-0`. RAID across two disks
+  stays selectable as `md0`. Rates are 512-byte sectors on the physical
+  (or unfolded) device; busy % is `io_ticks` over wall time. Capacity per
+  mount comes from `df -P -B1 -T`, skipping virtual filesystems, and the
+  Drives tab lists only mounts that resolve onto the selected disk.
+  Device model and SSD/HDD come from sysfs; NVMe temperature is the
+  `nvme` hwmon only — same whitelist rule as CPU temp, never a
+  first-readable-sensor fallback. `auto` follows the disk backing `/`
+  after that fold, else the largest whole device. A pinned name that is
+  missing after remap shows **Pinned disk … is not available**; wrapping
+  quotes from `omarchy bar set` are stripped on read. Per-process disk
+  I/O is deferred: `/proc/<pid>/io` is only readable for your own
+  processes, so a half-attributed list would lie. The disk **bar segment
+  is opt-in**.
 - **Network**: rates for the selected interface plus 60s down/up history.
   Per-process attribution uses per-socket TCP byte counters from
   `ss -tinp`, scoped to the watched interface's addresses (ss is global;
