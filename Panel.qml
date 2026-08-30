@@ -24,7 +24,7 @@ Panel {
   // Last-used tab survives close/reopen.
   property string currentTab: "cpu"
 
-  readonly property bool gpuAvailable: hostWidget ? hostWidget.gpuAvailable === true : false
+  readonly property bool gpuAvailable: hostWidget ? hostWidget.discreteGpuAvailable === true : false
   readonly property var tabs: {
     var all = ["cpu", "gpu", "mem", "disk", "net"]
     if (gpuAvailable) return all
@@ -100,7 +100,7 @@ Panel {
       var natural = tabStrip.implicitHeight + tabSep.implicitHeight
                     + bodyColumn.implicitHeight + hintText.implicitHeight
                     + Style.space(8) + sp * 4
-      return panel.fittedContentHeight(natural, Style.space(560))
+      return panel.fittedContentHeight(natural)
     }
 
     PanelKeyCatcher {
@@ -112,7 +112,14 @@ Panel {
         if (dx !== 0) root.stepTab(dx)
       }
       onTextKey: function(t) {
-        if (t === "r" || t === "R") { root.refreshActiveTab(); return }
+        if (t === "r" || t === "R") {
+          if (root.hostWidget && typeof root.hostWidget.refreshSysInfo === "function")
+            root.hostWidget.refreshSysInfo()
+          if (root.hostWidget && typeof root.hostWidget.pollIgpu === "function")
+            root.hostWidget.pollIgpu()
+          root.refreshActiveTab()
+          return
+        }
         if (t >= "1" && t <= "9") {
           var n = parseInt(t, 10)
           if (n >= 1 && n <= root.tabs.length) root.selectTabIndex(n - 1)
@@ -277,6 +284,17 @@ Panel {
                 return messages.join(" · ")
               }
               color: Color.urgent
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.caption
+              width: parent.width
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              visible: root.hostWidget && root.hostWidget.gpuDeviceWarning !== ""
+              text: root.hostWidget ? String(root.hostWidget.gpuDeviceWarning || "") : ""
+              color: Qt.darker(root.barForeground, 1.4)
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.caption
               width: parent.width

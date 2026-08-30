@@ -6,7 +6,7 @@ import "../Model.js" as Model
 import "../Theme.js" as Theme
 import "../components" as Components
 
-// Memory tab: PSI pressure ring + RAM composition ring, breakdown rows,
+// Memory tab: RAM composition ring + PSI pressure ring, breakdown rows,
 // swap totals and rates, and the top-by-RSS process roster.
 Item {
   id: root
@@ -60,6 +60,18 @@ Item {
     }
     if (swap && swap.totalK <= 0) return "no swap"
     return ""
+  }
+
+  readonly property color memTrack: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
+  readonly property var compositionSegments: {
+    var c = root.comp
+    if (!c || !(c.totalK > 0)) return []
+    return [
+      { fraction: c.appsK / c.totalK, color: Theme.series.memApps },
+      { fraction: c.cacheK / c.totalK, color: Theme.series.memCache },
+      { fraction: c.kernelK / c.totalK, color: Theme.series.memKernel },
+      { fraction: c.freeK / c.totalK, color: root.memTrack }
+    ]
   }
 
   readonly property var swapDeviceRows: {
@@ -162,61 +174,88 @@ Item {
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
-    Row {
+    Item {
       id: memoryOverview
       width: parent.width
-      spacing: Style.space(18)
+      readonly property int ringGap: Style.space(18)
+      readonly property int legendMinWidth: Style.space(8) + Style.space(6) * 2
+                                            + legendLabelSizer.implicitWidth
+                                            + legendValueSizer.implicitWidth
+      readonly property int ringRowWidth: pressureRing.width + ramRing.width + ringGap
+      readonly property bool legendBeside: width - ringRowWidth - ringGap >= legendMinWidth
+      implicitHeight: legendBeside
+                      ? Math.max(memoryRings.implicitHeight, memoryLegend.implicitHeight)
+                      : memoryRings.implicitHeight + Style.space(8) + memoryLegend.implicitHeight
 
-      Components.RingGauge {
-        id: pressureRing
-        // PSI memory "some" avg10 as pressure; absent PSI reads as no data.
-        size: Style.space(Theme.metrics.largeRingSize)
-        thickness: Style.space(Theme.metrics.largeRingThickness)
-        readonly property var psi: root.sample ? root.sample.psi : null
-        fraction: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Math.min(1, psi.ms10 / 100) : 0
-        color: Theme.series.swap
-        trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
-        centerText: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Model.formatPct(psi.ms10, 1) : "--"
-        subText: "pressure"
-        foreground: root.panel ? root.panel.barForeground : "#cacccc"
-        fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-        anchors.verticalCenter: parent.verticalCenter
+      Text {
+        id: legendLabelSizer
+        visible: false
+        textFormat: Text.PlainText
+        text: "Applications"
+        font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+      Text {
+        id: legendValueSizer
+        visible: false
+        textFormat: Text.PlainText
+        text: "999.9 GiB"
+        font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.caption
       }
 
-      Components.RingGauge {
-        id: ramRing
-        size: Style.space(Theme.metrics.largeRingSize)
-        thickness: Style.space(Theme.metrics.largeRingThickness)
-        readonly property var c: root.comp
-        segments: c ? [
-          { fraction: c.totalK > 0 ? c.appsK / c.totalK : 0, color: Theme.series.memApps },
-          { fraction: c.totalK > 0 ? c.cacheK / c.totalK : 0, color: Theme.series.memCache },
-          { fraction: c.totalK > 0 ? c.kernelK / c.totalK : 0, color: Theme.series.memKernel },
-          { fraction: c.totalK > 0 ? c.freeK / c.totalK : 0, color: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc") }
-        ] : []
-        trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
-        centerText: c ? Model.formatPct(c.usedPct) : "--"
-        subText: "RAM"
-        foreground: root.panel ? root.panel.barForeground : "#cacccc"
-        fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-        anchors.verticalCenter: parent.verticalCenter
+      Row {
+        id: memoryRings
+        spacing: memoryOverview.ringGap
+        anchors.left: parent.left
+        anchors.top: parent.top
+
+        Components.RingGauge {
+          id: ramRing
+          size: Style.space(Theme.metrics.largeRingSize)
+          thickness: Style.space(Theme.metrics.largeRingThickness)
+          readonly property var c: root.comp
+          segments: root.compositionSegments
+          trackColor: root.memTrack
+          centerText: c ? Model.formatPct(c.usedPct) : "--"
+          subText: "RAM"
+          foreground: root.panel ? root.panel.barForeground : "#cacccc"
+          fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+        }
+
+        Components.RingGauge {
+          id: pressureRing
+          // PSI memory "some" avg10 as pressure; absent PSI reads as no data.
+          size: Style.space(Theme.metrics.largeRingSize)
+          thickness: Style.space(Theme.metrics.largeRingThickness)
+          readonly property var psi: root.sample ? root.sample.psi : null
+          fraction: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Math.min(1, psi.ms10 / 100) : 0
+          color: Theme.series.swap
+          trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
+          centerText: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Model.formatPct(psi.ms10, 1) : "--"
+          subText: "pressure"
+          foreground: root.panel ? root.panel.barForeground : "#cacccc"
+          fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+        }
       }
 
       Column {
         id: memoryLegend
-        width: Math.max(0, memoryOverview.width
-                           - pressureRing.width
-                           - ramRing.width
-                           - memoryOverview.spacing * 2)
         spacing: Style.space(4)
-        anchors.verticalCenter: parent.verticalCenter
+        width: memoryOverview.legendBeside
+               ? Math.max(0, memoryOverview.width - memoryOverview.ringRowWidth - memoryOverview.ringGap)
+               : memoryOverview.width
+        x: memoryOverview.legendBeside ? memoryOverview.ringRowWidth + memoryOverview.ringGap : 0
+        y: memoryOverview.legendBeside
+           ? Math.max(0, (memoryOverview.height - implicitHeight) / 2)
+           : memoryRings.height + Style.space(8)
 
         Repeater {
           model: [
             { label: "Applications", color: Theme.series.memApps, kib: root.comp ? root.comp.appsK : null },
             { label: "Cache", color: Theme.series.memCache, kib: root.comp ? root.comp.cacheK : null },
             { label: "Kernel", color: Theme.series.memKernel, kib: root.comp ? root.comp.kernelK : null },
-            { label: "Free", color: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc"), kib: root.comp ? root.comp.freeK : null }
+            { label: "Free", color: root.memTrack, kib: root.comp ? root.comp.freeK : null }
           ]
 
           delegate: Row {
@@ -234,17 +273,32 @@ Item {
 
             Text {
               textFormat: Text.PlainText
-              text: parent.modelData.label + "  " + (parent.modelData.kib === null ? "--" : Model.formatKiB(parent.modelData.kib))
+              text: parent.modelData.label
               color: root.panel ? root.panel.barForeground : "#cacccc"
               font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.caption
-              anchors.verticalCenter: parent.verticalCenter
-              width: Math.max(0, parent.width - x)
               elide: Text.ElideRight
+              width: Math.max(0, parent.width - Style.space(8) - parent.spacing * 2 - legendValue.implicitWidth)
+              anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+              id: legendValue
+              textFormat: Text.PlainText
+              text: parent.modelData.kib === null ? "--" : Model.formatKiB(parent.modelData.kib)
+              color: root.panel ? root.panel.barForeground : "#cacccc"
+              font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignRight
+              anchors.verticalCenter: parent.verticalCenter
             }
           }
         }
       }
+    }
+
+    PanelSeparator {
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
     }
 
     Components.StatRow {

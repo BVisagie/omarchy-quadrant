@@ -631,6 +631,136 @@ test("pickGpu auto prefers the boot card, then card0", () => {
   assert.equal(Model.pickGpu(noBoot, "auto").card, "card0");
 });
 
+test("effectiveSegments substitutes disk for gpu only after confirmed no dGPU", () => {
+  const def = ["cpu", "gpu", "memory", "network"];
+  assert.deepEqual(Model.effectiveSegments(def, false, false, true, true), def);
+  assert.deepEqual(Model.effectiveSegments(def, true, true, true, true), def);
+  assert.deepEqual(Model.effectiveSegments(def, true, false, true, false), def);
+  assert.deepEqual(
+    Model.effectiveSegments(def, true, false, true, true),
+    ["cpu", "memory", "disk", "network"]
+  );
+  assert.deepEqual(Model.effectiveSegments(def, true, false, false, true), def);
+  assert.deepEqual(
+    Model.effectiveSegments(["cpu", "gpu", "memory", "disk", "network"], true, false, true, true),
+    ["cpu", "memory", "disk", "network"]
+  );
+  assert.deepEqual(Model.effectiveSegments(["cpu", "memory", "network"], true, false, true, true), ["cpu", "memory", "network"]);
+  assert.deepEqual(Model.effectiveSegments([], true, false, true, true), []);
+});
+
+test("visibleBarCells maps enabled segments to painted cells", () => {
+  assert.deepEqual(
+    Model.visibleBarCells(["cpu", "gpu", "memory", "network"], true, true),
+    ["cpu", "gpu", "mem", "net"]
+  );
+  assert.deepEqual(
+    Model.visibleBarCells(["cpu", "gpu", "memory", "network"], false, true),
+    ["cpu", "mem", "net"]
+  );
+  assert.deepEqual(
+    Model.visibleBarCells(["cpu", "memory", "disk", "network"], false, false),
+    ["cpu", "mem", "net"]
+  );
+  assert.deepEqual(
+    Model.visibleBarCells(["cpu", "memory", "disk", "network"], false, true),
+    ["cpu", "mem", "disk", "net"]
+  );
+  assert.deepEqual(
+    Model.visibleBarCells(["cpu", "gpu", "memory", "disk", "network"], true, true),
+    ["cpu", "gpu", "mem", "disk", "net"]
+  );
+  assert.deepEqual(Model.visibleBarCells([], true, true), []);
+  assert.deepEqual(Model.visibleBarCells(null, true, true), []);
+});
+
+test("classifyGpuRole uses positive evidence and conservative defaults", () => {
+  assert.equal(Model.classifyGpuRole({ card: "card1", vendor: "intel", slot: "0000:00:02.0" }, "auto"), "integrated");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "intel", slot: "0000:01:00.0" }, "auto"), "discrete");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "nvidia", slot: "0000:01:00.0" }, "auto"), "discrete");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "amd" }, "auto", "Navi 31 [Radeon RX 7900 XTX]"), "discrete");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "amd" }, "auto", "Phoenix3 [Radeon 780M]"), "integrated");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "amd" }, "auto", ""), "discrete");
+  assert.equal(Model.classifyGpuRole({ card: "card1", vendor: "intel", slot: "0000:00:02.0" }, "none"), "discrete");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "amd" }, "card0", "Navi 31"), "integrated");
+  assert.equal(Model.classifyGpuRole({ card: "card1", vendor: "amd" }, "card0", "Phoenix"), "discrete");
+});
+
+test("reconcileGpuTopology waits for names and never infers siblings as iGPU", () => {
+  const intelIgpu = {
+    card: "card1", vendor: "intel", path: "/sys/class/drm/card1/device",
+    boot: true, slot: "0000:00:02.0"
+  };
+  const nvidia = {
+    card: "card0", vendor: "nvidia", path: "/sys/class/drm/card0/device",
+    boot: false, slot: "0000:01:00.0"
+  };
+  const hybrid = Model.reconcileGpuTopology([intelIgpu, nvidia], null, "auto");
+  assert.equal(hybrid.integratedGpu.card, "card1");
+  assert.equal(hybrid.discreteGpus.length, 1);
+  assert.equal(hybrid.discreteGpus[0].card, "card0");
+  assert.equal(Model.pickGpu(hybrid.discreteGpus, "auto").card, "card0");
+  assert.match(Model.gpuDevicePinMessage(hybrid.gpus, "card1"), /integrated/);
+  assert.equal(Model.gpuDevicePinMessage(hybrid.gpus, "auto"), "");
+
+  const twoDgpu = Model.reconcileGpuTopology([
+    { card: "card0", vendor: "amd", path: "/sys/a", boot: true, slot: "0000:03:00.0" },
+    { card: "card1", vendor: "nvidia", path: "/sys/n", boot: false, slot: "0000:01:00.0" }
+  ], {
+    gpusByCard: {
+      card0: { name: "Navi 31 [Radeon RX 7900 XTX]" },
+      card1: { name: "GeForce RTX 4090" }
+    }
+  }, "auto");
+  assert.equal(twoDgpu.integratedGpu, null);
+  assert.equal(twoDgpu.discreteGpus.length, 2);
+
+  const amdFirst = Model.reconcileGpuTopology([
+    { card: "card0", vendor: "amd", path: "/sys/a", boot: true }
+  ], null, "auto");
+  assert.equal(amdFirst.integratedGpu, null);
+  const amdNamed = Model.reconcileGpuTopology([
+    { card: "card0", vendor: "amd", path: "/sys/a", boot: true }
+  ], { gpusByCard: { card0: { name: "Phoenix [Radeon Graphics]" } } }, "auto");
+  assert.equal(amdNamed.integratedGpu.card, "card0");
+
+  const empty = Model.reconcileGpuTopology([], null, "auto");
+  assert.equal(empty.integratedGpu, null);
+  assert.equal(empty.discreteGpus.length, 0);
+});
+
+test("gpuIdentityEqual ignores object identity and extra fields", () => {
+  const a = { card: "card1", vendor: "intel", path: "/sys/class/drm/card1/device", boot: true };
+  const b = { card: "card1", vendor: "intel", path: "/sys/class/drm/card1/device", name: "UHD Graphics" };
+  assert.equal(Model.gpuIdentityEqual(a, b), true);
+  assert.equal(Model.gpuIdentityEqual(a, a), true);
+  assert.equal(Model.gpuIdentityEqual(null, null), true);
+  assert.equal(Model.gpuIdentityEqual(a, null), false);
+  assert.equal(Model.gpuIdentityEqual(null, a), false);
+  assert.equal(Model.gpuIdentityEqual(a, { card: "card0", vendor: "intel", path: a.path }), false);
+  assert.equal(Model.gpuIdentityEqual(a, { card: a.card, vendor: "amd", path: a.path }), false);
+  assert.equal(Model.gpuIdentityEqual(a, { card: a.card, vendor: a.vendor, path: "/sys/other" }), false);
+  const rebuilt = Model.reconcileGpuTopology([a], {
+    gpusByCard: { card1: { name: "Intel UHD Graphics", slot: "0000:00:02.0" } }
+  }, "auto").integratedGpu;
+  assert.equal(Model.gpuIdentityEqual(a, rebuilt), true);
+});
+
+test("normalizeGpuList keeps slot and pci identity", () => {
+  const list = Model.normalizeGpuList({
+    gpus: [{
+      card: "card1", vendor: "intel", path: "/sys/class/drm/card1/device",
+      boot: true, slot: "0000:00:02.0", pciClass: "0x030000",
+      pciId: "8086:7d55", driver: "i915"
+    }]
+  });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].slot, "0000:00:02.0");
+  assert.equal(list[0].pciId, "8086:7d55");
+  assert.equal(list[0].driver, "i915");
+  assert.equal(list[0].pciClass, "0x030000");
+});
+
 // --------------------------------------------------------------- formatters
 
 test("formatRate and formatBytes", () => {
@@ -697,6 +827,10 @@ test("Theme.alphaHex derives muted variants", () => {
   assert.equal(Theme.alphaHex("#cacccc", 1), "#ffcacccc");
   assert.equal(Theme.alphaHex("red", 0.5), null);
   assert.equal(Theme.gridFor("#101315"), "#24101315");   // 0.14 * 255 ≈ 36 = 0x24
+  assert.equal(Theme.mutedFor("#cacccc"), "#9ecacccc"); // 0.62 * 255 ≈ 158 = 0x9e
+  assert.equal(Theme.mutedFor("#101315"), "#9e101315");
+  assert.equal(Theme.mutedFor("#ffcacccc"), "#9ecacccc");
+  assert.equal(Theme.mutedFor("red"), "#9ecacccc");
 });
 
 test("Theme.barPaletteFor uses accent fill and falls back on bad input", () => {
@@ -716,24 +850,27 @@ test("Theme.barPaletteFor uses accent fill and falls back on bad input", () => {
 });
 
 test("Theme.barLabelFor resolves glyph, letter, and none", () => {
-  assert.equal(Theme.barLabelFor("glyph", "cpu"), "\u{F0EE0}");
+  assert.equal(Theme.barLabelFor("glyph", "cpu"), "\u{F061A}");
   assert.equal(Theme.barLabelFor("glyph", "gpu"), "\u{F08AE}");
   assert.equal(Theme.barLabelFor("glyph", "mem"), "\uEFC5");
   assert.equal(Theme.barLabelFor("glyph", "disk"), "\u{F02CA}");
+  assert.equal(Theme.barLabelFor("glyph", "net"), "\u{F0317}");
   assert.equal(Theme.barGlyphs.monitor, "\u{F0A07}");
   assert.equal(Theme.barLabelFor("letter", "cpu"), "C");
   assert.equal(Theme.barLabelFor("letter", "gpu"), "G");
   assert.equal(Theme.barLabelFor("letter", "mem"), "M");
   assert.equal(Theme.barLabelFor("letter", "disk"), "D");
+  assert.equal(Theme.barLabelFor("letter", "net"), "N");
   assert.equal(Theme.barLabelFor("none", "cpu"), "");
+  assert.equal(Theme.barLabelFor("none", "net"), "");
   assert.equal(Theme.barLabelFor("NONE", "mem"), "");
   // unknown mode falls back to glyphs; unknown metric is empty
   assert.equal(Theme.barLabelFor("typo", "cpu"), Theme.barGlyphs.cpu);
   assert.equal(Theme.barLabelFor("glyph", "nope"), "");
   assert.equal(Theme.barLabelFor(undefined, "cpu"), Theme.barGlyphs.cpu);
-  assert.equal(Theme.metrics.barMeterThickness, 3);
-  assert.equal(Theme.metrics.barMeterGap, 3);
   assert.equal(Theme.metrics.barLabelGap, 3);
+  assert.equal(Theme.metrics.barSegmentGap, 6);
+  assert.equal(Theme.metrics.barOuterPad, 6);
 });
 
 test("Theme.normalizeHex accepts 6 and 8 digit forms", () => {

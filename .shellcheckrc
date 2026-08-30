@@ -1,0 +1,4 @@
+# Follow `# shellcheck source=` and resolve those paths next to each
+# script (gpu-intel-paths.sh lives beside gpu-stats / quadrant-stream).
+external-sources=true
+source-path=SCRIPTDIR

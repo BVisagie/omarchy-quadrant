@@ -116,7 +116,7 @@ Item {
 
     // Multi-GPU selector — only when more than one card was detected.
     Row {
-      visible: root.model && root.model.gpus.length > 1
+      visible: root.model && root.model.discreteGpus && root.model.discreteGpus.length > 1
       spacing: Style.space(6)
 
       Text {
@@ -129,7 +129,7 @@ Item {
       }
 
       Repeater {
-        model: root.model ? root.model.gpus : []
+        model: root.model && root.model.discreteGpus ? root.model.discreteGpus : []
 
         delegate: Rectangle {
           required property var modelData

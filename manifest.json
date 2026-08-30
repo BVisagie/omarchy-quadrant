@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Quadrant",
-    "description": "CPU, GPU, memory, and network meters with a tabbed detail panel (Drives tab included; disk bar segment off by default)",
+    "description": "CPU, GPU, memory, and network readouts with a tabbed detail panel (Drives tab included; dedicated GPU only in the bar; disk fills the GPU slot when none is present)",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
@@ -25,7 +25,9 @@
       "panelIntervalMs": 2000,
       "networkInterface": "auto",
       "gpuDevice": "auto",
+      "integratedGpuDevice": "auto",
       "diskDevice": "auto",
+      "diskFallbackWithoutGpu": true,
       "barPalette": "theme",
       "barLabels": "glyph"
     },
@@ -34,7 +36,7 @@
         "key": "segments",
         "type": "list",
         "label": "Bar segments",
-        "description": "Which metric segments appear in the bar slot. Any subset of: cpu, gpu, memory, disk, network. disk is off by default. Each panel tab has a Show in bar checkbox that updates this list. An empty list keeps a compact system-monitor icon. GPU and disk segments hide themselves when no supported device is detected."
+        "description": "Which metric segments appear in the bar slot. Any subset of: cpu, gpu, memory, disk, network. disk is off by default when a dedicated GPU is present. Each panel tab has a Show in bar checkbox that updates this list. An empty list keeps a compact system-monitor icon. The GPU segment and tab are dedicated cards only. When no dedicated GPU is detected, the configured gpu token is shown as disk unless diskFallbackWithoutGpu is false."
       },
       {
         "key": "processCount",
@@ -64,7 +66,19 @@
         "key": "gpuDevice",
         "type": "string",
         "label": "GPU (auto or cardN)",
-        "description": "Which card the GPU segment and tab read. 'auto' prefers the boot display card, else card0."
+        "description": "Which dedicated card the GPU segment and tab read. 'auto' prefers the boot display card among dedicated GPUs, else card0. Integrated cards are shown on the CPU tab instead."
+      },
+      {
+        "key": "integratedGpuDevice",
+        "type": "string",
+        "label": "Integrated GPU (auto, none, or cardN)",
+        "description": "Which card is treated as integrated graphics on the CPU tab. 'auto' uses positive evidence (Intel at 00:02.x, known AMD APU names). 'none' treats every card as dedicated. A cardN value forces that card to be integrated."
+      },
+      {
+        "key": "diskFallbackWithoutGpu",
+        "type": "boolean",
+        "label": "Show Drives in the bar when no dedicated GPU",
+        "description": "When true (default), the configured gpu bar token is displayed as disk if no dedicated GPU is detected. Unchecking Show in bar on the Drives tab sets this to false. Does not rewrite the segments list."
       },
       {
         "key": "diskDevice",
@@ -76,13 +90,13 @@
         "key": "barPalette",
         "type": "string",
         "label": "Bar palette (theme or vivid)",
-        "description": "theme (default) paints bar meters with the live Omarchy accent, a foreground-derived track, and urgent at ≥90% load. vivid keeps the original per-resource Tokyo-night hues."
+        "description": "theme (default) paints ≥90% values with the theme urgent color. vivid keeps the original per-resource Tokyo-night hues."
       },
       {
         "key": "barLabels",
         "type": "string",
         "label": "Bar labels (glyph, letter, or none)",
-        "description": "How CPU, GPU, memory, and disk cells are labelled. glyph (default) uses Nerd Font icons; letter falls back to C/G/M/D; none shows only the percentage."
+        "description": "How CPU, GPU, memory, disk, and network cells are labelled. glyph (default) uses Nerd Font icons; letter falls back to C/G/M/D/N; none shows only the value."
       }
     ]
   }

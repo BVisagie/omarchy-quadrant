@@ -27,6 +27,10 @@ if (( BASH_VERSINFO[0] < 5 )); then
   exit 2
 fi
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=gpu-intel-paths.sh
+source "$SCRIPT_DIR/gpu-intel-paths.sh"
+
 interval_ms=${1:-1000}
 gpu_path=${2:-}
 gpu_vendor=${3:-}
@@ -164,13 +168,9 @@ if [[ $gpu_vendor == amd ]]; then
     (( ${#GPU_ENG_KEYS[@]} >= 32 )) && break
   done
 elif [[ $gpu_vendor == intel ]]; then
-  # i915 keeps the gt files on the card root; xe nests them under tile/gt.
-  for cand in "$gpu_path/gt_cur_freq_mhz" "$gpu_path"/gt/gt_cur_freq_mhz "$gpu_path"/tile*/gt*/freq0/cur_freq; do
-    [[ -r $cand ]] && { gpu_freq_cur_f=$cand; break; }
-  done
-  for cand in "$gpu_path/gt_max_freq_mhz" "$gpu_path"/gt/gt_max_freq_mhz "$gpu_path"/tile*/gt*/freq0/rpn_freq; do
-    [[ -r $cand ]] && { gpu_freq_max_f=$cand; break; }
-  done
+  # i915 may keep gt files on the card node; xe nests them under tile/gt.
+  gpu_freq_cur_f=$(intel_freq_cur_path "$gpu_path") || gpu_freq_cur_f=""
+  gpu_freq_max_f=$(intel_freq_max_path "$gpu_path") || gpu_freq_max_f=""
   for h in "$gpu_path"/hwmon/hwmon*; do
     [[ -d $h && -r $h/temp1_input ]] && { gpu_temp_f=$h/temp1_input; break; }
   done

@@ -103,6 +103,56 @@ function toggleSegment(list, name, enabled) {
   return out
 }
 
+function parseBoolSetting(value, fallback) {
+  if (value === true || value === "true" || value === 1 || value === "1") return true
+  if (value === false || value === "false" || value === 0 || value === "0") return false
+  return fallback === undefined ? true : !!fallback
+}
+
+// Display-time bar list. Never persist this result: a missing dedicated GPU
+// substitutes disk for the configured gpu token when fallback is enabled.
+function effectiveSegments(configured, topologyReady, discreteGpuAvailable, fallbackEnabled, gpuInventoryOk) {
+  var list = normalizeSegments(configured)
+  if (!topologyReady || gpuInventoryOk === false) return list
+  if (discreteGpuAvailable) return list
+  if (fallbackEnabled === false) return list
+  var hasGpu = false
+  var i
+  for (i = 0; i < list.length; i++) if (list[i] === "gpu") hasGpu = true
+  if (!hasGpu) return list
+  var seen = {}
+  for (i = 0; i < list.length; i++) {
+    if (list[i] === "gpu") continue
+    seen[list[i]] = true
+  }
+  seen.disk = true
+  var out = []
+  for (i = 0; i < BAR_SEGMENTS.length; i++) {
+    if (seen[BAR_SEGMENTS[i]]) out.push(BAR_SEGMENTS[i])
+  }
+  return out
+}
+
+// Ordered bar cells that actually paint. Segment tokens stay
+// cpu/gpu/memory/disk/network; cell tokens are cpu/gpu/mem/disk/net so
+// they match MetricCell.metric. GPU and disk still require live hardware.
+function visibleBarCells(effectiveList, discreteGpuAvailable, diskAvailable) {
+  var list = Array.isArray(effectiveList) ? effectiveList : []
+  var out = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var s = list[i]
+    if (s === "cpu") out.push("cpu")
+    else if (s === "gpu") {
+      if (discreteGpuAvailable) out.push("gpu")
+    } else if (s === "memory") out.push("mem")
+    else if (s === "disk") {
+      if (diskAvailable) out.push("disk")
+    } else if (s === "network") out.push("net")
+  }
+  return out
+}
+
 // ------------------------------------------------------------ stream sample
 //
 // One line of quadrant-stream output:
@@ -1098,13 +1148,35 @@ function normalizeIntelGpu(kv) {
   }
 }
 
+function clipPciClass(value) {
+  var s = String(value || "").toLowerCase()
+  if (s.indexOf("0x") === 0) s = s.slice(2)
+  if (!/^[0-9a-f]{4,8}$/.test(s)) return ""
+  return "0x" + s
+}
+
 function normalizeGpuListEntry(e) {
   if (!e || typeof e !== "object") return null
   var vendor = e.vendor
   if (vendor !== "amd" && vendor !== "intel" && vendor !== "nvidia") return null
   if (typeof e.card !== "string" || !/^card[0-9]+$/.test(e.card)) return null
   if (typeof e.path !== "string" || e.path.indexOf("/sys/") !== 0) return null
-  return { card: e.card, vendor: vendor, path: e.path, boot: e.boot === true }
+  var slot = (typeof e.slot === "string" && /^[0-9a-fA-F:.]+$/.test(e.slot)) ? e.slot : ""
+  var driver = clipStr(e.driver, 32)
+  if (driver && !/^[A-Za-z0-9._+-]+$/.test(driver)) driver = ""
+  var pciId = ""
+  if (typeof e.pciId === "string" && /^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$/.test(e.pciId))
+    pciId = e.pciId.toLowerCase()
+  return {
+    card: e.card,
+    vendor: vendor,
+    path: e.path,
+    boot: e.boot === true,
+    slot: slot,
+    pciClass: clipPciClass(e.pciClass),
+    pciId: pciId,
+    driver: driver
+  }
 }
 
 function normalizeGpuList(data) {
@@ -1130,6 +1202,105 @@ function pickGpu(gpus, setting) {
   for (var j = 0; j < gpus.length; j++) if (gpus[j].boot) return gpus[j]
   for (var k = 0; k < gpus.length; k++) if (gpus[k].card === "card0") return gpus[k]
   return gpus[0]
+}
+
+function normalizeIntegratedGpuDevice(value) {
+  var s = normalizeDeviceSetting(value)
+  if (s === "none") return "none"
+  if (/^card[0-9]+$/.test(s)) return s
+  return "auto"
+}
+
+function isIntelIgpuSlot(slot) {
+  return /^[0-9a-fA-F]+:00:02\./.test(String(slot || ""))
+}
+
+function amdLooksIntegrated(name) {
+  var s = String(name || "")
+  if (/Radeon Graphics/i.test(s)) return true
+  if (/Radeon \d{3}M\b/i.test(s)) return true
+  if (/\b(Phoenix|Raphael|Rembrandt|Cezanne|Renoir|Strix|Krackan|Barcelo|Lucienne|Mendocino|Picasso|Raven)[0-9]*\b/i.test(s)) return true
+  if (/Hawk Point|Granite Ridge/i.test(s)) return true
+  return false
+}
+
+function classifyGpuRole(gpu, setting, name) {
+  var mode = normalizeIntegratedGpuDevice(setting)
+  if (!gpu || typeof gpu !== "object") return "discrete"
+  if (mode === "none") return "discrete"
+  if (mode !== "auto") return gpu.card === mode ? "integrated" : "discrete"
+  if (gpu.vendor === "nvidia") return "discrete"
+  if (gpu.vendor === "intel") return isIntelIgpuSlot(gpu.slot) ? "integrated" : "discrete"
+  if (gpu.vendor === "amd") return amdLooksIntegrated(name || gpu.name) ? "integrated" : "discrete"
+  return "discrete"
+}
+
+function pickIntegratedGpu(list) {
+  if (!Array.isArray(list) || list.length === 0) return null
+  var i
+  for (i = 0; i < list.length; i++) if (list[i].boot) return list[i]
+  return list[0]
+}
+
+// Topology reconciliation allocates a new object every pass. Identity is
+// card + vendor + path so a same-card rebuild does not drop live samples.
+function gpuIdentityEqual(a, b) {
+  if (a === b) return true
+  if (!a || !b) return false
+  return String(a.card || "") === String(b.card || "")
+      && String(a.vendor || "") === String(b.vendor || "")
+      && String(a.path || "") === String(b.path || "")
+}
+
+function gpuDevicePinMessage(gpus, setting) {
+  var wanted = normalizeDeviceSetting(setting)
+  if (wanted === "auto" || wanted === "") return ""
+  if (!Array.isArray(gpus)) return ""
+  var i
+  for (i = 0; i < gpus.length; i++) {
+    if (gpus[i].card === wanted && gpus[i].role === "integrated")
+      return "Pinned GPU " + wanted + " is integrated; it is shown on the CPU tab"
+  }
+  return ""
+}
+
+function reconcileGpuTopology(rawGpus, sysInfo, integratedSetting) {
+  var list = Array.isArray(rawGpus) ? rawGpus : []
+  var byCard = sysInfo && sysInfo.gpusByCard ? sysInfo.gpusByCard : {}
+  var merged = []
+  var discrete = []
+  var integrated = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var g = list[i]
+    if (!g) continue
+    var info = byCard[g.card] || null
+    var slot = g.slot || (info && info.slot) || ""
+    var driver = g.driver || (info && info.driver) || ""
+    var pciId = g.pciId || (info && info.pciId) || ""
+    var name = (info && info.name) || ""
+    var row = {
+      card: g.card,
+      vendor: g.vendor,
+      path: g.path,
+      boot: g.boot === true,
+      slot: slot,
+      pciClass: g.pciClass || "",
+      pciId: pciId,
+      driver: driver,
+      name: name
+    }
+    row.role = classifyGpuRole(row, integratedSetting, name)
+    merged.push(row)
+    if (row.role === "integrated") integrated.push(row)
+    else discrete.push(row)
+  }
+  return {
+    gpus: merged,
+    discreteGpus: discrete,
+    integratedGpus: integrated,
+    integratedGpu: pickIntegratedGpu(integrated)
+  }
 }
 
 // ---------------------------------------------------------- system-info
@@ -1443,6 +1614,9 @@ if (typeof module !== "undefined" && module.exports) {
     normalizeSegments: normalizeSegments,
     segmentsFromSetting: segmentsFromSetting,
     toggleSegment: toggleSegment,
+    parseBoolSetting: parseBoolSetting,
+    effectiveSegments: effectiveSegments,
+    visibleBarCells: visibleBarCells,
     parseStreamLine: parseStreamLine,
     cpuDelta: cpuDelta,
     netRates: netRates,
@@ -1473,6 +1647,14 @@ if (typeof module !== "undefined" && module.exports) {
     normalizeIntelGpu: normalizeIntelGpu,
     normalizeGpuList: normalizeGpuList,
     pickGpu: pickGpu,
+    normalizeIntegratedGpuDevice: normalizeIntegratedGpuDevice,
+    isIntelIgpuSlot: isIntelIgpuSlot,
+    amdLooksIntegrated: amdLooksIntegrated,
+    classifyGpuRole: classifyGpuRole,
+    pickIntegratedGpu: pickIntegratedGpu,
+    gpuIdentityEqual: gpuIdentityEqual,
+    gpuDevicePinMessage: gpuDevicePinMessage,
+    reconcileGpuTopology: reconcileGpuTopology,
     parseLspciMm: parseLspciMm,
     parseSystemInfo: parseSystemInfo,
     cpuVendorLabel: cpuVendorLabel,

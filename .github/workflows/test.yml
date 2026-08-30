@@ -34,7 +34,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck jq iproute2 procps pciutils "${{ matrix.awk }}"
       - name: shellcheck
-        run: shellcheck scripts/*
+        run: shellcheck -x scripts/*
       - name: bash syntax
         run: for f in scripts/*; do bash -n "$f"; done
       - name: PlainText grep check (${{ matrix.awk }})
@@ -52,6 +52,7 @@ jobs:
           ./scripts/process-memory 3 | jq -e '.ok == true and .metric == "rssKb"'
           ./scripts/process-net eth0 | jq -e '.ok == true'
           ./scripts/gpu-stats list | jq -e '.ok == true'
+          bash tests/intel-freq-paths.sh
           ./scripts/system-info | jq -e '.ok == true and .cpu and .mem and .host'
           ./scripts/disk-info | jq -e '.ok == true and .disks and .dfPayload and (.backing | type == "object")'
           # failure path: bad input must produce an ok:false envelope
