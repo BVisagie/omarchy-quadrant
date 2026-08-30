@@ -9,7 +9,7 @@ Item {
 
   property var segments: []
   property color trackColor: Theme.trackFor("#cacccc")
-  property real radius: 2
+  property real radius: Math.max(2, Math.round(Math.min(width, height) / 6))
 
   implicitWidth: Style.space(Theme.metrics.barMeterWidth)
   implicitHeight: Style.space(Theme.metrics.barMeterHeight)

@@ -55,7 +55,8 @@ function safeJson(line) {
 //   "gpu": { "busy","mb","vrU","vrT","t","w","mhz","fc","fm","eng","kind" } | null,
 //   "t": 52.0 | null,                             // CPU package temp, deg C
 //   "load": [l1, l5, l15],
-//   "up": 12345.6, "cores": 16
+//   "up": 12345.6, "cores": 16,
+//   "cf": 4200 | null                             // CPU scaling_cur_freq, MHz
 // }
 
 function parseCpuArray(value) {
@@ -205,7 +206,8 @@ function parseStreamLine(line) {
     tempC: num(data.t, null),
     load: load,
     uptimeS: nonNeg(data.up),
-    cores: Math.max(1, Math.round(nonNeg(data.cores) || 1))
+    cores: Math.max(1, Math.round(nonNeg(data.cores) || 1)),
+    cpuFreqMhz: num(data.cf, null)
   }
 }
 
@@ -745,6 +747,176 @@ function pickGpu(gpus, setting) {
   return gpus[0]
 }
 
+// ---------------------------------------------------------- system-info
+//
+// system-info ships static hardware identity as one JSON envelope. lspci
+// -D -mm output is a raw payload string (device names contain brackets
+// and quotes) and is parsed here so fixtures can exercise hostile input.
+
+function clipStr(value, max) {
+  if (value === null || value === undefined) return ""
+  var s = String(value)
+  var out = ""
+  for (var i = 0; i < s.length && out.length < max; i++) {
+    var code = s.charCodeAt(i)
+    if (code < 32 || code === 127) continue
+    out += s.charAt(i)
+  }
+  return out
+}
+
+function parseLspciMm(text) {
+  var out = []
+  if (typeof text !== "string" || text.length === 0) return out
+  var lines = text.split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    if (line.replace(/^\s+|\s+$/g, "") === "") continue
+    var fields = []
+    var re = /"((?:[^"\\]|\\.)*)"/g
+    var m
+    while ((m = re.exec(line)) !== null) {
+      fields.push(m[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\"))
+    }
+    if (fields.length < 4) continue
+    var slot = fields[0]
+    if (!/^[0-9a-fA-F:.]+$/.test(slot)) continue
+    out.push({
+      slot: slot,
+      class: clipStr(fields[1], 64),
+      vendor: clipStr(fields[2], 64),
+      device: clipStr(fields[3], 128)
+    })
+  }
+  return out
+}
+
+function parseSystemCpu(c) {
+  var empty = {
+    modelName: "", vendorId: "", physCores: null, threads: null,
+    cacheKb: null, mhzNow: null, governor: "", maxMhz: null
+  }
+  if (!c || typeof c !== "object") return empty
+  var gov = clipStr(c.governor, 32)
+  if (gov && !/^[A-Za-z0-9._+-]+$/.test(gov)) gov = ""
+  return {
+    modelName: clipStr(c.modelName, 128),
+    vendorId: clipStr(c.vendorId, 32),
+    physCores: (function () { var n = num(c.physCores, null); return n !== null && n > 0 ? Math.round(n) : null })(),
+    threads: (function () { var n = num(c.threads, null); return n !== null && n > 0 ? Math.round(n) : null })(),
+    cacheKb: (function () { var n = num(c.cacheKb, null); return n !== null && n >= 0 ? n : null })(),
+    mhzNow: (function () { var n = num(c.mhzNow, null); return n !== null && n >= 0 ? n : null })(),
+    governor: gov,
+    maxMhz: (function () { var n = num(c.maxMhz, null); return n !== null && n >= 0 ? n : null })()
+  }
+}
+
+function parseSystemGpus(list, lspciBySlot) {
+  var out = []
+  if (!Array.isArray(list)) return out
+  for (var i = 0; i < list.length && out.length < 8; i++) {
+    var e = list[i]
+    if (!e || typeof e !== "object") continue
+    if (typeof e.card !== "string" || !/^card[0-9]+$/.test(e.card)) continue
+    var vendor = e.vendor
+    if (vendor !== "amd" && vendor !== "intel" && vendor !== "nvidia") continue
+    var slot = (typeof e.slot === "string" && /^[0-9a-fA-F:.]+$/.test(e.slot)) ? e.slot : ""
+    var driver = clipStr(e.driver, 32)
+    if (driver && !/^[A-Za-z0-9._+-]+$/.test(driver)) driver = ""
+    var pciId = ""
+    if (typeof e.pciId === "string" && /^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$/.test(e.pciId))
+      pciId = e.pciId.toLowerCase()
+    var name = ""
+    if (slot && lspciBySlot && lspciBySlot[slot] && lspciBySlot[slot].device)
+      name = lspciBySlot[slot].device
+    out.push({ card: e.card, vendor: vendor, slot: slot, driver: driver, pciId: pciId, name: name })
+  }
+  return out
+}
+
+function parseSystemMem(mem) {
+  var swaps = []
+  var zram = []
+  if (!mem || typeof mem !== "object") return { swaps: swaps, zram: zram }
+  var i
+  if (Array.isArray(mem.swaps)) {
+    for (i = 0; i < mem.swaps.length && swaps.length < 16; i++) {
+      var s = mem.swaps[i]
+      if (!s || typeof s !== "object") continue
+      var file = clipStr(s.file, 128)
+      if (file === "") continue
+      var kind = String(s.kind || "")
+      if (kind !== "partition" && kind !== "file" && kind !== "zram") kind = "file"
+      var sizeKb = num(s.sizeKb, null)
+      if (sizeKb === null || sizeKb < 0) sizeKb = 0
+      swaps.push({ file: file, kind: kind, sizeKb: sizeKb })
+    }
+  }
+  if (Array.isArray(mem.zram)) {
+    for (i = 0; i < mem.zram.length && zram.length < 8; i++) {
+      var z = mem.zram[i]
+      if (!z || typeof z !== "object") continue
+      var dev = clipStr(z.dev, 16)
+      if (!/^zram[0-9]+$/.test(dev)) continue
+      var alg = clipStr(z.alg, 16)
+      if (alg && !/^[A-Za-z0-9_+-]+$/.test(alg)) alg = ""
+      var diskBytes = num(z.diskBytes, null)
+      if (diskBytes === null || diskBytes < 0) diskBytes = 0
+      zram.push({ dev: dev, alg: alg, diskBytes: diskBytes })
+    }
+  }
+  return { swaps: swaps, zram: zram }
+}
+
+function parseSystemHost(host) {
+  if (!host || typeof host !== "object") return { kernel: "", sysVendor: "", productName: "" }
+  return {
+    kernel: clipStr(host.kernel, 64),
+    sysVendor: clipStr(host.sysVendor, 64),
+    productName: clipStr(host.productName, 64)
+  }
+}
+
+function parseSystemInfo(env) {
+  if (!env || typeof env !== "object" || env.ok !== true) return null
+  var lspci = parseLspciMm(env.lspciPayload)
+  var lspciBySlot = {}
+  for (var i = 0; i < lspci.length; i++) lspciBySlot[lspci[i].slot] = lspci[i]
+  var gpus = parseSystemGpus(env.gpus, lspciBySlot)
+  var byCard = {}
+  for (var j = 0; j < gpus.length; j++) byCard[gpus[j].card] = gpus[j]
+  return {
+    cpu: parseSystemCpu(env.cpu),
+    gpus: gpus,
+    gpusByCard: byCard,
+    mem: parseSystemMem(env.mem),
+    host: parseSystemHost(env.host)
+  }
+}
+
+function cpuVendorLabel(vendorId) {
+  var v = String(vendorId || "")
+  if (v === "GenuineIntel") return "Intel"
+  if (v === "AuthenticAMD") return "AMD"
+  if (v === "Apple") return "Apple"
+  if (v === "") return "--"
+  return v
+}
+
+function gpuVendorLabel(vendor) {
+  if (vendor === "amd") return "AMD"
+  if (vendor === "intel") return "Intel"
+  if (vendor === "nvidia") return "NVIDIA"
+  return vendor ? String(vendor) : "--"
+}
+
+function formatCache(kb) {
+  var n = num(kb, null)
+  if (n === null || n < 0) return "--"
+  if (n >= 1024) return Math.round(n / 1024) + " MB"
+  return Math.round(n) + " KB"
+}
+
 // ------------------------------------------------------------ formatters
 
 function formatUnit(value, units, suffix) {
@@ -763,6 +935,31 @@ function formatBytes(n) {
 
 function formatRate(bps) {
   return formatUnit(bps, ["B", "KB", "MB", "GB"], "/s")
+}
+
+// Bounded bar format, max ~4 significant glyphs: 999B, 1.0K, 9.9K, 99K,
+// 999K, 1.0M. One decimal below 10 of a unit, none above. 1000–1023 B
+// promote to 1.0K so the label never grows past four characters + unit.
+function formatRateCompact(bps) {
+  var n = num(bps, null)
+  if (n === null || n < 0) return "--"
+  var units = ["B", "K", "M", "G", "T"]
+  var i = 0
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+  if (i === 0) {
+    var rb = Math.round(n)
+    if (rb < 1000) return String(rb) + "B"
+    n = n / 1024
+    i = 1
+  }
+  var text
+  if (n < 10) {
+    text = (Math.round(n * 10) / 10).toFixed(1)
+    if (text === "10.0") text = "10"
+  } else {
+    text = String(Math.round(n))
+  }
+  return text + units[i]
 }
 
 function formatKiB(kib) {
@@ -846,8 +1043,14 @@ if (typeof module !== "undefined" && module.exports) {
     normalizeIntelGpu: normalizeIntelGpu,
     normalizeGpuList: normalizeGpuList,
     pickGpu: pickGpu,
+    parseLspciMm: parseLspciMm,
+    parseSystemInfo: parseSystemInfo,
+    cpuVendorLabel: cpuVendorLabel,
+    gpuVendorLabel: gpuVendorLabel,
+    formatCache: formatCache,
     formatBytes: formatBytes,
     formatRate: formatRate,
+    formatRateCompact: formatRateCompact,
     formatKiB: formatKiB,
     formatPct: formatPct,
     formatTemp: formatTemp,

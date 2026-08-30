@@ -1,0 +1,344 @@
+#!/usr/bin/env bash
+# system-info — one-shot hardware identity for the Quadrant panel.
+#
+# Emits one JSON envelope on stdout:
+#   {"ok":true,"cpu":{...},"gpus":[...],"lspciPayload":"...","mem":{...},"host":{...}}
+#
+# Every field is optional (null / empty) when unreadable. Strings travel
+# through jq --arg so firmware and PCI-DB text cannot break the transport;
+# parsing (including lspci -mm) lives in Model.js. Failures emit
+# {"ok":false,"error":...} and exit non-zero.
+#
+# Usage: system-info
+#
+# lspci is optional: when pciutils is not installed the payload is empty
+# and AMD/Intel cards fall back to vendor + PCI ID in the UI.
+
+# shellcheck disable=SC2016  # jq programs are single-quoted on purpose
+set -euo pipefail
+
+fail() {
+  local msg=$1 bin=""
+  if [[ -x /usr/bin/jq ]]; then bin=/usr/bin/jq
+  else bin=$(command -v jq) || bin=""
+  fi
+  if [[ -n $bin ]]; then
+    "$bin" -cn --arg e "$msg" '{ok:false, error:$e}'
+  else
+    printf '{"ok":false,"error":"helper unavailable"}\n'
+  fi
+  exit 1
+}
+
+# Prefer the distro path so a user-writable PATH entry cannot shadow the
+# helper. Fall back to command -v for non-standard prefixes (Nix, etc.).
+resolve_bin() {
+  local n=$1
+  [[ $n =~ ^[A-Za-z0-9._+-]+$ ]] || return 1
+  if [[ -x /usr/bin/$n ]]; then
+    printf '%s\n' "/usr/bin/$n"
+    return 0
+  fi
+  command -v "$n"
+}
+
+JQ=$(resolve_bin jq) || fail "jq not found"
+
+trim() {
+  local s=$1
+  s=${s#"${s%%[![:space:]]*}"}
+  s=${s%"${s##*[![:space:]]}"}
+  printf '%s' "$s"
+}
+
+# read_int_file <path> <varname>: integer content, or "" when unreadable.
+# shellcheck disable=SC2034  # dst is a nameref; writes land in the caller
+read_int_file() {
+  local path=$1 v
+  local -n dst=$2
+  dst=""
+  [[ -n $path && -r $path ]] || return 0
+  if IFS= read -r v < "$path" 2>/dev/null && [[ $v =~ ^[0-9]+$ ]]; then
+    dst=$v
+  fi
+}
+
+read_line_file() {
+  local path=$1
+  local -n dst=$2
+  dst=""
+  [[ -n $path && -r $path ]] || return 0
+  IFS= read -r dst < "$path" 2>/dev/null || dst=""
+  dst=$(trim "$dst")
+}
+
+uevent_field() {
+  local path=$1 want=$2 line key val
+  [[ -r $path ]] || return 1
+  while IFS= read -r line; do
+    key=${line%%=*}
+    val=${line#*=}
+    if [[ $key == "$want" ]]; then
+      printf '%s' "$val"
+      return 0
+    fi
+  done < "$path"
+  return 1
+}
+
+vendor_name() {
+  case $1 in
+    0x1002|1002) printf 'amd' ;;
+    0x8086|8086) printf 'intel' ;;
+    0x10de|10de) printf 'nvidia' ;;
+    *) printf '' ;;
+  esac
+}
+
+# --- CPU -------------------------------------------------------------------
+
+modelName="" vendorId="" physCores="" threads="" cacheKb="" mhzNow=""
+governor="" maxMhz=""
+nproc=0
+while IFS= read -r line || [[ -n ${line:-} ]]; do
+  case $line in
+    processor*)
+      nproc=$(( nproc + 1 ))
+      ;;
+    "model name"*|"Processor"*)
+      if [[ -z $modelName ]]; then
+        modelName=$(trim "${line#*:}")
+      fi
+      ;;
+    "Hardware"*)
+      if [[ -z $modelName ]]; then
+        modelName=$(trim "${line#*:}")
+      fi
+      ;;
+    "vendor_id"*)
+      if [[ -z $vendorId ]]; then
+        vendorId=$(trim "${line#*:}")
+      fi
+      ;;
+    "cpu cores"*)
+      if [[ -z $physCores ]]; then
+        physCores=$(trim "${line#*:}")
+        [[ $physCores =~ ^[0-9]+$ ]] || physCores=""
+      fi
+      ;;
+    "cache size"*)
+      if [[ -z $cacheKb ]]; then
+        local_cache=$(trim "${line#*:}")
+        local_cache=${local_cache%%[^0-9]*}
+        [[ $local_cache =~ ^[0-9]+$ ]] && cacheKb=$local_cache
+      fi
+      ;;
+    "cpu MHz"*)
+      if [[ -z $mhzNow ]]; then
+        mhzNow=$(trim "${line#*:}")
+        [[ $mhzNow =~ ^[0-9]+(\.[0-9]+)?$ ]] || mhzNow=""
+      fi
+      ;;
+  esac
+done < /proc/cpuinfo
+
+if (( nproc > 0 )); then threads=$nproc; fi
+if [[ -z $physCores && -n $threads ]]; then physCores=$threads; fi
+
+read_line_file /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor governor
+[[ $governor =~ ^[A-Za-z0-9._+-]+$ ]] || governor=""
+
+max_khz=""
+read_int_file /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq max_khz
+if [[ -n $max_khz ]]; then
+  maxMhz=$(( max_khz / 1000 ))
+fi
+
+# --- GPUs ------------------------------------------------------------------
+
+gpu_fields=()
+gpu_count=0
+for dev in /sys/class/drm/card[0-9]*/device; do
+  [[ -d $dev ]] || continue
+  card=${dev%/*}; card=${card##*/}
+  [[ $card =~ ^card[0-9]+$ ]] || continue
+  [[ -r $dev/vendor ]] || continue
+  IFS= read -r vid < "$dev/vendor" || continue
+  vid=$(trim "$vid")
+  vend=$(vendor_name "$vid")
+  [[ -n $vend ]] || continue
+  slot=""
+  driver=""
+  pciId=""
+  if slot=$(uevent_field "$dev/uevent" PCI_SLOT_NAME); then
+    [[ $slot =~ ^[0-9a-fA-F:.]+$ ]] || slot=""
+  else
+    slot=""
+  fi
+  if driver=$(uevent_field "$dev/uevent" DRIVER); then
+    [[ $driver =~ ^[A-Za-z0-9._+-]+$ ]] || driver=""
+  else
+    driver=""
+  fi
+  did=""
+  if [[ -r $dev/device ]]; then
+    IFS= read -r did < "$dev/device" || did=""
+    did=$(trim "$did")
+  fi
+  # PCI IDs from sysfs are 0xNNNN; normalize to nnnn:nnnn lowercase.
+  vid_hex=${vid#0x}; vid_hex=${vid_hex#0X}
+  did_hex=${did#0x}; did_hex=${did_hex#0X}
+  vid_hex=${vid_hex,,}
+  did_hex=${did_hex,,}
+  if [[ $vid_hex =~ ^[0-9a-f]{4}$ && $did_hex =~ ^[0-9a-f]{4}$ ]]; then
+    pciId="$vid_hex:$did_hex"
+  fi
+  gpu_fields+=("$card" "$vend" "$slot" "$driver" "$pciId")
+  gpu_count=$(( gpu_count + 1 ))
+  (( gpu_count >= 8 )) && break
+done
+
+if (( ${#gpu_fields[@]} == 0 )); then
+  gpu_json='[]'
+else
+  gpu_json=$("$JQ" -cn --args '
+    [range(0; ($ARGS.positional | length); 5) as $i |
+      { card: $ARGS.positional[$i],
+        vendor: $ARGS.positional[$i + 1],
+        slot: $ARGS.positional[$i + 2],
+        driver: $ARGS.positional[$i + 3],
+        pciId: $ARGS.positional[$i + 4] }]' "${gpu_fields[@]}")
+fi
+
+lspciPayload=""
+if LSPCI=$(resolve_bin lspci); then
+  lspciPayload=$("$LSPCI" -D -mm 2>/dev/null || true)
+  # Cap a runaway dump so one helper run cannot flood QML.
+  if (( ${#lspciPayload} > 65536 )); then
+    lspciPayload=${lspciPayload:0:65536}
+  fi
+fi
+
+# --- Memory / swap ---------------------------------------------------------
+
+swap_fields=()
+swap_count=0
+if [[ -r /proc/swaps ]]; then
+  while IFS= read -r line; do
+    [[ $line == Filename* ]] && continue
+    # Filename can contain spaces (swap files); fields are whitespace-separated
+    # with Type/Size/Used/Priority as the last four tokens.
+    # shellcheck disable=SC2086
+    read -r -a toks <<< "$line"
+    (( ${#toks[@]} >= 5 )) || continue
+    n=${#toks[@]}
+    size=${toks[n-3]}
+    type=${toks[n-4]}
+    file=${toks[0]}
+    if (( n > 5 )); then
+      file=""
+      for (( i=0; i<n-4; i++ )); do
+        [[ -n $file ]] && file+=" "
+        file+=${toks[i]}
+      done
+    fi
+    [[ -n $file ]] || continue
+    [[ $size =~ ^[0-9]+$ ]] || size=0
+    kind=$type
+    case $file in
+      *zram*) kind="zram" ;;
+    esac
+    case $kind in
+      partition|file|zram) ;;
+      *) kind="file" ;;
+    esac
+    swap_fields+=("$file" "$kind" "$size")
+    swap_count=$(( swap_count + 1 ))
+    (( swap_count >= 16 )) && break
+  done < /proc/swaps
+fi
+
+if (( ${#swap_fields[@]} == 0 )); then
+  swap_json='[]'
+else
+  swap_json=$("$JQ" -cn --args '
+    [range(0; ($ARGS.positional | length); 3) as $i |
+      { file: $ARGS.positional[$i],
+        kind: $ARGS.positional[$i + 1],
+        sizeKb: ($ARGS.positional[$i + 2] | tonumber) }]' "${swap_fields[@]}")
+fi
+
+zram_fields=()
+zram_count=0
+for z in /sys/block/zram*; do
+  [[ -d $z ]] || continue
+  dev=${z##*/}
+  [[ $dev =~ ^zram[0-9]+$ ]] || continue
+  alg=""
+  if [[ -r $z/comp_algorithm ]]; then
+    IFS= read -r algs < "$z/comp_algorithm" || algs=""
+    if [[ $algs =~ \[([A-Za-z0-9_+-]+)\] ]]; then
+      alg=${BASH_REMATCH[1]}
+    fi
+  fi
+  disk=""
+  read_int_file "$z/disksize" disk
+  zram_fields+=("$dev" "$alg" "${disk:-0}")
+  zram_count=$(( zram_count + 1 ))
+  (( zram_count >= 8 )) && break
+done
+
+if (( ${#zram_fields[@]} == 0 )); then
+  zram_json='[]'
+else
+  zram_json=$("$JQ" -cn --args '
+    [range(0; ($ARGS.positional | length); 3) as $i |
+      { dev: $ARGS.positional[$i],
+        alg: $ARGS.positional[$i + 1],
+        diskBytes: ($ARGS.positional[$i + 2] | tonumber) }]' "${zram_fields[@]}")
+fi
+
+# --- Host ------------------------------------------------------------------
+
+kernel="" sysVendor="" productName=""
+read_line_file /proc/sys/kernel/osrelease kernel
+read_line_file /sys/class/dmi/id/sys_vendor sysVendor
+read_line_file /sys/class/dmi/id/product_name productName
+
+"$JQ" -n \
+  --arg modelName "$modelName" \
+  --arg vendorId "$vendorId" \
+  --arg physCores "$physCores" \
+  --arg threads "$threads" \
+  --arg cacheKb "$cacheKb" \
+  --arg mhzNow "$mhzNow" \
+  --arg governor "$governor" \
+  --arg maxMhz "$maxMhz" \
+  --argjson gpus "$gpu_json" \
+  --arg lspciPayload "$lspciPayload" \
+  --argjson swaps "$swap_json" \
+  --argjson zram "$zram_json" \
+  --arg kernel "$kernel" \
+  --arg sysVendor "$sysVendor" \
+  --arg productName "$productName" \
+  '{
+    ok: true,
+    cpu: {
+      modelName: (if $modelName == "" then null else $modelName end),
+      vendorId: (if $vendorId == "" then null else $vendorId end),
+      physCores: (if $physCores == "" then null else ($physCores|tonumber) end),
+      threads: (if $threads == "" then null else ($threads|tonumber) end),
+      cacheKb: (if $cacheKb == "" then null else ($cacheKb|tonumber) end),
+      mhzNow: (if $mhzNow == "" then null else ($mhzNow|tonumber) end),
+      governor: (if $governor == "" then null else $governor end),
+      maxMhz: (if $maxMhz == "" then null else ($maxMhz|tonumber) end)
+    },
+    gpus: $gpus,
+    lspciPayload: $lspciPayload,
+    mem: { swaps: $swaps, zram: $zram },
+    host: {
+      kernel: (if $kernel == "" then null else $kernel end),
+      sysVendor: (if $sysVendor == "" then null else $sysVendor end),
+      productName: (if $productName == "" then null else $productName end)
+    }
+  }'

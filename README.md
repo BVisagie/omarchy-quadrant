@@ -1,12 +1,14 @@
 # Quadrant
 
 A unified system monitor for the Omarchy Quattro bar: CPU, memory, GPU, and
-network in one compact bar widget and one tabbed panel.
+network in one compact bar widget and one tabbed panel. Each panel tab
+identifies the hardware it is measuring — CPU model and topology, GPU name
+and driver, installed RAM and swap devices — then shows live usage.
 
 ```
 ┌──────────────────────────────┐
-│ C▮  M▮  G▮   ↑ 1.1 KB/s      │   bar slot (segments toggleable)
-│              ↓ 3.6 KB/s      │
+│ C▮  M▮  G▮   ↑ 1.1K          │   bar slot (segments toggleable)
+│              ↓ 3.6K          │
 └──────────────────────────────┘
 ```
 
@@ -17,7 +19,8 @@ else toggles the panel on the last-used tab.
 ┌────────────────────────────────────────────┐
 │  CPU   MEMORY   GPU   NETWORK              │
 │  ──────────────────────────────────────    │
-│  60s history graph / rings / process list  │
+│  Ryzen 9 7950X · 16 cores · 32 threads     │
+│  60s history / rings / process list        │
 │  ←/→ or 1-N switch tab · R refresh · Esc   │
 └────────────────────────────────────────────┘
 ```
@@ -25,7 +28,8 @@ else toggles the panel on the last-used tab.
 Built against the documented Quattro plugin contract. Supports **Omarchy 4**
 (the Quattro shell). Requires `bash` ≥ 5, `jq`, `ps` (procps), `ss`
 (iproute2), and `awk` (mawk or gawk); `nvidia-smi` only if you have an
-NVIDIA card.
+NVIDIA card; `lspci` (pciutils) is optional and used to name AMD/Intel
+GPUs.
 
 ## Install
 
@@ -49,7 +53,12 @@ Move it with `omarchy bar move dev.bvisagie.quadrant --section center`.
   `G` (GPU busy), and two-line network rates. Each segment toggles
   independently; the slot shrinks to fit. The GPU segment hides itself when
   no supported GPU is detected — no dead chrome for hardware that is not
-  there. Vertical bars are supported (segments stack).
+  there. Vertical bars are supported (segments stack). Meter fills follow
+  the live Omarchy accent (with the theme's urgent color at ≥90% load);
+  `barPalette vivid` restores the original per-resource hues. Network rates
+  use a fixed-width compact format (`1.0K`, `99K`) so the slot does not
+  resize as the magnitude changes. C/M/G meters stretch to the two-line
+  network stack and sit vertically centered in the slot.
 - **Panel**: click the widget. `←`/`→` or `1`–`N` (N = visible tabs; GPU
   is omitted when no supported card is present) switch tabs, `R`
   refreshes the active tab, `Esc` closes. `Tab` keeps its Quattro meaning
@@ -82,18 +91,25 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
 | `panelIntervalMs` | `2000` | On-demand sampler cadence while the panel is open (500–60000) |
 | `networkInterface` | `"auto"` | `auto` = default route across IPv4 **and** IPv6, lowest metric wins, IPv4 takes ties |
 | `gpuDevice` | `"auto"` | `auto` = boot display card when determinable, else `card0`; or a specific `cardN` |
+| `barPalette` | `"theme"` | `theme` = live Omarchy accent fills, foreground track, urgent at ≥90%; `vivid` = original per-resource hues |
 
 ## What it measures (and what it does not)
 
 - **CPU**: user (incl. nice) and system (incl. irq/softirq) are stacked in
   the graph; `iowait` is its own series; `steal` is labeled separately and
-  never folded into "system".
+  never folded into "system". The tab header is the `model name` from
+  `/proc/cpuinfo` with physical cores / threads, L3 cache, scaling
+  governor, and current/max frequency (`scaling_cur_freq` when present,
+  else the cpuinfo snapshot).
 - **Memory**: composition splits RAM into Applications / Kernel
   (unreclaimable slab) / Cache (page cache + **Buffers** + SReclaimable) /
   Free. The process column is "% of RAM". The pressure ring is PSI memory
   `some avg10`; PSI is **optional per resource** — when `/proc/pressure/cpu`
   or `/proc/pressure/memory` is unreadable that half is JSON `null` and the
-  ring shows `--`, not zero.
+  ring shows `--`, not zero. The tab header is installed RAM; swap devices
+  from `/proc/swaps` are listed (zram includes the active compression
+  algorithm and disk size). DMI vendor/product and the kernel release
+  appear as a caption when readable.
 - **GPU**: AMD reads `amdgpu` sysfs (`gpu_busy_percent`, `mem_busy_percent`,
   per-engine `engine/*/busy_percent`, VRAM info, hwmon temp/power, active
   DPM sclk). NVIDIA runs `nvidia-smi` (timeout-bounded,
@@ -103,7 +119,10 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   refuses to require. Every sysfs file is treated as optional; availability
   varies by kernel and ASIC. Multi-GPU systems get a card selector in the
   GPU tab; the choice is persisted with `omarchy bar set … gpuDevice`.
-  Per-process GPU attribution is v2.
+  The tab header is the card's marketing name: NVIDIA's `nvidia-smi` name,
+  or `lspci -D -mm` joined by PCI slot for AMD/Intel, falling back to
+  vendor + PCI ID when pciutils is not installed. Driver and slot come
+  from sysfs `uevent`. Per-process GPU attribution is v2.
 - **Network**: rates for the selected interface plus 60s down/up history.
   Per-process attribution uses per-socket TCP byte counters from
   `ss -tinp`, scoped to the watched interface's addresses (ss is global;
@@ -135,10 +154,11 @@ permissions** — the same model as every Quattro plugin. Concretely:
   enforces this with a check over all QML files. The bar tooltip is
   rates/percentages (never process comm) and is rendered by the shell's
   WidgetButton tooltip, which is already PlainText.
-- **Safe transport.** Process names and raw tool output travel as JSON
-  strings built with `jq --arg` — never TSV through a name. The `ss`
-  parser anchors on the kernel's trailing `pid=` field, so a forged
-  process name cannot borrow another pid.
+- **Safe transport.** Process names, firmware strings, PCI-DB names, and
+  raw tool output travel as JSON strings built with `jq --arg` — never TSV
+  through a name. The `ss` parser anchors on the kernel's trailing `pid=`
+  field, so a forged process name cannot borrow another pid. `lspci -mm`
+  is parsed in Model.js (fixture-tested), never concatenated in bash.
 - **Exact-match icons.** Desktop-entry matching for process icons/names is
   exact-match only (normalized id, Name, Icon, `StartupWMClass`); the raw
   `comm` is always shown beside any friendly name.
@@ -149,21 +169,23 @@ permissions** — the same model as every Quattro plugin. Concretely:
   `/usr/bin/<name>` first then `command -v`, quoted expansions, POSIX awk
   only (CI runs the suite under mawk **and** gawk).
 - **Binaries invoked**: `bash`, `jq`, `ps`, `ss`, `ip`, `timeout`, `mktemp`,
-  `mkfifo`, `nvidia-smi` (NVIDIA only, on demand). No root, no setcap, no
-  setuid, no daemons.
+  `mkfifo`, `nvidia-smi` (NVIDIA only, on demand), `lspci` (optional, one
+  shot at startup / on R). No root, no setcap, no setuid, no daemons.
 
 ### Data layer
 
 One long-lived sampler, `scripts/quadrant-stream`, emits one JSON line per
 tick (CPU ticks, meminfo, PSI, vmstat swap counters, per-interface net
-counters, default routes, whitelisted CPU temp, cheap GPU sysfs fields).
-It is a **single bash process with zero fork/exec per tick** — timing comes
-from `read -t` on a self-held FIFO — consumed in QML via `Process` +
-`SplitParser` with a restart timer. The stream ships raw counters only;
-all deltas and rates are pure functions in `Model.js`, tested with
-`node --test` against captured fixtures (including hostile ones). Panel
-samplers (`process-cpu`, `process-memory`, `process-net`, `gpu-stats`) run
-on demand while the panel is open, each with a kill watchdog.
+counters, default routes, whitelisted CPU temp, cheap GPU sysfs fields,
+optional `scaling_cur_freq`). It is a **single bash process with zero
+fork/exec per tick** — timing comes from `read -t` on a self-held FIFO —
+consumed in QML via `Process` + `SplitParser` with a restart timer. The
+stream ships raw counters only; all deltas and rates are pure functions in
+`Model.js`, tested with `node --test` against captured fixtures (including
+hostile ones). Panel samplers (`process-cpu`, `process-memory`,
+`process-net`, `gpu-stats`) run on demand while the panel is open, each
+with a kill watchdog. Hardware identity (`scripts/system-info`) runs once
+at startup and again when the user hits R — never on the 1 Hz path.
 
 ## Development
 

@@ -499,3 +499,128 @@ test("Theme.alphaHex derives muted variants", () => {
   assert.equal(Theme.alphaHex("red", 0.5), null);
   assert.equal(Theme.gridFor("#101315"), "#10131524");   // 0.14 * 255 ≈ 36 = 0x24
 });
+
+test("Theme.barPaletteFor uses accent fill and falls back on bad input", () => {
+  const pal = Theme.barPaletteFor("#cacccc", "#7aa2f7", "#f7768e");
+  assert.equal(pal.fill, "#7aa2f7");
+  assert.equal(pal.fillStack, "#7aa2f773");             // 0.45 * 255 ≈ 115 = 0x73
+  assert.equal(pal.track, "#cacccc24");
+  assert.equal(pal.urgent, "#f7768e");
+  // Qt color strings are often #AARRGGBB
+  const fromQt = Theme.barPaletteFor("#ffcacccc", "#ff9ece6a", "#ffa55555");
+  assert.equal(fromQt.fill, "#9ece6a");
+  assert.equal(fromQt.urgent, "#a55555");
+  const bad = Theme.barPaletteFor("red", "nope", "");
+  assert.equal(bad.fill, Theme.series.gpu);
+  assert.equal(bad.urgent, Theme.series.cpuSteal);
+  assert.match(bad.track, /^#[0-9a-fA-F]{8}$/);
+});
+
+test("Theme.normalizeHex accepts 6 and 8 digit forms", () => {
+  assert.equal(Theme.normalizeHex("#7aa2f7"), "#7aa2f7");
+  assert.equal(Theme.normalizeHex("#ff7aa2f7"), "#7aa2f7");
+  assert.equal(Theme.normalizeHex("7aa2f7"), null);
+  assert.equal(Theme.normalizeHex(""), null);
+});
+
+// ---------------------------------------------------------- system-info
+
+test("parseLspciMm reads quoted machine-format lines", () => {
+  const rows = Model.parseLspciMm(fixture("lspci-mm.txt"));
+  assert.equal(rows.length, 5);
+  assert.equal(rows[0].slot, "0000:03:00.0");
+  assert.equal(rows[0].device, "Navi 31 [Radeon RX 7900 XTX]");
+  assert.equal(rows[1].vendor, "Intel Corporation");
+  assert.equal(rows[2].device, "AD102 [GeForce RTX 4090]");
+  // escaped quotes survive; a hostile <img> stays inert text
+  assert.equal(rows[3].device, 'Quote "inside" name <img src=x>');
+  assert.equal(rows[4].slot, "0000:0b:00.0");
+  assert.equal(Model.parseLspciMm("").length, 0);
+  assert.equal(Model.parseLspciMm(null).length, 0);
+});
+
+test("parseSystemInfo joins lspci names onto cards by slot", () => {
+  const info = Model.parseSystemInfo(JSON.parse(fixture("system-info-basic.json")));
+  assert.ok(info);
+  assert.equal(info.cpu.modelName, "AMD Ryzen 9 7950X 16-Core Processor");
+  assert.equal(info.cpu.vendorId, "AuthenticAMD");
+  assert.equal(info.cpu.physCores, 16);
+  assert.equal(info.cpu.threads, 32);
+  assert.equal(info.cpu.cacheKb, 16384);
+  assert.equal(info.cpu.governor, "schedutil");
+  assert.equal(info.cpu.maxMhz, 5755);
+  assert.equal(info.gpus.length, 2);
+  assert.equal(info.gpus[0].name, "Navi 31 [Radeon RX 7900 XTX]");
+  assert.equal(info.gpus[1].name, "AD102 [GeForce RTX 4090]");
+  assert.equal(info.gpusByCard.card0.driver, "amdgpu");
+  assert.equal(info.gpusByCard.card0.pciId, "1002:744c");
+  assert.equal(info.mem.zram[0].alg, "zstd");
+  assert.equal(info.mem.swaps[1].kind, "partition");
+  assert.equal(info.host.sysVendor, "Framework");
+  assert.equal(Model.cpuVendorLabel(info.cpu.vendorId), "AMD");
+  assert.equal(Model.gpuVendorLabel("amd"), "AMD");
+  assert.equal(Model.formatCache(16384), "16 MB");
+});
+
+test("parseSystemInfo tolerates a VM-like all-null envelope", () => {
+  const info = Model.parseSystemInfo(JSON.parse(fixture("system-info-minimal.json")));
+  assert.ok(info);
+  assert.equal(info.cpu.modelName, "Intel(R) Xeon(R) Processor");
+  assert.equal(info.cpu.governor, "");
+  assert.equal(info.cpu.maxMhz, null);
+  assert.equal(info.gpus.length, 0);
+  assert.deepEqual(info.gpusByCard, {});
+  assert.equal(info.mem.swaps.length, 0);
+  assert.equal(info.mem.zram.length, 0);
+  assert.equal(info.host.sysVendor, "");
+  assert.equal(info.host.kernel, "6.12.94+");
+  assert.equal(Model.cpuVendorLabel(info.cpu.vendorId), "Intel");
+  assert.equal(Model.parseSystemInfo(null), null);
+  assert.equal(Model.parseSystemInfo({ ok: false }), null);
+  assert.equal(Model.parseSystemInfo({}), null);
+});
+
+test("parseSystemInfo drops hostile and malformed GPU entries", () => {
+  const info = Model.parseSystemInfo({
+    ok: true,
+    cpu: { modelName: "<img src=x>", vendorId: "GenuineIntel\n", governor: "schedutil;rm -rf /" },
+    gpus: [
+      { card: "card0", vendor: "amd", slot: "0000:03:00.0", driver: "amdgpu", pciId: "1002:744C" },
+      { card: "evil", vendor: "amd", slot: "0000:03:00.0", driver: "amdgpu", pciId: "1002:744c" },
+      { card: "card1", vendor: "mali", slot: "0000:04:00.0", driver: "x", pciId: "0000:0000" }
+    ],
+    lspciPayload: "\"0000:03:00.0\" \"VGA\" \"AMD\" \"Good name\"\n",
+    mem: { swaps: [{ file: "/tmp/x", kind: "worm", sizeKb: -3 }], zram: [{ dev: "sda", alg: "zstd", diskBytes: 1 }] },
+    host: { kernel: "6.1", sysVendor: "A", productName: "B" }
+  });
+  assert.equal(info.cpu.modelName, "<img src=x>");   // inert; rendered PlainText
+  assert.equal(info.cpu.governor, "");               // rejected: not a governor token
+  assert.equal(info.gpus.length, 1);
+  assert.equal(info.gpus[0].pciId, "1002:744c");     // lowercased
+  assert.equal(info.gpus[0].name, "Good name");
+  assert.equal(info.mem.swaps[0].kind, "file");      // unknown kind coerced
+  assert.equal(info.mem.zram.length, 0);             // sda is not zramN
+});
+
+test("parseStreamLine accepts optional cf and treats it as missing when absent", () => {
+  const noCf = Model.parseStreamLine(fixture("stream-basic.json"));
+  assert.equal(noCf.cpuFreqMhz, null);
+  const withCf = Model.parseStreamLine('{"v":1,"ts":1,"cpu":[1,0,1,1,0,0,0,0],"mem":{"tot":1,"fre":1,"avl":1,"buf":1,"cac":1,"srec":1,"slab":1,"swtot":1,"swfre":1},"cf":4200}');
+  assert.equal(withCf.cpuFreqMhz, 4200);
+  const badCf = Model.parseStreamLine('{"v":1,"ts":1,"cpu":[1,0,1,1,0,0,0,0],"mem":{"tot":1,"fre":1,"avl":1,"buf":1,"cac":1,"srec":1,"slab":1,"swtot":1,"swfre":1},"cf":"nope"}');
+  assert.equal(badCf.cpuFreqMhz, null);
+});
+
+test("formatRateCompact stays within four glyphs plus a unit", () => {
+  assert.equal(Model.formatRateCompact(0), "0B");
+  assert.equal(Model.formatRateCompact(999), "999B");
+  assert.equal(Model.formatRateCompact(1000), "1.0K");
+  assert.equal(Model.formatRateCompact(1024), "1.0K");
+  assert.equal(Model.formatRateCompact(1024 * 9.9), "9.9K");
+  assert.equal(Model.formatRateCompact(1024 * 10), "10K");
+  assert.equal(Model.formatRateCompact(1024 * 999), "999K");
+  assert.equal(Model.formatRateCompact(1024 * 1024), "1.0M");
+  assert.equal(Model.formatRateCompact(5 * 1024 * 1024), "5.0M");
+  assert.equal(Model.formatRateCompact(null), "--");
+  assert.equal(Model.formatRateCompact(-1), "--");
+});

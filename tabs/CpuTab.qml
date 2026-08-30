@@ -17,6 +17,8 @@ Item {
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "cpu"
   readonly property var sample: model ? model.sample : null
   readonly property var cpuPct: model ? model.cpuPct : null
+  readonly property var sysCpu: model && model.sysInfo ? model.sysInfo.cpu : null
+  readonly property var cpuFreqMhz: model ? model.cpuFreqMhz : null
 
   property var rows: []
   property string errorText: ""
@@ -32,9 +34,36 @@ Item {
 
   function refresh() {
     if (!active) return
+    if (model && model.refreshSysInfo) model.refreshSysInfo()
     if (proc.running) return
     watchdog.restart()
     proc.running = true
+  }
+
+  readonly property string cpuMeta: {
+    var c = sysCpu
+    if (!c) return ""
+    var parts = []
+    if (c.physCores) parts.push(c.physCores + " cores")
+    if (c.threads && c.threads !== c.physCores) parts.push(c.threads + " threads")
+    else if (c.threads && !c.physCores) parts.push(c.threads + " threads")
+    if (c.cacheKb) parts.push(Model.formatCache(c.cacheKb) + " L3")
+    return parts.join(" · ")
+  }
+
+  readonly property string cpuDetail: {
+    if (cpuFreqMhz !== null && cpuFreqMhz !== undefined) return Model.formatMhz(cpuFreqMhz)
+    if (sysCpu && sysCpu.governor) return sysCpu.governor
+    return ""
+  }
+
+  readonly property string cpuFreqValue: {
+    var cur = cpuFreqMhz
+    if (cur === null || cur === undefined) cur = sysCpu ? sysCpu.mhzNow : null
+    var max = sysCpu ? sysCpu.maxMhz : null
+    if (cur === null && max === null) return ""
+    if (max === null) return Model.formatMhz(cur)
+    return Model.formatMhz(cur) + " / " + Model.formatMhz(max)
   }
 
   function apply(text) {
@@ -97,6 +126,16 @@ Item {
     width: root.width
     spacing: Style.space(8)
 
+    PanelHero {
+      width: parent.width
+      visible: root.sysCpu && root.sysCpu.modelName !== ""
+      title: root.sysCpu ? root.sysCpu.modelName : ""
+      meta: root.cpuMeta
+      detail: root.cpuDetail
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
+
     Components.HistoryGraph {
       width: parent.width
       stacked: true
@@ -144,6 +183,33 @@ Item {
           }
         }
       }
+    }
+
+    Components.StatRow {
+      width: parent.width
+      label: "Vendor"
+      visible: root.sysCpu && root.sysCpu.vendorId !== ""
+      value: root.sysCpu ? Model.cpuVendorLabel(root.sysCpu.vendorId) : "--"
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
+
+    Components.StatRow {
+      width: parent.width
+      label: "Frequency"
+      visible: root.cpuFreqValue !== ""
+      value: root.cpuFreqValue
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
+
+    Components.StatRow {
+      width: parent.width
+      label: "Governor"
+      visible: root.sysCpu && root.sysCpu.governor !== ""
+      value: root.sysCpu ? root.sysCpu.governor : "--"
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
     Components.StatRow {

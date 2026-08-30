@@ -129,6 +129,11 @@ psi_cpu_ok=0 psi_mem_ok=0
 [[ -r /proc/pressure/cpu ]] && psi_cpu_ok=1
 [[ -r /proc/pressure/memory ]] && psi_mem_ok=1
 
+# CPU frequency: optional sysfs. VMs often omit cpufreq entirely.
+cpu_freq_f=""
+[[ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq ]] \
+  && cpu_freq_f=/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq
+
 # GPU startup probes.
 gpu_busy_f="" gpu_vram_used_f="" gpu_vram_total_f=""
 gpu_temp_edge_f="" gpu_power_f="" gpu_sclk_f=""
@@ -375,6 +380,13 @@ emit() {
     if [[ -n $tmc ]]; then temp_json=$(( tmc / 1000 )); fi
   fi
 
+  local cf_json="null"
+  if [[ -n $cpu_freq_f ]]; then
+    local cfv=""
+    read_int_file "$cpu_freq_f" cfv
+    if [[ -n $cfv ]]; then cf_json=$(( cfv / 1000 )); fi
+  fi
+
   local l1=0 l5=0 l15=0 up=0 _rest
   read -r l1 l5 l15 _rest < /proc/loadavg || true
   read -r up _rest < /proc/uptime || true
@@ -383,7 +395,7 @@ emit() {
   [[ $l15 =~ ^[0-9.]+$ ]] || l15=0
   [[ $up =~ ^[0-9.]+$ ]] || up=0
 
-  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s}\n' \
+  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s,"cf":%s}\n' \
     "$EPOCHREALTIME" \
     "${cpu[0]}" "${cpu[1]}" "${cpu[2]}" "${cpu[3]}" \
     "${cpu[4]}" "${cpu[5]}" "${cpu[6]}" "${cpu[7]}" \
@@ -393,7 +405,7 @@ emit() {
     "${vm[0]}" "${vm[1]}" \
     "$NET_JSON" "$R4_JSON" "$R6_JSON" \
     "$GPU_JSON" "$temp_json" \
-    "$l1" "$l5" "$l15" "$up" "${cpu[8]}"
+    "$l1" "$l5" "$l15" "$up" "${cpu[8]}" "$cf_json"
 }
 
 while :; do

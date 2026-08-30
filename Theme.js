@@ -55,12 +55,39 @@ function trackFor(barForeground) {
   return alphaHex(barForeground, 0.10)
 }
 
+// Strip Qt's #AARRGGBB (alpha prefix) and accept plain #RRGGBB. Returns
+// null for anything else so callers can fall back to a vivid constant.
+function normalizeHex(hex) {
+  var s = String(hex || "")
+  var m8 = s.match(/^#([0-9A-Fa-f]{8})$/)
+  if (m8) return "#" + m8[1].slice(2)
+  var m6 = s.match(/^#([0-9A-Fa-f]{6})$/)
+  if (m6) return "#" + m6[1]
+  return null
+}
+
+// Theme-native bar meter palette. Accent is the fill; a 0.45-alpha accent
+// is the stacked CPU "system" layer; the track is foreground at 0.14 (the
+// first-party Util.alpha(fg, 0.18) idiom, slightly quieter for an 18px
+// meter). Urgent is the high-load fill. Malformed input falls back
+// field-by-field to the vivid constants so a bad color can never blank
+// the bars.
+function barPaletteFor(fgHex, accentHex, urgentHex) {
+  var fill = normalizeHex(accentHex) || series.gpu
+  var fillStack = alphaHex(fill, 0.45) || fill
+  var track = alphaHex(normalizeHex(fgHex) || "#cacccc", 0.14) || "#cacccc24"
+  var urgent = normalizeHex(urgentHex) || series.cpuSteal
+  return { fill: fill, fillStack: fillStack, track: track, urgent: urgent }
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     series: series,
     metrics: metrics,
     alphaHex: alphaHex,
     gridFor: gridFor,
-    trackFor: trackFor
+    trackFor: trackFor,
+    normalizeHex: normalizeHex,
+    barPaletteFor: barPaletteFor
   }
 }

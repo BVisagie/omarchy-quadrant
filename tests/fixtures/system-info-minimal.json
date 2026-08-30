@@ -1,0 +1,1 @@
+{"ok":true,"cpu":{"modelName":"Intel(R) Xeon(R) Processor","vendorId":"GenuineIntel","physCores":4,"threads":4,"cacheKb":327680,"mhzNow":2400,"governor":null,"maxMhz":null},"gpus":[],"lspciPayload":"","mem":{"swaps":[],"zram":[]},"host":{"kernel":"6.12.94+","sysVendor":null,"productName":null}}

@@ -4,7 +4,6 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
-import "Theme.js" as Theme
 import "tabs" as Tabs
 
 // Quadrant detail panel: one KeyboardPanel with a tab strip. Keyboard
@@ -150,7 +149,7 @@ Panel {
                 anchors.bottom: parent.bottom
                 height: Style.space(2)
                 radius: 1
-                color: Theme.series.cpuUser
+                color: Color.accent
                 visible: tabButton.current
               }
 

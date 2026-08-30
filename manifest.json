@@ -24,7 +24,8 @@
       "barIntervalMs": 1000,
       "panelIntervalMs": 2000,
       "networkInterface": "auto",
-      "gpuDevice": "auto"
+      "gpuDevice": "auto",
+      "barPalette": "theme"
     },
     "schema": [
       {
@@ -62,6 +63,12 @@
         "type": "string",
         "label": "GPU (auto or cardN)",
         "description": "Which card the GPU segment and tab read. 'auto' prefers the boot display card, else card0."
+      },
+      {
+        "key": "barPalette",
+        "type": "string",
+        "label": "Bar palette (theme or vivid)",
+        "description": "theme (default) paints bar meters with the live Omarchy accent, a foreground-derived track, and urgent at ≥90% load. vivid keeps the original per-resource Tokyo-night hues."
       }
     ]
   }
