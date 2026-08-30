@@ -62,6 +62,18 @@ Item {
     return ""
   }
 
+  readonly property color memTrack: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
+  readonly property var compositionSegments: {
+    var c = root.comp
+    if (!c || !(c.totalK > 0)) return []
+    return [
+      { fraction: c.appsK / c.totalK, color: Theme.series.memApps },
+      { fraction: c.cacheK / c.totalK, color: Theme.series.memCache },
+      { fraction: c.kernelK / c.totalK, color: Theme.series.memKernel },
+      { fraction: c.freeK / c.totalK, color: root.memTrack }
+    ]
+  }
+
   readonly property var swapDeviceRows: {
     var out = []
     var m = sysMem
@@ -203,13 +215,8 @@ Item {
           size: Style.space(Theme.metrics.largeRingSize)
           thickness: Style.space(Theme.metrics.largeRingThickness)
           readonly property var c: root.comp
-          segments: c ? [
-            { fraction: c.totalK > 0 ? c.appsK / c.totalK : 0, color: Theme.series.memApps },
-            { fraction: c.totalK > 0 ? c.cacheK / c.totalK : 0, color: Theme.series.memCache },
-            { fraction: c.totalK > 0 ? c.kernelK / c.totalK : 0, color: Theme.series.memKernel },
-            { fraction: c.totalK > 0 ? c.freeK / c.totalK : 0, color: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc") }
-          ] : []
-          trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
+          segments: root.compositionSegments
+          trackColor: root.memTrack
           centerText: c ? Model.formatPct(c.usedPct) : "--"
           subText: "RAM"
           foreground: root.panel ? root.panel.barForeground : "#cacccc"
@@ -248,7 +255,7 @@ Item {
             { label: "Applications", color: Theme.series.memApps, kib: root.comp ? root.comp.appsK : null },
             { label: "Cache", color: Theme.series.memCache, kib: root.comp ? root.comp.cacheK : null },
             { label: "Kernel", color: Theme.series.memKernel, kib: root.comp ? root.comp.kernelK : null },
-            { label: "Free", color: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc"), kib: root.comp ? root.comp.freeK : null }
+            { label: "Free", color: root.memTrack, kib: root.comp ? root.comp.freeK : null }
           ]
 
           delegate: Row {
@@ -288,6 +295,10 @@ Item {
           }
         }
       }
+    }
+
+    PanelSeparator {
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
     }
 
     Components.StatRow {
