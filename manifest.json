@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "dev.bvisagie.quadrant",
+  "name": "Quadrant",
+  "version": "0.1.0",
+  "author": "Bernard Visagie",
+  "license": "MIT",
+  "description": "Unified system monitor for the Quattro bar: CPU, memory, GPU, and network in one compact widget with a tabbed detail panel.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Quadrant",
+    "description": "CPU, memory, GPU, and network meters with a tabbed detail panel",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "segments": ["cpu", "memory", "gpu", "network"],
+      "processCount": 5,
+      "barIntervalMs": 1000,
+      "panelIntervalMs": 2000,
+      "networkInterface": "auto",
+      "gpuDevice": "auto"
+    },
+    "schema": [
+      {
+        "key": "segments",
+        "type": "list",
+        "label": "Bar segments",
+        "description": "Which metric segments appear in the bar slot. Any subset of: cpu, memory, gpu, network. The GPU segment hides itself when no supported GPU is detected."
+      },
+      {
+        "key": "processCount",
+        "type": "number",
+        "label": "Process rows (1-10)",
+        "description": "How many top processes each panel tab lists."
+      },
+      {
+        "key": "barIntervalMs",
+        "type": "number",
+        "label": "Bar refresh (ms)",
+        "description": "Cadence of the streaming sampler that feeds the bar segments and history graphs. 250-10000."
+      },
+      {
+        "key": "panelIntervalMs",
+        "type": "number",
+        "label": "Panel refresh (ms)",
+        "description": "Cadence of the on-demand samplers that run while the panel is open. 500-10000."
+      },
+      {
+        "key": "networkInterface",
+        "type": "string",
+        "label": "Interface (auto or name)",
+        "description": "Interface whose rates the network segment and tab report. 'auto' picks the default route across IPv4 and IPv6 by lowest metric."
+      },
+      {
+        "key": "gpuDevice",
+        "type": "string",
+        "label": "GPU (auto or cardN)",
+        "description": "Which card the GPU segment and tab read. 'auto' prefers the boot display card, else card0."
+      }
+    ]
+  }
+}

@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# process-net — one-shot per-process network sampler for the Quadrant panel.
+#
+# Emits one JSON envelope on stdout:
+#   {"ok":true,"ts":<epoch>,"ifname":"eth0","ifRx":123,"ifTx":456,
+#    "payload":"<raw ss output>"}
+#
+# ifRx/ifTx are the interface's cumulative byte counters; the payload is raw
+# `ss -H -t -i -n -p state established` output, whose per-socket
+# bytes_received/bytes_acked counters Model.js turns into per-process rates.
+# Sockets whose owners are not visible to us (other users, kernel) simply
+# lack a users:(...) group — Model.js folds their traffic into the honest
+# "Other traffic" row keyed on pid 0. UDP is not socket-attributed at all and
+# also lands in Other.
+#
+# The raw ss text travels as one JSON string via jq --arg: process names are
+# attacker-controlled and must never split a transport format. Failures emit
+# {"ok":false,...} and exit non-zero so QML can show an error instead of
+# "no activity".
+#
+# Usage: process-net <ifname>
+
+# shellcheck disable=SC2016  # jq programs are single-quoted on purpose
+set -euo pipefail
+
+fail() {
+  local msg=$1
+  if command -v jq >/dev/null 2>&1; then
+    jq -cn --arg e "$msg" '{ok:false, error:$e}'
+  else
+    printf '{"ok":false,"error":"helper unavailable"}\n'
+  fi
+  exit 1
+}
+
+ifname=${1:-}
+[[ -n $ifname ]] || fail "usage: process-net <ifname>"
+# The name comes from user settings; refuse anything that could escape
+# /sys/class/net before touching the filesystem.
+[[ $ifname != */* && $ifname != *..* ]] || fail "bad interface name"
+[[ -r "/sys/class/net/$ifname/statistics/rx_bytes" ]] || fail "no such interface: $ifname"
+[[ -r "/sys/class/net/$ifname/statistics/tx_bytes" ]] || fail "no such interface: $ifname"
+
+JQ=$(command -v jq) || fail "jq not found"
+SS=$(command -v ss) || fail "ss not found (iproute2)"
+TIMEOUT=$(command -v timeout) || fail "timeout not found"
+
+if ! if_rx=$(<"/sys/class/net/$ifname/statistics/rx_bytes"); then fail "cannot read rx_bytes"; fi
+if ! if_tx=$(<"/sys/class/net/$ifname/statistics/tx_bytes"); then fail "cannot read tx_bytes"; fi
+[[ $if_rx =~ ^[0-9]+$ && $if_tx =~ ^[0-9]+$ ]] || fail "bad counters for $ifname"
+
+# -H no header, -t TCP, -i internal info (byte counters), -n numeric,
+# -p owning process. Bounded by timeout so a stuck netlink read can never
+# wedge the panel sampler.
+if ! ss_out=$("$TIMEOUT" 3 "$SS" -H -t -i -n -p state established 2>/dev/null); then
+  fail "ss failed or timed out"
+fi
+
+"$JQ" -cn --arg ts "$EPOCHREALTIME" --arg ifname "$ifname" \
+  --arg rx "$if_rx" --arg tx "$if_tx" --arg payload "$ss_out" \
+  '{ok:true, ts:($ts|tonumber), ifname:$ifname, ifRx:($rx|tonumber), ifTx:($tx|tonumber), payload:$payload}'

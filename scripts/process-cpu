@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# process-cpu — one-shot top-by-CPU process sampler for the Quadrant panel.
+#
+# Emits one JSON envelope on stdout:
+#   {"ok":true,"ts":<epoch>,"metric":"pcpu","payload":"<raw ps output>"}
+# The raw ps text travels as a single JSON string built with jq --arg, so a
+# hostile process name can never break the transport. Parsing happens in
+# Model.js (node-tested). On any failure the envelope is {"ok":false,...}
+# and the exit code is non-zero — a failure must never look like "no
+# activity" to the caller.
+#
+# Usage: process-cpu [row_count]     row_count clamps to 1..10 (default 5)
+#
+# awk is only used to cap rows (it drains stdin fully, unlike head, so ps
+# never dies on SIGPIPE). QUADRANT_AWK overrides the awk binary; CI runs
+# this script under both mawk and gawk.
+
+# shellcheck disable=SC2016  # jq programs are single-quoted on purpose
+set -euo pipefail
+
+fail() {
+  local msg=$1
+  if command -v jq >/dev/null 2>&1; then
+    jq -cn --arg e "$msg" '{ok:false, error:$e}'
+  else
+    printf '{"ok":false,"error":"helper unavailable"}\n'
+  fi
+  exit 1
+}
+
+JQ=$(command -v jq) || fail "jq not found"
+PS=$(command -v ps) || fail "ps not found"
+AWK=$(command -v "${QUADRANT_AWK:-awk}") || fail "awk not found"
+
+count=${1:-5}
+[[ $count =~ ^[0-9]+$ ]] || fail "bad row count '$count'"
+(( count < 1 )) && count=1
+(( count > 10 )) && count=10
+
+# LC_ALL=C pins the decimal separator so the Model.js parser can rely on '.'.
+if ! payload=$(LC_ALL=C "$PS" -eo pid=,pcpu=,comm= --sort=-pcpu | "$AWK" -v max="$count" 'NR <= max'); then
+  fail "ps failed"
+fi
+
+"$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$payload" \
+  '{ok:true, ts:($ts|tonumber), metric:"pcpu", payload:$payload}'

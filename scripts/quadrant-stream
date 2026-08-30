@@ -1,0 +1,371 @@
+#!/usr/bin/env bash
+# quadrant-stream — Quadrant's long-lived system sampler.
+#
+# Emits exactly one JSON object per tick on stdout (line-delimited JSON,
+# consumed by Quickshell's SplitParser). The stream only ever ships RAW
+# COUNTERS plus a timestamp; every delta and rate is computed in QML/Model.js,
+# which keeps this script free of sleeps-in-subprocesses and makes the rate
+# math testable as pure functions.
+#
+# Process budget: ONE bash process, zero fork/exec per tick. Timing comes
+# from `read -t` on a self-held FIFO (a bash builtin), all parsing is bash
+# builtins, the timestamp is $EPOCHREALTIME, and integer sanitization is done
+# in place — command substitution would fork a subshell per field per tick.
+# The only forks happen once at startup (mktemp/mkfifo) or once per newly
+# seen interface name (escape cache fill).
+#
+# Usage: quadrant-stream [interval_ms] [gpu_device_path] [gpu_vendor]
+#   interval_ms      tick cadence, 250..60000 (default 1000)
+#   gpu_device_path  e.g. /sys/class/drm/card0/device (optional)
+#   gpu_vendor       amd | intel (optional; nvidia is never sampled here —
+#                    nvidia-smi runs on demand from the panel instead)
+
+set -euo pipefail
+
+if (( BASH_VERSINFO[0] < 5 )); then
+  echo "quadrant-stream: bash >= 5 is required" >&2
+  exit 2
+fi
+
+interval_ms=${1:-1000}
+gpu_path=${2:-}
+gpu_vendor=${3:-}
+
+[[ $interval_ms =~ ^[0-9]+$ ]] || { echo "quadrant-stream: bad interval '$interval_ms'" >&2; exit 2; }
+(( interval_ms < 250 )) && interval_ms=250
+(( interval_ms > 60000 )) && interval_ms=60000
+# read -t wants seconds; build the fractional string with builtin printf.
+printf -v interval_s '%d.%03d' $(( interval_ms / 1000 )) $(( interval_ms % 1000 ))
+
+case $gpu_vendor in
+  ""|amd|intel) ;;
+  *) echo "quadrant-stream: unsupported gpu vendor '$gpu_vendor'" >&2; exit 2 ;;
+esac
+if [[ -n $gpu_vendor && ( -z $gpu_path || ! -d $gpu_path ) ]]; then
+  echo "quadrant-stream: gpu device path '$gpu_path' is not a directory" >&2
+  exit 2
+fi
+
+# --- tick clock -------------------------------------------------------------
+# A FIFO opened read-write by ourselves never yields data and never EOFs, so
+# `read -t` on it is a pure-builtin sleep.
+: "${XDG_RUNTIME_DIR:?quadrant-stream: XDG_RUNTIME_DIR is not set}"
+tmpdir=$(mktemp -d "$XDG_RUNTIME_DIR/quadrant-stream.XXXXXX")
+trap 'rm -rf "$tmpdir"' EXIT
+mkfifo "$tmpdir/tick.fifo"
+exec 9<>"$tmpdir/tick.fifo"
+
+# --- helpers ----------------------------------------------------------------
+
+# Force the named indices of an array to non-negative integers (0 when
+# malformed) so a bad read can never break the JSON shape. In-place: no
+# subshell, no fork.
+snum_array() {
+  # shellcheck disable=SC2178
+  local -n arr=$1
+  shift
+  local i
+  for i in "$@"; do
+    [[ ${arr[$i]:-} =~ ^[0-9]+$ ]] || arr[i]=0
+  done
+}
+
+# read_int_file <path> <varname>: set <varname> to the file's integer
+# content, or "" when unreadable/non-numeric. No subshell.
+# shellcheck disable=SC2034  # dst is a nameref; writes land in the caller
+read_int_file() {
+  local path=$1 v
+  local -n dst=$2
+  dst=""
+  [[ -n $path && -r $path ]] || return 0
+  if IFS= read -r v < "$path" 2>/dev/null && [[ $v =~ ^[0-9]+$ ]]; then
+    dst=$v
+  fi
+}
+
+# JSON-escape a string (no surrounding quotes). Interface names are
+# kernel-controlled but can legally contain spaces and control characters;
+# anything non-printable is replaced rather than escaped so one tick can
+# never split into two lines. Results are cached: this involves one subshell
+# per newly seen name, never one per tick.
+declare -A ESC_CACHE=()
+json_escape() {
+  local s=$1
+  local out="" c i
+  if [[ $s =~ ^[A-Za-z0-9_.:+@-]+$ ]]; then printf '%s' "$s"; return; fi
+  for (( i=0; i<${#s}; i++ )); do
+    c=${s:i:1}
+    case $c in
+      '"'|\\) out+="\\$c" ;;
+      [[:print:]]) out+="$c" ;;
+      *) out+='?' ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+esc_name() {
+  local n=$1
+  if [[ -z ${ESC_CACHE[$n]+set} ]]; then ESC_CACHE[$n]=$(json_escape "$n"); fi
+  printf '%s' "${ESC_CACHE[$n]}"
+}
+
+# --- startup probes ---------------------------------------------------------
+
+# CPU temperature: hwmon whitelist only. Never fall back to the first
+# readable sensor — showing another chip's temperature is worse than "--".
+temp_file=""
+for h in /sys/class/hwmon/hwmon*; do
+  [[ -r $h/name ]] || continue
+  IFS= read -r hname < "$h/name" || continue
+  case $hname in
+    k10temp|coretemp|zenpower|cpu_thermal)
+      [[ -r $h/temp1_input ]] && { temp_file=$h/temp1_input; break; }
+      ;;
+  esac
+done
+
+# PSI is optional: probe readability once, emit null when absent.
+psi_cpu_ok=0 psi_mem_ok=0
+[[ -r /proc/pressure/cpu ]] && psi_cpu_ok=1
+[[ -r /proc/pressure/memory ]] && psi_mem_ok=1
+
+# GPU startup probes.
+gpu_busy_f="" gpu_vram_used_f="" gpu_vram_total_f=""
+gpu_temp_edge_f="" gpu_power_f="" gpu_sclk_f=""
+gpu_freq_cur_f="" gpu_freq_max_f="" gpu_temp_f=""
+if [[ $gpu_vendor == amd ]]; then
+  [[ -r $gpu_path/gpu_busy_percent ]] && gpu_busy_f=$gpu_path/gpu_busy_percent
+  [[ -r $gpu_path/mem_info_vram_used ]] && gpu_vram_used_f=$gpu_path/mem_info_vram_used
+  [[ -r $gpu_path/mem_info_vram_total ]] && gpu_vram_total_f=$gpu_path/mem_info_vram_total
+  for h in "$gpu_path"/hwmon/hwmon*; do
+    [[ -d $h ]] || continue
+    [[ -r $h/temp1_input ]] && gpu_temp_edge_f=$h/temp1_input
+    [[ -r $h/power1_average ]] && gpu_power_f=$h/power1_average
+    break
+  done
+  [[ -r $gpu_path/pp_dpm_sclk ]] && gpu_sclk_f=$gpu_path/pp_dpm_sclk
+elif [[ $gpu_vendor == intel ]]; then
+  # i915 keeps the gt files on the card root; xe nests them under tile/gt.
+  for cand in "$gpu_path/gt_cur_freq_mhz" "$gpu_path"/gt/gt_cur_freq_mhz "$gpu_path"/tile*/gt*/freq0/cur_freq; do
+    [[ -r $cand ]] && { gpu_freq_cur_f=$cand; break; }
+  done
+  for cand in "$gpu_path/gt_max_freq_mhz" "$gpu_path"/gt/gt_max_freq_mhz "$gpu_path"/tile*/gt*/freq0/rpn_freq; do
+    [[ -r $cand ]] && { gpu_freq_max_f=$cand; break; }
+  done
+  for h in "$gpu_path"/hwmon/hwmon*; do
+    [[ -d $h && -r $h/temp1_input ]] && { gpu_temp_f=$h/temp1_input; break; }
+  done
+fi
+
+# --- per-file readers --------------------------------------------------------
+
+read_stat() {
+  # $1: name of result array — user nice system idle iowait irq softirq steal cores
+  local tag _rest
+  # shellcheck disable=SC2178
+  local -n out=$1
+  local cores=0
+  {
+    read -r tag "out[0]" "out[1]" "out[2]" "out[3]" "out[4]" "out[5]" "out[6]" "out[7]" _rest
+    while read -r tag _rest; do
+      case $tag in cpu[0-9]*) cores=$(( cores + 1 )) ;; esac
+    done
+  } < /proc/stat
+  out[8]=$cores
+}
+
+read_meminfo() {
+  # $1: name of result array — tot fre avl buf cac srec slab swtot swfre
+  # shellcheck disable=SC2178
+  local -n out=$1
+  local key value _rest
+  local i
+  for i in 0 1 2 3 4 5 6 7 8; do out[i]=0; done
+  while read -r key value _rest; do
+    case $key in
+      MemTotal:)      out[0]=$value ;;
+      MemFree:)       out[1]=$value ;;
+      MemAvailable:)  out[2]=$value ;;
+      Buffers:)       out[3]=$value ;;
+      Cached:)        out[4]=$value ;;
+      SReclaimable:)  out[5]=$value ;;
+      Slab:)          out[6]=$value ;;
+      SwapTotal:)     out[7]=$value ;;
+      SwapFree:)      out[8]=$value ;;
+    esac
+  done < /proc/meminfo
+}
+
+read_psi_file() {
+  # $1 path, $2 name of result array — some avg10/60/300, then full avg10/60/300
+  local path=$1
+  # shellcheck disable=SC2178
+  local -n out=$2
+  local kind a10 a60 a300 _rest
+  out[0]=0; out[1]=0; out[2]=0; out[3]=0; out[4]=0; out[5]=0
+  while read -r kind a10 a60 a300 _rest; do
+    case $kind in
+      some) out[0]=${a10#avg10=}; out[1]=${a60#avg60=}; out[2]=${a300#avg300=} ;;
+      full) out[3]=${a10#avg10=}; out[4]=${a60#avg60=}; out[5]=${a300#avg300=} ;;
+    esac
+  done < "$path"
+}
+
+read_vmstat() {
+  # $1: name of result array — pswpin pswpout (cumulative pages)
+  # shellcheck disable=SC2178
+  local -n out=$1
+  local key value
+  out[0]=0; out[1]=0
+  while read -r key value; do
+    case $key in
+      pswpin)  out[0]=$value ;;
+      pswpout) out[1]=$value ;;
+    esac
+  done < /proc/vmstat
+}
+
+read_netdev() {
+  # Rewrites global NET_JSON with {"n":..,"rx":..,"tx":..} fragments.
+  local line name rest rx tx
+  local -a f
+  NET_JSON=""
+  while IFS= read -r line; do
+    [[ $line == *:* ]] || continue
+    name=${line%%:*}
+    # trim leading/trailing whitespace, keep any inner spaces
+    name=${name#"${name%%[![:space:]]*}"}
+    name=${name%"${name##*[![:space:]]}"}
+    [[ -n $name && $name != lo ]] || continue
+    rest=${line#*:}
+    read -r -a f <<< "$rest"
+    [[ ${#f[@]} -ge 9 ]] || continue
+    rx=${f[0]}; [[ $rx =~ ^[0-9]+$ ]] || rx=0
+    tx=${f[8]}; [[ $tx =~ ^[0-9]+$ ]] || tx=0
+    [[ -n $NET_JSON ]] && NET_JSON+=","
+    NET_JSON+="{\"n\":\"$(esc_name "$name")\",\"rx\":$rx,\"tx\":$tx}"
+  done < /proc/net/dev
+}
+
+read_routes4() {
+  local iface dest metric _rest
+  R4_JSON=""
+  while read -r iface dest _rest _rest _rest _rest metric _rest; do
+    [[ $dest == 00000000 && $iface != lo ]] || continue
+    [[ $metric =~ ^[0-9]+$ ]] || metric=0
+    [[ -n $R4_JSON ]] && R4_JSON+=","
+    R4_JSON+="{\"n\":\"$(esc_name "$iface")\",\"m\":$metric}"
+  done < /proc/net/route
+}
+
+read_routes6() {
+  R6_JSON=""
+  [[ -r /proc/net/ipv6_route ]] || return 0
+  local dest dlen metric ifn _rest
+  while read -r dest dlen _rest _rest _rest metric _rest _rest _rest ifn; do
+    [[ $dlen == 00 && -n ${ifn:-} && $ifn != lo ]] || continue
+    [[ $metric =~ ^[0-9A-Fa-f]+$ ]] || continue
+    [[ -n $R6_JSON ]] && R6_JSON+=","
+    R6_JSON+="{\"n\":\"$(esc_name "$ifn")\",\"m\":$(( 16#$metric ))}"
+  done < /proc/net/ipv6_route
+}
+
+read_gpu() {
+  # Rewrites global GPU_JSON with a JSON object or the string "null".
+  GPU_JSON="null"
+  if [[ $gpu_vendor == amd ]]; then
+    local busy vru vrt te pw sclk=""
+    read_int_file "$gpu_busy_f" busy
+    read_int_file "$gpu_vram_used_f" vru
+    read_int_file "$gpu_vram_total_f" vrt
+    read_int_file "$gpu_temp_edge_f" te
+    if [[ -n $te ]]; then te=$(( te / 1000 )); fi
+    read_int_file "$gpu_power_f" pw
+    if [[ -n $pw ]]; then pw=$(( pw / 1000000 )); fi
+    if [[ -n $gpu_sclk_f ]]; then
+      local line f
+      while IFS= read -r line; do
+        case $line in
+          *'*')
+            f=${line%%[Mm][Hh]z*}
+            f=${f##*:}
+            f=${f//[[:space:]]/}
+            [[ $f =~ ^[0-9]+$ ]] && sclk=$f
+            ;;
+        esac
+      done < "$gpu_sclk_f"
+    fi
+    GPU_JSON="{\"busy\":${busy:-null},\"vrU\":${vru:-null},\"vrT\":${vrt:-null},\"t\":${te:-null},\"w\":${pw:-null},\"mhz\":${sclk:-null},\"kind\":\"amd\"}"
+  elif [[ $gpu_vendor == intel ]]; then
+    local fc fm t
+    read_int_file "$gpu_freq_cur_f" fc
+    read_int_file "$gpu_freq_max_f" fm
+    read_int_file "$gpu_temp_f" t
+    if [[ -n $t ]]; then t=$(( t / 1000 )); fi
+    GPU_JSON="{\"busy\":null,\"fc\":${fc:-null},\"fm\":${fm:-null},\"t\":${t:-null},\"kind\":\"intel\"}"
+  fi
+}
+
+# --- main loop ----------------------------------------------------------------
+
+emit() {
+  local -a cpu=() mem=() vm=()
+  read_stat cpu
+  read_meminfo mem
+  read_vmstat vm
+  read_netdev
+  read_routes4
+  read_routes6
+  read_gpu
+
+  snum_array cpu 0 1 2 3 4 5 6 7
+  snum_array mem 0 1 2 3 4 5 6 7 8
+  snum_array vm 0 1
+  [[ ${cpu[8]:-} =~ ^[0-9]+$ ]] || cpu[8]=1
+
+  local psi_json="null"
+  if (( psi_cpu_ok || psi_mem_ok )); then
+    local -a pc=(0 0 0 0 0 0) pm=(0 0 0 0 0 0)
+    if (( psi_cpu_ok )); then read_psi_file /proc/pressure/cpu pc; fi
+    if (( psi_mem_ok )); then read_psi_file /proc/pressure/memory pm; fi
+    local i
+    for i in 0 1 2 3 4 5; do
+      [[ ${pc[$i]} =~ ^[0-9.]+$ ]] || pc[i]=0
+      [[ ${pm[$i]} =~ ^[0-9.]+$ ]] || pm[i]=0
+    done
+    psi_json="{\"cs10\":${pc[0]:-0},\"cs60\":${pc[1]:-0},\"cs300\":${pc[2]:-0},\"cf10\":${pc[3]:-0},\"ms10\":${pm[0]:-0},\"ms60\":${pm[1]:-0},\"ms300\":${pm[2]:-0},\"mf10\":${pm[3]:-0}}"
+  fi
+
+  local temp_json="null"
+  if [[ -n $temp_file ]]; then
+    local tmc=""
+    read_int_file "$temp_file" tmc
+    if [[ -n $tmc ]]; then temp_json=$(( tmc / 1000 )); fi
+  fi
+
+  local l1=0 l5=0 l15=0 up=0 _rest
+  read -r l1 l5 l15 _rest < /proc/loadavg || true
+  read -r up _rest < /proc/uptime || true
+  [[ $l1 =~ ^[0-9.]+$ ]] || l1=0
+  [[ $l5 =~ ^[0-9.]+$ ]] || l5=0
+  [[ $l15 =~ ^[0-9.]+$ ]] || l15=0
+  [[ $up =~ ^[0-9.]+$ ]] || up=0
+
+  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s}\n' \
+    "$EPOCHREALTIME" \
+    "${cpu[0]}" "${cpu[1]}" "${cpu[2]}" "${cpu[3]}" \
+    "${cpu[4]}" "${cpu[5]}" "${cpu[6]}" "${cpu[7]}" \
+    "${mem[0]}" "${mem[1]}" "${mem[2]}" "${mem[3]}" "${mem[4]}" \
+    "${mem[5]}" "${mem[6]}" "${mem[7]}" "${mem[8]}" \
+    "$psi_json" \
+    "${vm[0]}" "${vm[1]}" \
+    "$NET_JSON" "$R4_JSON" "$R6_JSON" \
+    "$GPU_JSON" "$temp_json" \
+    "$l1" "$l5" "$l15" "$up" "${cpu[8]}"
+}
+
+while :; do
+  emit
+  # Builtin sleep: times out every interval; the FIFO never delivers input.
+  IFS= read -r -t "$interval_s" -u 9 _ || true
+done
