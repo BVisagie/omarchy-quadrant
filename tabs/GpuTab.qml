@@ -104,7 +104,7 @@ Item {
     width: root.width
     spacing: Style.space(8)
 
-    PanelHero {
+    Components.HardwareHero {
       width: parent.width
       visible: root.vendor !== ""
       title: root.gpuTitle

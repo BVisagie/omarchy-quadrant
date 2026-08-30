@@ -126,7 +126,7 @@ Item {
     width: root.width
     spacing: Style.space(8)
 
-    PanelHero {
+    Components.HardwareHero {
       width: parent.width
       visible: root.sysCpu && root.sysCpu.modelName !== ""
       title: root.sysCpu ? root.sysCpu.modelName : ""

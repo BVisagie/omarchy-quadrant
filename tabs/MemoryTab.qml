@@ -166,7 +166,7 @@ Item {
     width: root.width
     spacing: Style.space(8)
 
-    PanelHero {
+    Components.HardwareHero {
       width: parent.width
       title: root.memTitle
       meta: root.memMeta

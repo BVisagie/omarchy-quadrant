@@ -25,7 +25,6 @@ var metrics = {
   barMeterWidth: 18,
   barMeterHeight: 10,
   barSegmentGap: 8,
-  barNetWidth: 86,
   graphHeight: 96,
   ringSize: 92,
   ringThickness: 9,
