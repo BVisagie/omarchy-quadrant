@@ -8,6 +8,7 @@ import "../Theme.js" as Theme
 // Center shows centerText over subText (both PlainText).
 Item {
   id: root
+  clip: true
 
   property real fraction: 0
   property var segments: []
@@ -18,14 +19,16 @@ Item {
   property string subText: ""
   property color foreground: "#cacccc"
   property string fontFamily: Style.font.family
+  property real size: Style.space(Theme.metrics.ringSize)
 
-  implicitWidth: Style.space(Theme.metrics.ringSize)
-  implicitHeight: Style.space(Theme.metrics.ringSize)
+  implicitWidth: size
+  implicitHeight: size
 
   onFractionChanged: canvas.requestPaint()
   onSegmentsChanged: canvas.requestPaint()
   onColorChanged: canvas.requestPaint()
   onTrackColorChanged: canvas.requestPaint()
+  onThicknessChanged: canvas.requestPaint()
 
   Canvas {
     id: canvas
@@ -51,6 +54,9 @@ Item {
 
       var segs = root.segments
       if (segs && segs.length > 0) {
+        // Flat joins keep adjacent composition segments crisp instead of
+        // letting rounded caps paint over the neighboring color.
+        ctx.lineCap = "butt"
         var angle = start
         for (var i = 0; i < segs.length; i++) {
           var f = Number(segs[i] && segs[i].fraction) || 0
@@ -78,6 +84,7 @@ Item {
 
   Column {
     anchors.centerIn: parent
+    width: Math.max(0, root.width - root.thickness * 2 - Style.space(8))
     spacing: 0
 
     Text {
@@ -87,7 +94,9 @@ Item {
       font.family: root.fontFamily
       font.pixelSize: Style.font.subtitle
       font.bold: true
-      anchors.horizontalCenter: parent.horizontalCenter
+      width: parent.width
+      horizontalAlignment: Text.AlignHCenter
+      elide: Text.ElideMiddle
     }
 
     Text {
@@ -96,7 +105,9 @@ Item {
       color: Qt.darker(root.foreground, 1.4)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
-      anchors.horizontalCenter: parent.horizontalCenter
+      width: parent.width
+      horizontalAlignment: Text.AlignHCenter
+      elide: Text.ElideMiddle
       visible: root.subText !== ""
     }
   }

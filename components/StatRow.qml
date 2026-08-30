@@ -13,6 +13,8 @@ Item {
   property color foreground: "#cacccc"
   property string fontFamily: Style.font.family
   property bool valueBold: false
+  property real labelMaximumRatio: 0.42
+  property real textSpacing: Style.space(8)
 
   implicitWidth: 200
   implicitHeight: Math.max(labelText.implicitHeight, valueText.implicitHeight)
@@ -27,7 +29,7 @@ Item {
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
     elide: Text.ElideRight
-    width: Math.min(implicitWidth, parent.width * 0.6)
+    width: Math.min(implicitWidth, parent.width * root.labelMaximumRatio)
   }
 
   Text {
@@ -38,10 +40,11 @@ Item {
     font.family: root.fontFamily
     font.pixelSize: Style.font.body
     font.bold: root.valueBold
+    anchors.left: labelText.right
+    anchors.leftMargin: root.textSpacing
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
     horizontalAlignment: Text.AlignRight
     elide: Text.ElideLeft
-    width: Math.min(implicitWidth, parent.width * 0.7)
   }
 }
