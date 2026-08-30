@@ -534,6 +534,25 @@ test("Theme.barPaletteFor uses accent fill and falls back on bad input", () => {
   assert.match(bad.track, /^#[0-9a-fA-F]{8}$/);
 });
 
+test("Theme.barLabelFor resolves glyph, letter, and none", () => {
+  assert.equal(Theme.barLabelFor("glyph", "cpu"), "\u{F0EE0}");
+  assert.equal(Theme.barLabelFor("glyph", "gpu"), "\u{F08AE}");
+  assert.equal(Theme.barLabelFor("glyph", "mem"), "\uEFC5");
+  assert.equal(Theme.barLabelFor("glyph", "disk"), "\u{F02CA}");
+  assert.equal(Theme.barLabelFor("letter", "cpu"), "C");
+  assert.equal(Theme.barLabelFor("letter", "gpu"), "G");
+  assert.equal(Theme.barLabelFor("letter", "mem"), "M");
+  assert.equal(Theme.barLabelFor("letter", "disk"), "D");
+  assert.equal(Theme.barLabelFor("none", "cpu"), "");
+  assert.equal(Theme.barLabelFor("NONE", "mem"), "");
+  // unknown mode falls back to glyphs; unknown metric is empty
+  assert.equal(Theme.barLabelFor("typo", "cpu"), Theme.barGlyphs.cpu);
+  assert.equal(Theme.barLabelFor("glyph", "nope"), "");
+  assert.equal(Theme.barLabelFor(undefined, "cpu"), Theme.barGlyphs.cpu);
+  assert.equal(Theme.metrics.barMeterThickness, 3);
+  assert.equal(Theme.metrics.barLabelGap, 3);
+});
+
 test("Theme.normalizeHex accepts 6 and 8 digit forms", () => {
   assert.equal(Theme.normalizeHex("#7aa2f7"), "#7aa2f7");
   assert.equal(Theme.normalizeHex("#ff7aa2f7"), "#7aa2f7");

@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "Bernard Visagie",
   "license": "MIT",
-  "description": "Unified system monitor for the Quattro bar: CPU, memory, GPU, and network in one compact widget with a tabbed detail panel.",
+  "description": "Unified system monitor for the Quattro bar: CPU, GPU, memory, and network in one compact widget with a tabbed detail panel.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,18 +14,19 @@
   },
   "barWidget": {
     "displayName": "Quadrant",
-    "description": "CPU, memory, GPU, and network meters with a tabbed detail panel",
+    "description": "CPU, GPU, memory, and network meters with a tabbed detail panel",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "segments": ["cpu", "memory", "gpu", "network"],
+      "segments": ["cpu", "gpu", "memory", "network"],
       "processCount": 5,
       "barIntervalMs": 1000,
       "panelIntervalMs": 2000,
       "networkInterface": "auto",
       "gpuDevice": "auto",
-      "barPalette": "theme"
+      "barPalette": "theme",
+      "barLabels": "glyph"
     },
     "schema": [
       {
@@ -69,6 +70,12 @@
         "type": "string",
         "label": "Bar palette (theme or vivid)",
         "description": "theme (default) paints bar meters with the live Omarchy accent, a foreground-derived track, and urgent at ≥90% load. vivid keeps the original per-resource Tokyo-night hues."
+      },
+      {
+        "key": "barLabels",
+        "type": "string",
+        "label": "Bar labels (glyph, letter, or none)",
+        "description": "How CPU, GPU, and memory cells are labelled. glyph (default) uses Nerd Font icons; letter falls back to C/G/M; none shows only the percentage."
       }
     ]
   }

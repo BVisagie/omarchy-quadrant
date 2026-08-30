@@ -6,7 +6,7 @@ import "Model.js" as Model
 import "Theme.js" as Theme
 import "components" as Components
 
-// Quadrant bar slot: one compact widget covering CPU, memory, GPU, and
+// Quadrant bar slot: one compact widget covering CPU, GPU, memory, and
 // network. Owns the long-lived sampler (quadrant-stream), the 60s history
 // buffers, and GPU detection; the nested Panel reads everything through
 // hostWidget.
@@ -17,7 +17,7 @@ BarWidget {
   // ---- settings (manifest barWidget.defaults mirrored as fallbacks) ----
   readonly property var segmentsSetting: {
     var v = setting("segments", null)
-    return Array.isArray(v) ? v : ["cpu", "memory", "gpu", "network"]
+    return Array.isArray(v) ? v : ["cpu", "gpu", "memory", "network"]
   }
   readonly property int barIntervalMs: Model.clamp(setting("barIntervalMs", 1000), 250, 60000)
   readonly property int panelIntervalMs: Model.clamp(setting("panelIntervalMs", 2000), 500, 60000)
@@ -28,6 +28,10 @@ BarWidget {
   readonly property string barPaletteMode: {
     var v = String(setting("barPalette", "theme")).toLowerCase()
     return v === "vivid" ? "vivid" : "theme"
+  }
+  readonly property string barLabelsMode: {
+    var v = String(setting("barLabels", "glyph")).toLowerCase()
+    return (v === "letter" || v === "none") ? v : "glyph"
   }
 
   readonly property int visibleSegmentCount: {
@@ -104,15 +108,38 @@ BarWidget {
       return Theme.trackFor(String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground))
     return themePal.track
   }
-  // Stretch C/M/G meters to the two-line network stack when it is shown,
-  // so they fill the slot instead of sitting as 10px pills on the ↑ line.
-  // Falls back to Theme.metrics.barMeterHeight when network is hidden.
-  readonly property int meterHeight: {
-    var floor = Style.space(Theme.metrics.barMeterHeight)
-    if (!root.segmentEnabled("network")) return floor
-    var h = netCol.implicitHeight
-    return h > floor ? h : floor
+  readonly property string cpuValueText: cpuPct ? Model.formatPct(cpuPct.busy) : "--"
+  readonly property string memValueText: memComp ? Model.formatPct(memComp.usedPct) : "--"
+  readonly property string gpuValueText: {
+    if (!gpuDisplay) return "--"
+    return (gpuDisplay.estimated ? "~" : "") + Model.formatPct(gpuDisplay.pct)
   }
+  readonly property color hotTextColor: {
+    if (barPaletteMode === "vivid") return Theme.series.cpuSteal
+    return themePal.urgent
+  }
+  // Two caption lines, matching the network stack so every cell shares
+  // both baselines. Network's own height is preferred when it is shown.
+  readonly property int lineBoxHeight: pctSizer.implicitHeight
+  readonly property int segmentHeight: {
+    var two = lineBoxHeight * 2
+    if (!root.segmentEnabled("network")) return two
+    var h = netCol.implicitHeight
+    return h > two ? h : two
+  }
+  readonly property int metricLabelWidth: {
+    if (root.vertical || root.barLabelsMode === "none") return 0
+    return Math.max(cpuGlyphSizer.implicitWidth, gpuGlyphSizer.implicitWidth, memGlyphSizer.implicitWidth)
+  }
+  readonly property int metricCellWidth: {
+    var w = pctSizer.implicitWidth
+    if (root.metricLabelWidth > 0)
+      w += Style.space(Theme.metrics.barLabelGap) + root.metricLabelWidth
+    if (root.vertical && root.bar)
+      return Math.min(w, root.bar.barSize)
+    return w
+  }
+  readonly property int verticalSlot: root.bar ? root.bar.barSize : Style.bar.sizeVertical
   readonly property bool gpuAvailable: gpu !== null
   readonly property bool nvidiaSelected: gpu !== null && gpu.vendor === "nvidia"
   // Position of the selected card among the NVIDIA cards — nvidia-smi -i
@@ -170,10 +197,10 @@ BarWidget {
     var parts = []
     if (segmentEnabled("cpu") && cpuPct)
       parts.push("CPU " + Model.formatPct(cpuPct.busy))
-    if (segmentEnabled("memory") && memComp)
-      parts.push("MEM " + Model.formatPct(memComp.usedPct))
     if (segmentEnabled("gpu") && gpuAvailable && gpuDisplay)
       parts.push("GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (freq)" : ""))
+    if (segmentEnabled("memory") && memComp)
+      parts.push("MEM " + Model.formatPct(memComp.usedPct))
     if (segmentEnabled("network") && ifaceRates)
       parts.push("↑ " + Model.formatRate(ifaceRates.txBps) + " ↓ " + Model.formatRate(ifaceRates.rxBps))
     return parts.length > 0 ? parts.join("  ·  ") : "Quadrant"
@@ -492,6 +519,41 @@ BarWidget {
       root.toggle()
     }
 
+    // Shared sizers: cell width is locked to glyph + "~100%" so digits
+    // never resize the slot. Hidden, not Grid children.
+    Text {
+      id: pctSizer
+      visible: false
+      textFormat: Text.PlainText
+      text: "~100%"
+      font.family: button.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+    Text {
+      id: cpuGlyphSizer
+      visible: false
+      textFormat: Text.PlainText
+      text: Theme.barLabelFor(root.barLabelsMode, "cpu")
+      font.family: button.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+    Text {
+      id: gpuGlyphSizer
+      visible: false
+      textFormat: Text.PlainText
+      text: Theme.barLabelFor(root.barLabelsMode, "gpu")
+      font.family: button.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+    Text {
+      id: memGlyphSizer
+      visible: false
+      textFormat: Text.PlainText
+      text: Theme.barLabelFor(root.barLabelsMode, "mem")
+      font.family: button.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
     Grid {
       id: segGrid
       z: 1
@@ -499,138 +561,58 @@ BarWidget {
       columns: root.vertical ? 1 : root.visibleSegmentCount
       columnSpacing: Style.space(Theme.metrics.barSegmentGap)
       rowSpacing: Style.space(4)
-      // Network is two caption lines; C/M/G are a letter + meter. Default
-      // Grid alignment pins those to the top of the cell, which is what
-      // makes the meters sit on the ↑ line in a horizontal bar.
       verticalItemAlignment: Grid.AlignVCenter
       horizontalItemAlignment: Grid.AlignHCenter
 
-      // ---- CPU segment ----
-      Item {
+      MetricCell {
         visible: root.segmentEnabled("cpu")
-        implicitWidth: cpuRow.implicitWidth
-        implicitHeight: root.meterHeight
-
-        Row {
-          id: cpuRow
-          height: root.meterHeight
-          spacing: Style.space(4)
-          Text {
-            textFormat: Text.PlainText
-            text: "C"
-            color: button.foreground
-            font.family: button.fontFamily
-            font.pixelSize: Style.font.caption
-            anchors.verticalCenter: parent.verticalCenter
-          }
-          Components.MeterBar {
-            height: root.meterHeight
-            trackColor: root.meterTrack
-            segments: [
-              { fraction: root.cpuPct ? root.cpuPct.user / 100 : 0, color: root.cpuMeterUser },
-              { fraction: root.cpuPct ? root.cpuPct.system / 100 : 0, color: root.cpuMeterSystem }
-            ]
-            anchors.verticalCenter: parent.verticalCenter
-          }
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          hoverEnabled: false
-          acceptedButtons: Qt.LeftButton
-          onPressed: root.noteSegmentPress()
-          onClicked: root.segmentClicked("cpu")
-        }
+        tab: "cpu"
+        metric: "cpu"
+        valueText: root.cpuValueText
+        hot: root.cpuHot
+        meterSegments: [
+          { fraction: root.cpuPct ? root.cpuPct.user / 100 : 0, color: root.cpuMeterUser },
+          { fraction: root.cpuPct ? root.cpuPct.system / 100 : 0, color: root.cpuMeterSystem }
+        ]
       }
 
-      // ---- Memory segment ----
-      Item {
-        visible: root.segmentEnabled("memory")
-        implicitWidth: memRow.implicitWidth
-        implicitHeight: root.meterHeight
-
-        Row {
-          id: memRow
-          height: root.meterHeight
-          spacing: Style.space(4)
-          Text {
-            textFormat: Text.PlainText
-            text: "M"
-            color: button.foreground
-            font.family: button.fontFamily
-            font.pixelSize: Style.font.caption
-            anchors.verticalCenter: parent.verticalCenter
-          }
-          Components.MeterBar {
-            height: root.meterHeight
-            trackColor: root.meterTrack
-            segments: [
-              { fraction: root.memComp ? root.memComp.usedPct / 100 : 0, color: root.memMeterFill }
-            ]
-            anchors.verticalCenter: parent.verticalCenter
-          }
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          hoverEnabled: false
-          acceptedButtons: Qt.LeftButton
-          onPressed: root.noteSegmentPress()
-          onClicked: root.segmentClicked("mem")
-        }
-      }
-
-      // ---- GPU segment (auto-hides with no supported GPU) ----
-      Item {
+      MetricCell {
         visible: root.segmentEnabled("gpu") && root.gpuAvailable
-        implicitWidth: gpuRow.implicitWidth
-        implicitHeight: root.meterHeight
+        tab: "gpu"
+        metric: "gpu"
+        valueText: root.gpuValueText
+        hot: root.gpuHot
+        meterSegments: [
+          { fraction: root.gpuDisplay ? root.gpuDisplay.pct / 100 : 0, color: root.gpuMeterFill }
+        ]
+      }
 
-        Row {
-          id: gpuRow
-          height: root.meterHeight
-          spacing: Style.space(4)
-          Text {
-            textFormat: Text.PlainText
-            text: "G"
-            color: button.foreground
-            font.family: button.fontFamily
-            font.pixelSize: Style.font.caption
-            anchors.verticalCenter: parent.verticalCenter
-          }
-          Components.MeterBar {
-            height: root.meterHeight
-            trackColor: root.meterTrack
-            segments: [
-              { fraction: root.gpuDisplay ? root.gpuDisplay.pct / 100 : 0, color: root.gpuMeterFill }
-            ]
-            anchors.verticalCenter: parent.verticalCenter
-          }
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          hoverEnabled: false
-          acceptedButtons: Qt.LeftButton
-          onPressed: root.noteSegmentPress()
-          onClicked: root.segmentClicked("gpu")
-        }
+      MetricCell {
+        visible: root.segmentEnabled("memory")
+        tab: "mem"
+        metric: "mem"
+        valueText: root.memValueText
+        hot: root.memHot
+        meterSegments: [
+          { fraction: root.memComp ? root.memComp.usedPct / 100 : 0, color: root.memMeterFill }
+        ]
       }
 
       // ---- Network segment (two-line rates) ----
       Item {
         visible: root.segmentEnabled("network")
-        // Reserve exactly the widest compact label in the active font.
-        // The old fixed 86-unit slot was much wider than values such as
-        // "↑ 8.0K", creating an apparent gap after the GPU meter.
-        implicitWidth: netSizer.implicitWidth
+        implicitWidth: {
+          var w = netSizer.implicitWidth
+          if (root.vertical) return Math.min(w, root.verticalSlot)
+          return w
+        }
         implicitHeight: netCol.implicitHeight
 
         Text {
           id: netSizer
           visible: false
           textFormat: Text.PlainText
-          text: "↓ 999T"
+          text: root.vertical ? "↓999T" : "↓ 999T"
           font.family: button.fontFamily
           font.pixelSize: Style.font.caption
         }
@@ -644,7 +626,7 @@ BarWidget {
             width: parent.width
             elide: Text.ElideRight
             horizontalAlignment: Text.AlignRight
-            text: "↑ " + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.txBps) : "--")
+            text: (root.vertical ? "↑" : "↑ ") + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.txBps) : "--")
             color: button.foreground
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
@@ -654,7 +636,7 @@ BarWidget {
             width: parent.width
             elide: Text.ElideRight
             horizontalAlignment: Text.AlignRight
-            text: "↓ " + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.rxBps) : "--")
+            text: (root.vertical ? "↓" : "↓ ") + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.rxBps) : "--")
             color: button.foreground
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
@@ -669,6 +651,84 @@ BarWidget {
           onClicked: root.segmentClicked("net")
         }
       }
+    }
+  }
+
+  // Two-line metric cell: glyph/letter + right-aligned percentage over a
+  // hairline meter. Width is locked by the shared sizers on `button`.
+  component MetricCell: Item {
+    id: cell
+
+    property string tab: ""
+    property string metric: ""
+    property string valueText: "--"
+    property var meterSegments: []
+    property bool hot: false
+
+    readonly property string label: root.vertical ? "" : Theme.barLabelFor(root.barLabelsMode, metric)
+    readonly property color valueColor: cell.hot ? root.hotTextColor : button.foreground
+
+    implicitWidth: root.metricCellWidth
+    implicitHeight: root.segmentHeight
+
+    Column {
+      width: parent.width
+      spacing: 0
+      anchors.verticalCenter: parent.verticalCenter
+
+      Item {
+        width: parent.width
+        height: root.lineBoxHeight
+
+        Text {
+          id: labelText
+          visible: cell.label !== ""
+          textFormat: Text.PlainText
+          text: cell.label
+          color: button.foreground
+          font.family: button.fontFamily
+          font.pixelSize: Style.font.caption
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+        }
+
+        Text {
+          textFormat: Text.PlainText
+          text: cell.valueText
+          color: cell.valueColor
+          font.family: button.fontFamily
+          font.pixelSize: Style.font.caption
+          horizontalAlignment: Text.AlignRight
+          elide: Text.ElideRight
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          anchors.left: labelText.visible
+                        ? labelText.right
+                        : parent.left
+          anchors.leftMargin: labelText.visible ? Style.space(Theme.metrics.barLabelGap) : 0
+        }
+      }
+
+      Item {
+        width: parent.width
+        height: root.lineBoxHeight
+
+        Components.MeterBar {
+          width: parent.width
+          height: Style.space(Theme.metrics.barMeterThickness)
+          anchors.verticalCenter: parent.verticalCenter
+          trackColor: root.meterTrack
+          segments: cell.meterSegments
+        }
+      }
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: false
+      acceptedButtons: Qt.LeftButton
+      onPressed: root.noteSegmentPress()
+      onClicked: root.segmentClicked(cell.tab)
     }
   }
 }

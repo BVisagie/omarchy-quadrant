@@ -20,7 +20,6 @@ Item {
   readonly property var swap: sample ? Model.swapUsage(sample.mem) : null
   readonly property var swapRate: model ? model.swapRate : null
   readonly property var sysMem: model && model.sysInfo ? model.sysInfo.mem : null
-  readonly property var sysHost: model && model.sysInfo ? model.sysInfo.host : null
 
   property var rows: []
   property string errorText: ""
@@ -91,17 +90,6 @@ Item {
       }
     }
     return out
-  }
-
-  readonly property string hostLine: {
-    var h = sysHost
-    if (!h) return ""
-    var parts = []
-    if (h.sysVendor && h.productName) parts.push(h.sysVendor + " " + h.productName)
-    else if (h.productName) parts.push(h.productName)
-    else if (h.sysVendor) parts.push(h.sysVendor)
-    if (h.kernel) parts.push("Linux " + h.kernel)
-    return parts.join(" · ")
   }
 
   function apply(text) {
@@ -288,17 +276,6 @@ Item {
         foreground: root.panel ? root.panel.barForeground : "#cacccc"
         fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
       }
-    }
-
-    Text {
-      textFormat: Text.PlainText
-      visible: root.hostLine !== ""
-      text: root.hostLine
-      color: root.panel ? Qt.darker(root.panel.barForeground, 1.6) : "#cacccc"
-      font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-      font.pixelSize: Style.font.caption
-      width: parent.width
-      wrapMode: Text.WordWrap
     }
 
     PanelSeparator {

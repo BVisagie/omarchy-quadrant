@@ -1,15 +1,15 @@
 # Quadrant
 
-A unified system monitor for the Omarchy Quattro bar: CPU, memory, GPU, and
+A unified system monitor for the Omarchy Quattro bar: CPU, GPU, memory, and
 network in one compact bar widget and one tabbed panel. Each panel tab
 identifies the hardware it is measuring — CPU model and topology, GPU name
 and driver, installed RAM and swap devices — then shows live usage.
 
 ```
-┌──────────────────────────────┐
-│ C▮  M▮  G▮   ↑ 1.1K          │   bar slot (segments toggleable)
-│              ↓ 3.6K          │
-└──────────────────────────────┘
+┌────────────────────────────────┐
+│  󰻠 42%  󰢮 18%   61%  ↑ 1.1K  │   bar slot (segments toggleable)
+│  ▂▂▂▂   ▂▂▂▂   ▂▂▂▂   ↓ 3.6K  │
+└────────────────────────────────┘
 ```
 
 Clicking a segment opens the panel on that segment's tab; clicking anywhere
@@ -17,10 +17,11 @@ else toggles the panel on the last-used tab.
 
 ```
 ┌────────────────────────────────────────────┐
-│  CPU   MEMORY   GPU   NETWORK              │
+│  CPU   GPU   MEMORY   NETWORK              │
 │  ──────────────────────────────────────    │
 │  Ryzen 9 7950X · 16 cores · 32 threads     │
 │  60s history / rings / process list        │
+│  ASUS … · Linux 7.1.9                      │
 │  ←/→ or 1-N switch tab · R refresh · Esc   │
 └────────────────────────────────────────────┘
 ```
@@ -95,22 +96,24 @@ or manual deletion under `~/.config/omarchy/plugins/` is required.
 
 ## Usage
 
-- **Bar segments**: `C` (CPU user+system stacked fill), `M` (memory used),
-  `G` (GPU busy), and two-line network rates. Each segment toggles
-  independently; the slot shrinks to fit. The GPU segment hides itself when
-  no supported GPU is detected — no dead chrome for hardware that is not
-  there. Vertical bars are supported (segments stack). Meter fills follow
-  the live Omarchy accent (with the theme's urgent color at ≥90% load);
-  `barPalette vivid` restores the original per-resource hues. Network rates
-  use a compact format (`1.0K`, `99K`) in a font-sized stable slot, so the
-  widget neither leaves a large gap nor resizes as the magnitude changes.
-  C/M/G meters stretch to the two-line
-  network stack and sit vertically centered in the slot.
+- **Bar segments**: CPU, GPU, and memory are two-line cells — a Nerd Font
+  glyph (or `C`/`G`/`M` with `barLabels letter`) plus a live percentage
+  over a 3 px meter. CPU stacks user+system in the meter; Intel GPU
+  prefixes `~` when the value is a frequency estimate. Network is two-line
+  compact rates (`1.0K`, `99K`) in a font-sized stable slot. Each segment
+  toggles independently; the slot shrinks to fit. The GPU segment hides
+  itself when no supported GPU is detected — no dead chrome for hardware
+  that is not there. Vertical bars are supported (segments stack; cells
+  clamp to the 28 px slot and drop the glyph). Meter fills follow the live
+  Omarchy accent (with the theme's urgent color at ≥90% load);
+  `barPalette vivid` restores the original per-resource hues. `barLabels`
+  is `glyph` (default), `letter`, or `none`.
 - **Panel**: click the widget. `←`/`→` or `1`–`N` (N = visible tabs; GPU
   is omitted when no supported card is present) switch tabs, `R`
   refreshes the active tab, `Esc` closes. `Tab` keeps its Quattro meaning
   (switch to the adjacent bar panel) and is deliberately not used inside
-  Quadrant.
+  Quadrant. DMI vendor/product and the kernel release sit in the panel
+  footer, visible from every tab.
 - **IPC** (for scripts and keybinds):
 
 ```sh
@@ -132,13 +135,14 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `segments` | `["cpu","memory","gpu","network"]` | Which bar segments to show |
+| `segments` | `["cpu","gpu","memory","network"]` | Which bar segments to show |
 | `processCount` | `5` | Top-process rows per tab (1–10) |
 | `barIntervalMs` | `1000` | Stream cadence feeding bar + history (250–60000) |
 | `panelIntervalMs` | `2000` | On-demand sampler cadence while the panel is open (500–60000) |
 | `networkInterface` | `"auto"` | `auto` = default route across IPv4 **and** IPv6, lowest metric wins, IPv4 takes ties |
 | `gpuDevice` | `"auto"` | `auto` = boot display card when determinable, else `card0`; or a specific `cardN` |
 | `barPalette` | `"theme"` | `theme` = live Omarchy accent fills, foreground track, urgent at ≥90%; `vivid` = original per-resource hues |
+| `barLabels` | `"glyph"` | `glyph` = Nerd Font icons; `letter` = C/G/M; `none` = percentage only |
 
 ## What it measures (and what it does not)
 
@@ -156,7 +160,7 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   ring shows `--`, not zero. The tab header is installed RAM; swap devices
   from `/proc/swaps` are listed (zram includes the active compression
   algorithm and disk size). DMI vendor/product and the kernel release
-  appear as a caption when readable.
+  appear in the panel footer when readable, not on this tab.
 - **GPU**: AMD reads `amdgpu` sysfs (`gpu_busy_percent`, `mem_busy_percent`,
   per-engine `engine/*/busy_percent`, VRAM info, hwmon temp/power, active
   DPM sclk). NVIDIA runs `nvidia-smi` (timeout-bounded,

@@ -26,11 +26,22 @@ Panel {
 
   readonly property bool gpuAvailable: hostWidget ? hostWidget.gpuAvailable === true : false
   readonly property var tabs: {
-    var all = ["cpu", "mem", "gpu", "net"]
+    var all = ["cpu", "gpu", "mem", "net"]
     if (gpuAvailable) return all
     return all.filter(function (t) { return t !== "gpu" })
   }
-  readonly property var tabLabels: ({ "cpu": "CPU", "mem": "MEMORY", "gpu": "GPU", "net": "NETWORK" })
+  readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "MEMORY", "net": "NETWORK" })
+
+  readonly property string hostLine: {
+    var info = hostWidget && hostWidget.sysInfo ? hostWidget.sysInfo.host : null
+    if (!info) return ""
+    var parts = []
+    if (info.sysVendor && info.productName) parts.push(info.sysVendor + " " + info.productName)
+    else if (info.productName) parts.push(info.productName)
+    else if (info.sysVendor) parts.push(info.sysVendor)
+    if (info.kernel) parts.push("Linux " + info.kernel)
+    return parts.join(" · ")
+  }
 
   onTabsChanged: {
     if (tabs.indexOf(currentTab) < 0) currentTab = tabs[0]
@@ -233,7 +244,18 @@ Panel {
           }
         }
 
-        // ---- footer hint ----
+        // ---- footer ----
+        Text {
+          textFormat: Text.PlainText
+          visible: root.hostLine !== ""
+          text: root.hostLine
+          color: Qt.darker(root.barForeground, 1.6)
+          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.caption
+          width: parent.width
+          wrapMode: Text.WordWrap
+        }
+
         Text {
           textFormat: Text.PlainText
           text: "←/→ or 1-" + root.tabs.length + " switch tab · R refresh · Esc close"
