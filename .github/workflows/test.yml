@@ -53,7 +53,7 @@ jobs:
           ./scripts/process-net eth0 | jq -e '.ok == true'
           ./scripts/gpu-stats list | jq -e '.ok == true'
           ./scripts/system-info | jq -e '.ok == true and .cpu and .mem and .host'
-          ./scripts/disk-info | jq -e '.ok == true and .disks and .dfPayload'
+          ./scripts/disk-info | jq -e '.ok == true and .disks and .dfPayload and (.backing | type == "object")'
           # failure path: bad input must produce an ok:false envelope
           if ./scripts/process-cpu nope | jq -e '.ok == false' >/dev/null; then
             echo "failure envelope OK"

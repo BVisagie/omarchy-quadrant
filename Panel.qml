@@ -32,17 +32,6 @@ Panel {
   }
   readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "MEMORY", "disk": "DRIVES", "net": "NETWORK" })
 
-  readonly property string hostLine: {
-    var info = hostWidget && hostWidget.sysInfo ? hostWidget.sysInfo.host : null
-    if (!info) return ""
-    var parts = []
-    if (info.sysVendor && info.productName) parts.push(info.sysVendor + " " + info.productName)
-    else if (info.productName) parts.push(info.productName)
-    else if (info.sysVendor) parts.push(info.sysVendor)
-    if (info.kernel) parts.push("Linux " + info.kernel)
-    return parts.join(" · ")
-  }
-
   onTabsChanged: {
     if (tabs.indexOf(currentTab) < 0) currentTab = tabs[0]
   }
@@ -103,7 +92,13 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(420))
-    contentHeight: panel.fittedContentHeight(contentColumn.implicitHeight, Style.space(560))
+    contentHeight: {
+      var sp = Style.space(10)
+      var natural = tabStrip.implicitHeight + tabSep.implicitHeight
+                    + bodyColumn.implicitHeight + hintText.implicitHeight
+                    + Style.space(8) + sp * 4
+      return panel.fittedContentHeight(natural, Style.space(560))
+    }
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -121,15 +116,16 @@ Panel {
         }
       }
 
-      Column {
+      ColumnLayout {
         id: contentColumn
         width: parent.width
+        height: parent.height
         spacing: Style.space(10)
 
         // ---- tab strip ----
         Row {
           id: tabStrip
-          width: parent.width
+          Layout.fillWidth: true
           spacing: Style.space(14)
 
           Repeater {
@@ -175,102 +171,120 @@ Panel {
         }
 
         PanelSeparator {
+          id: tabSep
+          Layout.fillWidth: true
           foreground: root.barForeground
         }
 
-        // Keep last-good metrics on screen, but never leave stale or failed
-        // async data looking live. GPU probe failures are distinct from a
-        // legitimate no-GPU result.
-        Text {
-          textFormat: Text.PlainText
-          visible: root.hostWidget
-                   && (root.hostWidget.streamLive !== true
-                       || root.hostWidget.gpuDetectionError !== ""
-                       || root.hostWidget.diskInfoError !== "")
-          text: {
-            if (!root.hostWidget) return ""
-            var messages = []
-            if (root.hostWidget.streamLive !== true) {
-              messages.push(root.hostWidget.streamError !== ""
-                ? root.hostWidget.streamError
-                : "Waiting for the system sampler…")
+        Flickable {
+          id: bodyFlick
+          Layout.fillWidth: true
+          Layout.fillHeight: true
+          Layout.preferredHeight: bodyColumn.implicitHeight
+          Layout.minimumHeight: 0
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          flickableDirection: Flickable.VerticalFlick
+          contentWidth: width
+          contentHeight: bodyColumn.implicitHeight
+          interactive: contentHeight > height
+
+          Column {
+            id: bodyColumn
+            width: bodyFlick.width
+            spacing: Style.space(10)
+
+            // Keep last-good metrics on screen, but never leave stale or failed
+            // async data looking live. GPU probe failures are distinct from a
+            // legitimate no-GPU result.
+            Text {
+              textFormat: Text.PlainText
+              visible: root.hostWidget
+                       && (root.hostWidget.streamLive !== true
+                           || root.hostWidget.gpuDetectionError !== ""
+                           || root.hostWidget.diskInfoError !== "")
+              text: {
+                if (!root.hostWidget) return ""
+                var messages = []
+                if (root.hostWidget.streamLive !== true) {
+                  messages.push(root.hostWidget.streamError !== ""
+                    ? root.hostWidget.streamError
+                    : "Waiting for the system sampler…")
+                }
+                if (root.hostWidget.gpuDetectionError !== "")
+                  messages.push(root.hostWidget.gpuDetectionError)
+                if (root.hostWidget.diskInfoError !== "")
+                  messages.push(root.hostWidget.diskInfoError)
+                return messages.join(" · ")
+              }
+              color: Color.urgent
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.caption
+              width: parent.width
+              wrapMode: Text.WordWrap
             }
-            if (root.hostWidget.gpuDetectionError !== "")
-              messages.push(root.hostWidget.gpuDetectionError)
-            if (root.hostWidget.diskInfoError !== "")
-              messages.push(root.hostWidget.diskInfoError)
-            return messages.join(" · ")
-          }
-          color: Color.urgent
-          font.family: root.bar ? root.bar.fontFamily : Style.font.family
-          font.pixelSize: Style.font.caption
-          width: parent.width
-          wrapMode: Text.WordWrap
-        }
 
-        // ---- tab content ----
-        StackLayout {
-          id: stack
-          width: parent.width
-          // Children are always cpu/mem/gpu/net/disk in that order. Map by
-          // tab id rather than by the filtered `tabs` array — otherwise a
-          // no-GPU machine puts Network at index 2, which is GpuTab.
-          currentIndex: {
-            var map = { "cpu": 0, "mem": 1, "gpu": 2, "net": 3, "disk": 4 }
-            var i = map[root.currentTab]
-            return (i === undefined) ? 0 : i
-          }
-          // StackLayout otherwise reports the tallest child as its implicit
-          // height. That made short tabs (notably GPU) inherit the CPU or
-          // Memory tab height and left a large blank gap above the footer.
-          implicitHeight: currentIndex >= 0 && children[currentIndex]
-                          ? children[currentIndex].implicitHeight : 0
+            // ---- tab content ----
+            StackLayout {
+              id: stack
+              width: parent.width
+              // Children are always cpu/mem/gpu/net/disk in that order. Map by
+              // tab id rather than by the filtered `tabs` array — otherwise a
+              // no-GPU machine puts Network at index 2, which is GpuTab.
+              currentIndex: {
+                var map = { "cpu": 0, "mem": 1, "gpu": 2, "net": 3, "disk": 4 }
+                var i = map[root.currentTab]
+                return (i === undefined) ? 0 : i
+              }
+              // StackLayout otherwise reports the tallest child as its implicit
+              // height. That made short tabs (notably GPU) inherit the CPU or
+              // Memory tab height and left a large blank gap above the footer.
+              implicitHeight: currentIndex >= 0 && children[currentIndex]
+                              ? children[currentIndex].implicitHeight : 0
 
-          Tabs.CpuTab {
-            id: cpuTab
-            panel: root
-            model: root.hostWidget
+              Tabs.CpuTab {
+                id: cpuTab
+                panel: root
+                model: root.hostWidget
+              }
+              Tabs.MemoryTab {
+                id: memTab
+                panel: root
+                model: root.hostWidget
+              }
+              Tabs.GpuTab {
+                id: gpuTab
+                panel: root
+                model: root.hostWidget
+              }
+              Tabs.NetworkTab {
+                id: netTab
+                panel: root
+                model: root.hostWidget
+              }
+              Tabs.DiskTab {
+                id: diskTab
+                panel: root
+                model: root.hostWidget
+              }
+            }
           }
-          Tabs.MemoryTab {
-            id: memTab
-            panel: root
-            model: root.hostWidget
-          }
-          Tabs.GpuTab {
-            id: gpuTab
-            panel: root
-            model: root.hostWidget
-          }
-          Tabs.NetworkTab {
-            id: netTab
-            panel: root
-            model: root.hostWidget
-          }
-          Tabs.DiskTab {
-            id: diskTab
-            panel: root
-            model: root.hostWidget
-          }
-        }
-
-        // ---- footer ----
-        Text {
-          textFormat: Text.PlainText
-          visible: root.hostLine !== ""
-          text: root.hostLine
-          color: Qt.darker(root.barForeground, 1.6)
-          font.family: root.bar ? root.bar.fontFamily : Style.font.family
-          font.pixelSize: Style.font.caption
-          width: parent.width
-          wrapMode: Text.WordWrap
         }
 
         Text {
+          id: hintText
+          Layout.fillWidth: true
           textFormat: Text.PlainText
           text: "←/→ or 1-" + root.tabs.length + " switch tab · R refresh · Esc close"
           color: Qt.darker(root.barForeground, 1.6)
           font.family: root.bar ? root.bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.caption
+        }
+
+        Item {
+          Layout.fillWidth: true
+          Layout.preferredHeight: Style.space(8)
+          Layout.maximumHeight: Style.space(8)
         }
       }
     }
