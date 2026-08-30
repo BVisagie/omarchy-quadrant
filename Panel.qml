@@ -166,6 +166,33 @@ Panel {
           foreground: root.barForeground
         }
 
+        // Keep last-good metrics on screen, but never leave stale or failed
+        // async data looking live. GPU probe failures are distinct from a
+        // legitimate no-GPU result.
+        Text {
+          textFormat: Text.PlainText
+          visible: root.hostWidget
+                   && (root.hostWidget.streamLive !== true
+                       || root.hostWidget.gpuDetectionError !== "")
+          text: {
+            if (!root.hostWidget) return ""
+            var messages = []
+            if (root.hostWidget.streamLive !== true) {
+              messages.push(root.hostWidget.streamError !== ""
+                ? root.hostWidget.streamError
+                : "Waiting for the system sampler…")
+            }
+            if (root.hostWidget.gpuDetectionError !== "")
+              messages.push(root.hostWidget.gpuDetectionError)
+            return messages.join(" · ")
+          }
+          color: Color.urgent
+          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.caption
+          width: parent.width
+          wrapMode: Text.WordWrap
+        }
+
         // ---- tab content ----
         StackLayout {
           id: stack
