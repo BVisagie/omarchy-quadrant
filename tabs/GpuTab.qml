@@ -178,6 +178,8 @@ Item {
       Components.RingGauge {
         // Intel has no busy percent without CAP_PERFMON; show the frequency
         // ratio and label it honestly.
+        size: Style.space(Theme.metrics.largeRingSize)
+        thickness: Style.space(Theme.metrics.largeRingThickness)
         fraction: {
           if (!root.live) return 0
           if (root.vendor === "intel") {
@@ -199,6 +201,8 @@ Item {
 
       Components.RingGauge {
         visible: root.vendor !== "intel"
+        size: Style.space(Theme.metrics.largeRingSize)
+        thickness: Style.space(Theme.metrics.largeRingThickness)
         fraction: root.vramFraction()
         color: Theme.series.memCache
         trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")

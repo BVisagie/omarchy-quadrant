@@ -18,14 +18,16 @@ Item {
   property string subText: ""
   property color foreground: "#cacccc"
   property string fontFamily: Style.font.family
+  property real size: Style.space(Theme.metrics.ringSize)
 
-  implicitWidth: Style.space(Theme.metrics.ringSize)
-  implicitHeight: Style.space(Theme.metrics.ringSize)
+  implicitWidth: size
+  implicitHeight: size
 
   onFractionChanged: canvas.requestPaint()
   onSegmentsChanged: canvas.requestPaint()
   onColorChanged: canvas.requestPaint()
   onTrackColorChanged: canvas.requestPaint()
+  onThicknessChanged: canvas.requestPaint()
 
   Canvas {
     id: canvas
@@ -51,6 +53,9 @@ Item {
 
       var segs = root.segments
       if (segs && segs.length > 0) {
+        // Flat joins keep adjacent composition segments crisp instead of
+        // letting rounded caps paint over the neighboring color.
+        ctx.lineCap = "butt"
         var angle = start
         for (var i = 0; i < segs.length; i++) {
           var f = Number(segs[i] && segs[i].fraction) || 0

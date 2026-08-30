@@ -163,11 +163,15 @@ Item {
     }
 
     Row {
+      id: memoryOverview
       width: parent.width
       spacing: Style.space(18)
 
       Components.RingGauge {
+        id: pressureRing
         // PSI memory "some" avg10 as pressure; absent PSI reads as no data.
+        size: Style.space(Theme.metrics.largeRingSize)
+        thickness: Style.space(Theme.metrics.largeRingThickness)
         readonly property var psi: root.sample ? root.sample.psi : null
         fraction: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Math.min(1, psi.ms10 / 100) : 0
         color: Theme.series.swap
@@ -180,6 +184,9 @@ Item {
       }
 
       Components.RingGauge {
+        id: ramRing
+        size: Style.space(Theme.metrics.largeRingSize)
+        thickness: Style.space(Theme.metrics.largeRingThickness)
         readonly property var c: root.comp
         segments: c ? [
           { fraction: c.totalK > 0 ? c.appsK / c.totalK : 0, color: Theme.series.memApps },
@@ -196,6 +203,11 @@ Item {
       }
 
       Column {
+        id: memoryLegend
+        width: Math.max(0, memoryOverview.width
+                           - pressureRing.width
+                           - ramRing.width
+                           - memoryOverview.spacing * 2)
         spacing: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
 
@@ -209,6 +221,7 @@ Item {
 
           delegate: Row {
             required property var modelData
+            width: memoryLegend.width
             spacing: Style.space(6)
 
             Rectangle {
@@ -226,6 +239,8 @@ Item {
               font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.caption
               anchors.verticalCenter: parent.verticalCenter
+              width: Math.max(0, parent.width - x)
+              elide: Text.ElideRight
             }
           }
         }

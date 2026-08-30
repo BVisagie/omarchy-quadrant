@@ -29,7 +29,9 @@ var metrics = {
   barSegmentGap: 8,
   graphHeight: 96,
   ringSize: 92,
+  largeRingSize: 108,
   ringThickness: 9,
+  largeRingThickness: 10,
   processIcon: 16
 }
 
