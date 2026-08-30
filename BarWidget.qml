@@ -636,19 +636,26 @@ BarWidget {
   }
 
   // ---- bar slot ----
-  WidgetButton {
+  BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: ""
-    labelVisible: false
+    text: root.showMonitorFallback ? Theme.barGlyphs.monitor : ""
     hasVisualContent: true
     keepSpace: true
     tooltipText: root.tooltipLine
     // tooltipLine is rates/percentages, never process comm. The shell's
     // WidgetButton tooltip Text is already PlainText.
-    fixedWidth: root.vertical ? -1 : segGrid.implicitWidth + Style.spaceReal(8.5) * 2
-    fixedHeight: root.vertical ? segGrid.implicitHeight + Style.spaceReal(6) * 2 : -1
+    fixedWidth: root.vertical
+                ? -1
+                : (root.showMonitorFallback
+                   ? Style.bar.iconSlot
+                   : segGrid.implicitWidth + Style.spaceReal(8.5) * 2)
+    fixedHeight: root.vertical
+                 ? (root.showMonitorFallback
+                    ? Style.bar.iconSlot
+                    : segGrid.implicitHeight + Style.spaceReal(6) * 2)
+                 : -1
 
     onPressed: function(buttonCode) {
       if (buttonCode !== Qt.LeftButton) return
@@ -701,15 +708,6 @@ BarWidget {
       font.family: button.fontFamily
       font.pixelSize: Style.font.caption
     }
-    Text {
-      id: monitorSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barGlyphs.monitor
-      font.family: button.fontFamily
-      font.pixelSize: Style.font.caption
-    }
-
     Grid {
       id: segGrid
       z: 1
@@ -719,27 +717,6 @@ BarWidget {
       rowSpacing: Style.space(4)
       verticalItemAlignment: Grid.AlignVCenter
       horizontalItemAlignment: Grid.AlignHCenter
-
-      Item {
-        visible: root.showMonitorFallback
-        implicitWidth: {
-          var w = monitorSizer.implicitWidth
-          if (root.vertical) return Math.min(w, root.verticalSlot)
-          return w
-        }
-        implicitHeight: root.vertical
-                        ? Math.min(monitorSizer.implicitHeight, root.verticalSlot)
-                        : root.segmentHeight
-
-        Text {
-          textFormat: Text.PlainText
-          anchors.centerIn: parent
-          text: Theme.barGlyphs.monitor
-          color: button.foreground
-          font.family: button.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-      }
 
       MetricCell {
         visible: root.segmentEnabled("cpu")

@@ -165,10 +165,10 @@ Column {
           source: delegateRoot.isOther
                   ? Quickshell.iconPath("network-transmit-receive", true)
                   : (delegateRoot.entry ? delegateRoot.entry.icon : Quickshell.iconPath("application-x-executable", true))
-          sourceSize.width: Theme.metrics.processIcon
-          sourceSize.height: Theme.metrics.processIcon
           width: Style.space(Theme.metrics.processIcon)
           height: Style.space(Theme.metrics.processIcon)
+          sourceSize.width: width
+          sourceSize.height: height
           anchors.verticalCenter: parent.verticalCenter
           smooth: true
         }
