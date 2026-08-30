@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Quadrant",
-    "description": "CPU, GPU, memory, and network meters with a tabbed detail panel (Drives tab included; disk bar segment opt-in)",
+    "description": "CPU, GPU, memory, and network meters with a tabbed detail panel (Drives tab included; disk bar segment off by default)",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
@@ -34,7 +34,7 @@
         "key": "segments",
         "type": "list",
         "label": "Bar segments",
-        "description": "Which metric segments appear in the bar slot. Any subset of: cpu, gpu, memory, disk, network. disk is opt-in and absent from the default. GPU and disk segments hide themselves when no supported device is detected."
+        "description": "Which metric segments appear in the bar slot. Any subset of: cpu, gpu, memory, disk, network. disk is off by default. Each panel tab has a Show in bar checkbox that updates this list. An empty list keeps a compact system-monitor icon. GPU and disk segments hide themselves when no supported device is detected."
       },
       {
         "key": "processCount",

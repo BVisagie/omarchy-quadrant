@@ -2,7 +2,7 @@
 
 A unified system monitor for the Omarchy Quattro bar: CPU, GPU, memory, and
 network in one compact bar widget and one tabbed panel — plus a Drives tab,
-with the disk bar segment opt-in so the four defaults keep the name. Each
+with the disk bar segment off by default so the four defaults keep the name. Each
 panel tab identifies the hardware it is measuring — CPU model and topology,
 GPU name and driver, installed RAM and swap devices, block devices and
 mounts — then shows live usage.
@@ -20,6 +20,7 @@ else toggles the panel on the last-used tab.
 ```
 ┌────────────────────────────────────────────┐
 │  CPU   GPU   MEMORY   DRIVES   NETWORK     │
+│                               Show in bar  │
 │  ──────────────────────────────────────    │
 │  Ryzen 9 7950X · 16 cores · 32 threads     │
 │  60s history / rings / process list        │
@@ -106,17 +107,21 @@ or manual deletion under `~/.config/omarchy/plugins/` is required.
   toggles independently; the slot shrinks to fit. The GPU segment hides
   itself when no supported GPU is detected — no dead chrome for hardware
   that is not there. A **disk** segment (utilization over a meter, read/write
-  in the tooltip) is opt-in via `segments` and is not in the default four, so
-  the bar still ships as a quadrant. Vertical bars are supported (segments
-  stack; cells clamp to the 28 px slot and drop the glyph). Meter fills follow
-  the live Omarchy accent (with the theme's urgent color at ≥90% load);
-  `barPalette vivid` restores the original per-resource hues. `barLabels`
-  is `glyph` (default), `letter`, or `none`.
+  in the tooltip) is off by default so the bar still ships as a quadrant;
+  enable it from the Drives tab's **Show in bar** checkbox or via
+  `segments`. Unchecking every segment leaves a compact system-monitor
+  glyph; clicking it still opens the full panel. Vertical bars are supported
+  (segments stack; cells clamp to the 28 px slot and drop the glyph). Meter
+  fills follow the live Omarchy accent (with the theme's urgent color at
+  ≥90% load); `barPalette vivid` restores the original per-resource hues.
+  `barLabels` is `glyph` (default), `letter`, or `none`.
 - **Panel**: click the widget. `←`/`→` or `1`–`N` (N = visible tabs; GPU
   is omitted when no supported card is present) switch tabs, `R`
   refreshes the active tab, `Esc` closes. `Tab` keeps its Quattro meaning
   (switch to the adjacent bar panel) and is deliberately not used inside
-  Quadrant.
+  Quadrant. Each tab has a **Show in bar** checkbox (Drives off by default)
+  that persists the existing `segments` setting; hiding a segment never
+  hides its tab.
 - **IPC** (for scripts and keybinds):
 
 ```sh
@@ -138,7 +143,7 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `segments` | `["cpu","gpu","memory","network"]` | Which bar segments to show. `disk` is valid but opt-in. |
+| `segments` | `["cpu","gpu","memory","network"]` | Which bar segments to show. `disk` is valid but off by default. Each panel tab's **Show in bar** checkbox writes this list; an empty list shows a compact system-monitor icon. |
 | `processCount` | `5` | Top-process rows per tab (1–10) |
 | `barIntervalMs` | `1000` | Stream cadence feeding bar + history (250–60000) |
 | `panelIntervalMs` | `2000` | On-demand sampler cadence while the panel is open (500–60000) |
@@ -194,7 +199,7 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   quotes from `omarchy bar set` are stripped on read. Per-process disk
   I/O is deferred: `/proc/<pid>/io` is only readable for your own
   processes, so a half-attributed list would lie. The disk **bar segment
-  is opt-in**.
+  is off by default**; toggle it with **Show in bar** on the Drives tab.
 - **Network**: rates for the selected interface plus 60s down/up history.
   Per-process attribution uses per-socket TCP byte counters from
   `ss -tinp`, scoped to the watched interface's addresses (ss is global;

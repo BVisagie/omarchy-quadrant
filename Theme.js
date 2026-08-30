@@ -41,12 +41,14 @@ var metrics = {
 //   gpu  md-expansion_card  U+F08AE
 //   mem  fa-memory          U+EFC5   (DIMM silhouette; not md-memory,
 //                                    which collides with the CPU die)
-//   disk md-harddisk        U+F02CA
+//   disk    md-harddisk           U+F02CA
+//   monitor md-monitor-dashboard  U+F0A07  (icon-only bar fallback)
 var barGlyphs = {
   cpu: "󰻠",
   gpu: "󰢮",
   mem: "",
-  disk: "󰋊"
+  disk: "󰋊",
+  monitor: "󰨇"
 }
 
 var barLetters = {

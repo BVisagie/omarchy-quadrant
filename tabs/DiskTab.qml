@@ -82,14 +82,6 @@ Item {
     return out
   }
 
-  readonly property var primaryMount: {
-    var list = diskMounts
-    if (!list || list.length === 0) return null
-    var i
-    for (i = 0; i < list.length; i++) if (list[i].target === "/") return list[i]
-    return list[0]
-  }
-
   Timer {
     id: cadence
     interval: root.panel ? root.panel.panelIntervalMs : 2000
@@ -241,46 +233,27 @@ Item {
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
-    Row {
+    Column {
+      id: mountCol
       width: parent.width
-      spacing: ring.visible ? Style.space(18) : 0
-      visible: root.primaryMount !== null || root.diskMounts.length > 0
+      spacing: Style.space(6)
+      visible: root.diskMounts.length > 0
 
-      Components.RingGauge {
-        id: ring
-        readonly property var m: root.primaryMount
-        visible: m !== null
-        fraction: m ? Model.clamp(m.pct / 100, 0, 1) : 0
-        color: Theme.series.diskRead
-        trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
-        centerText: m ? Model.formatPct(m.pct) : "--"
-        subText: m ? m.target : "used"
-        foreground: root.panel ? root.panel.barForeground : "#cacccc"
-        fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-        anchors.verticalCenter: parent.verticalCenter
-      }
+      Repeater {
+        model: root.diskMounts
 
-      Column {
-        id: mountCol
-        width: parent.width - (ring.visible ? ring.width + parent.spacing : 0)
-        spacing: Style.space(6)
-
-        Repeater {
-          model: root.diskMounts
-
-          delegate: Components.StatRow {
-            required property var modelData
-            width: mountCol.width
-            label: String(modelData.target || "mount")
-            value: {
-              var used = Model.formatBytes(modelData.used)
-              var size = Model.formatBytes(modelData.size)
-              var pct = Model.formatPct(modelData.pct)
-              return used + " of " + size + " · " + pct
-            }
-            foreground: root.panel ? root.panel.barForeground : "#cacccc"
-            fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+        delegate: Components.StatRow {
+          required property var modelData
+          width: mountCol.width
+          label: String(modelData.target || "mount")
+          value: {
+            var used = Model.formatBytes(modelData.used)
+            var size = Model.formatBytes(modelData.size)
+            var pct = Model.formatPct(modelData.pct)
+            return used + " of " + size + " · " + pct
           }
+          foreground: root.panel ? root.panel.barForeground : "#cacccc"
+          fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
         }
       }
     }
