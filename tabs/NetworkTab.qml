@@ -56,7 +56,7 @@ Item {
     var sockets = Model.parseSs(env.payload)
     var currIf = { rx: env.ifRx, tx: env.ifTx }
     var dt = prevTs > 0 ? env.ts - prevTs : 0
-    var result = Model.computeNetAppRows(prevSockets, sockets, prevIf, currIf, dt)
+    var result = Model.computeNetAppRows(prevSockets, sockets, prevIf, currIf, dt, env.addrs)
 
     var limit = panel ? panel.processCount : 5
     var mapped = []
@@ -204,7 +204,14 @@ Item {
     Text {
       textFormat: Text.PlainText
       visible: root.ifname !== ""
-      text: "Default route via " + root.ifname + " (lowest metric across IPv4/IPv6; IPv4 wins ties). UDP and sockets not owned by this user appear as Other traffic."
+      text: {
+        var pinned = root.model && root.model.networkInterface
+          && root.model.networkInterface !== "auto" && root.model.networkInterface !== ""
+        var head = pinned
+          ? ("Pinned interface " + root.ifname + ".")
+          : ("Default route via " + root.ifname + " (lowest metric across IPv4/IPv6; IPv4 wins ties).")
+        return head + " TCP attribution is scoped to this interface's addresses. UDP and sockets not owned by this user appear as Other traffic."
+      }
       color: root.panel ? Qt.darker(root.panel.barForeground, 1.6) : "#cacccc"
       font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
       font.pixelSize: Style.font.caption

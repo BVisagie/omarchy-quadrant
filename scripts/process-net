@@ -3,9 +3,11 @@
 #
 # Emits one JSON envelope on stdout:
 #   {"ok":true,"ts":<epoch>,"ifname":"eth0","ifRx":123,"ifTx":456,
-#    "payload":"<raw ss output>"}
+#    "addrs":["172.30.0.2"],"payload":"<raw ss output>"}
 #
-# ifRx/ifTx are the interface's cumulative byte counters; the payload is raw
+# ifRx/ifTx are the interface's cumulative byte counters; addrs are the
+# interface's inet/inet6 addresses (no prefix) so Model.js can ignore
+# sockets whose local address is on a different iface. The payload is raw
 # `ss -H -t -i -n -p state established` output, whose per-socket
 # bytes_received/bytes_acked counters Model.js turns into per-process rates.
 # Sockets whose owners are not visible to us (other users, kernel) simply
@@ -24,13 +26,28 @@
 set -euo pipefail
 
 fail() {
-  local msg=$1
-  if command -v jq >/dev/null 2>&1; then
-    jq -cn --arg e "$msg" '{ok:false, error:$e}'
+  local msg=$1 bin=""
+  if [[ -x /usr/bin/jq ]]; then bin=/usr/bin/jq
+  else bin=$(command -v jq) || bin=""
+  fi
+  if [[ -n $bin ]]; then
+    "$bin" -cn --arg e "$msg" '{ok:false, error:$e}'
   else
     printf '{"ok":false,"error":"helper unavailable"}\n'
   fi
   exit 1
+}
+
+# Prefer the distro path so a user-writable PATH entry cannot shadow the
+# helper. Fall back to command -v for non-standard prefixes (Nix, etc.).
+resolve_bin() {
+  local n=$1
+  [[ $n =~ ^[A-Za-z0-9._+-]+$ ]] || return 1
+  if [[ -x /usr/bin/$n ]]; then
+    printf '%s\n' "/usr/bin/$n"
+    return 0
+  fi
+  command -v "$n"
 }
 
 ifname=${1:-}
@@ -41,13 +58,30 @@ ifname=${1:-}
 [[ -r "/sys/class/net/$ifname/statistics/rx_bytes" ]] || fail "no such interface: $ifname"
 [[ -r "/sys/class/net/$ifname/statistics/tx_bytes" ]] || fail "no such interface: $ifname"
 
-JQ=$(command -v jq) || fail "jq not found"
-SS=$(command -v ss) || fail "ss not found (iproute2)"
-TIMEOUT=$(command -v timeout) || fail "timeout not found"
+JQ=$(resolve_bin jq) || fail "jq not found"
+SS=$(resolve_bin ss) || fail "ss not found (iproute2)"
+TIMEOUT=$(resolve_bin timeout) || fail "timeout not found"
+IP=$(resolve_bin ip) || true
 
 if ! if_rx=$(<"/sys/class/net/$ifname/statistics/rx_bytes"); then fail "cannot read rx_bytes"; fi
 if ! if_tx=$(<"/sys/class/net/$ifname/statistics/tx_bytes"); then fail "cannot read tx_bytes"; fi
 [[ $if_rx =~ ^[0-9]+$ && $if_tx =~ ^[0-9]+$ ]] || fail "bad counters for $ifname"
+
+# Addresses on this interface, used by Model.js to drop sockets that
+# belong to other ifaces (ss is global; the byte counters are not).
+addrs=""
+if [[ -n ${IP:-} ]]; then
+  while read -r _idx _if family cidr _rest; do
+    case $family in
+      inet|inet6)
+        a=${cidr%%/*}
+        [[ -n $a && $a != *[[:space:]]* && $a == *[0-9]* ]] || continue
+        [[ -n $addrs ]] && addrs+=$'\n'
+        addrs+="$a"
+        ;;
+    esac
+  done < <("$IP" -o addr show dev "$ifname" 2>/dev/null || true)
+fi
 
 # -H no header, -t TCP, -i internal info (byte counters), -n numeric,
 # -p owning process. Bounded by timeout so a stuck netlink read can never
@@ -57,5 +91,6 @@ if ! ss_out=$("$TIMEOUT" 3 "$SS" -H -t -i -n -p state established 2>/dev/null); 
 fi
 
 "$JQ" -cn --arg ts "$EPOCHREALTIME" --arg ifname "$ifname" \
-  --arg rx "$if_rx" --arg tx "$if_tx" --arg payload "$ss_out" \
-  '{ok:true, ts:($ts|tonumber), ifname:$ifname, ifRx:($rx|tonumber), ifTx:($tx|tonumber), payload:$payload}'
+  --arg rx "$if_rx" --arg tx "$if_tx" --arg payload "$ss_out" --arg addrs "$addrs" \
+  '{ok:true, ts:($ts|tonumber), ifname:$ifname, ifRx:($rx|tonumber), ifTx:($tx|tonumber),
+    addrs:($addrs | split("\n") | map(select(length > 0))), payload:$payload}'

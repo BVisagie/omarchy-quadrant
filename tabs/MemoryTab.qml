@@ -104,10 +104,10 @@ Item {
       Components.RingGauge {
         // PSI memory "some" avg10 as pressure; absent PSI reads as no data.
         readonly property var psi: root.sample ? root.sample.psi : null
-        fraction: psi ? Math.min(1, psi.ms10 / 100) : 0
+        fraction: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Math.min(1, psi.ms10 / 100) : 0
         color: Theme.series.swap
         trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
-        centerText: psi ? Model.formatPct(psi.ms10, 1) : "--"
+        centerText: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Model.formatPct(psi.ms10, 1) : "--"
         subText: "pressure"
         foreground: root.panel ? root.panel.barForeground : "#cacccc"
         fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family

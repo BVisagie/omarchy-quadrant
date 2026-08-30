@@ -25,6 +25,15 @@ BarWidget {
   readonly property string networkInterface: String(setting("networkInterface", "auto"))
   readonly property string gpuDevice: String(setting("gpuDevice", "auto"))
 
+  readonly property int visibleSegmentCount: {
+    var n = 0
+    if (segmentEnabled("cpu")) n++
+    if (segmentEnabled("memory")) n++
+    if (segmentEnabled("gpu") && gpuAvailable) n++
+    if (segmentEnabled("network")) n++
+    return Math.max(1, n)
+  }
+
   function segmentEnabled(name) {
     return segmentsSetting.indexOf(name) !== -1
   }
@@ -126,16 +135,29 @@ BarWidget {
   }
 
   // Click on a segment: open the panel on that tab; clicking the slot
-  // elsewhere toggles the panel on the last-used tab.
+  // elsewhere toggles the panel on the last-used tab. Segment MouseAreas
+  // sit above WidgetButton's own MouseArea; ignoreNextToggle drops the
+  // button press when both still fire.
+  property bool ignoreNextToggle: false
+
+  function noteSegmentPress() {
+    ignoreNextToggle = true
+  }
+
   function segmentClicked(tab) {
+    ignoreNextToggle = true
     var p = panelLoader.item
-    if (!p) return
+    if (!p) {
+      Qt.callLater(function () { root.ignoreNextToggle = false })
+      return
+    }
     if (p.opened) {
       if (p.currentTab === tab) p.close()
       else p.currentTab = tab
     } else {
       p.showTab(tab)
     }
+    Qt.callLater(function () { root.ignoreNextToggle = false })
   }
 
   implicitWidth: button.implicitWidth
@@ -222,9 +244,23 @@ BarWidget {
     gpu = Model.pickGpu(gpus, gpuDevice)
   }
 
+  function persistGpuDevice(card) {
+    if (!root.bar || typeof root.bar.run !== "function") return
+    if (typeof card !== "string" || !/^card[0-9]+$/.test(card)) return
+    var value = '"' + card + '"'
+    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
+      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
+    var quotedValue = (typeof Util !== "undefined" && Util.shellQuote)
+      ? Util.shellQuote(value) : ("'" + value + "'")
+    root.bar.run("omarchy bar set " + quotedId + " gpuDevice " + quotedValue)
+  }
+
   function selectGpu(card) {
     var chosen = Model.pickGpu(gpus, card)
-    if (chosen) gpu = chosen
+    if (chosen) {
+      gpu = chosen
+      persistGpuDevice(chosen.card)
+    }
   }
 
   onGpuDeviceChanged: {
@@ -245,6 +281,7 @@ BarWidget {
   function applyNvidia(text) {
     var data = Model.safeJson(text)
     if (!data || data.ok !== true) {
+      root.nvidiaGpu = null
       root.nvidiaError = (data && data.error) ? String(data.error) : "gpu-stats returned bad output"
       return
     }
@@ -277,8 +314,11 @@ BarWidget {
     }
     onExited: function(exitCode, exitStatus) {
       nvidiaWatchdog.stop()
-      if (exitCode !== 0 && root.nvidiaError === "")
-        root.nvidiaError = "gpu-stats exited with code " + exitCode
+      if (exitCode !== 0) {
+        root.nvidiaGpu = null
+        if (root.nvidiaError === "")
+          root.nvidiaError = "gpu-stats exited with code " + exitCode
+      }
     }
   }
 
@@ -289,6 +329,7 @@ BarWidget {
     onTriggered: {
       if (nvidiaProc.running) {
         nvidiaProc.signal(9)
+        root.nvidiaGpu = null
         root.nvidiaError = "gpu-stats timed out"
       }
     }
@@ -315,17 +356,25 @@ BarWidget {
     hasVisualContent: true
     keepSpace: true
     tooltipText: root.tooltipLine
+    // tooltipLine is rates/percentages, never process comm. The shell's
+    // WidgetButton tooltip Text is already PlainText.
     fixedWidth: root.vertical ? -1 : segGrid.implicitWidth + Style.spaceReal(8.5) * 2
     fixedHeight: root.vertical ? segGrid.implicitHeight + Style.spaceReal(6) * 2 : -1
 
     onPressed: function(buttonCode) {
-      if (buttonCode === Qt.LeftButton) root.toggle()
+      if (buttonCode !== Qt.LeftButton) return
+      if (root.ignoreNextToggle) {
+        root.ignoreNextToggle = false
+        return
+      }
+      root.toggle()
     }
 
     Grid {
       id: segGrid
+      z: 1
       anchors.centerIn: parent
-      columns: root.vertical ? 1 : 4
+      columns: root.vertical ? 1 : root.visibleSegmentCount
       columnSpacing: Style.space(Theme.metrics.barSegmentGap)
       rowSpacing: Style.space(4)
 
@@ -360,6 +409,7 @@ BarWidget {
           anchors.fill: parent
           hoverEnabled: false
           acceptedButtons: Qt.LeftButton
+          onPressed: root.noteSegmentPress()
           onClicked: root.segmentClicked("cpu")
         }
       }
@@ -394,6 +444,7 @@ BarWidget {
           anchors.fill: parent
           hoverEnabled: false
           acceptedButtons: Qt.LeftButton
+          onPressed: root.noteSegmentPress()
           onClicked: root.segmentClicked("mem")
         }
       }
@@ -428,6 +479,7 @@ BarWidget {
           anchors.fill: parent
           hoverEnabled: false
           acceptedButtons: Qt.LeftButton
+          onPressed: root.noteSegmentPress()
           onClicked: root.segmentClicked("gpu")
         }
       }
@@ -463,6 +515,7 @@ BarWidget {
           anchors.fill: parent
           hoverEnabled: false
           acceptedButtons: Qt.LeftButton
+          onPressed: root.noteSegmentPress()
           onClicked: root.segmentClicked("net")
         }
       }

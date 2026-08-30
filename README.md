@@ -18,7 +18,7 @@ else toggles the panel on the last-used tab.
 │  CPU   MEMORY   GPU   NETWORK              │
 │  ──────────────────────────────────────    │
 │  60s history graph / rings / process list  │
-│  ←/→ or 1-4 switch tab · R refresh · Esc   │
+│  ←/→ or 1-N switch tab · R refresh · Esc   │
 └────────────────────────────────────────────┘
 ```
 
@@ -50,7 +50,8 @@ Move it with `omarchy bar move dev.bvisagie.quadrant --section center`.
   independently; the slot shrinks to fit. The GPU segment hides itself when
   no supported GPU is detected — no dead chrome for hardware that is not
   there. Vertical bars are supported (segments stack).
-- **Panel**: click the widget. `←`/`→` or `1`–`4` switch tabs, `R`
+- **Panel**: click the widget. `←`/`→` or `1`–`N` (N = visible tabs; GPU
+  is omitted when no supported card is present) switch tabs, `R`
   refreshes the active tab, `Esc` closes. `Tab` keeps its Quattro meaning
   (switch to the adjacent bar panel) and is deliberately not used inside
   Quadrant.
@@ -77,8 +78,8 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
 | --- | --- | --- |
 | `segments` | `["cpu","memory","gpu","network"]` | Which bar segments to show |
 | `processCount` | `5` | Top-process rows per tab (1–10) |
-| `barIntervalMs` | `1000` | Stream cadence feeding bar + history |
-| `panelIntervalMs` | `2000` | On-demand sampler cadence while the panel is open |
+| `barIntervalMs` | `1000` | Stream cadence feeding bar + history (250–60000) |
+| `panelIntervalMs` | `2000` | On-demand sampler cadence while the panel is open (500–60000) |
 | `networkInterface` | `"auto"` | `auto` = default route across IPv4 **and** IPv6, lowest metric wins, IPv4 takes ties |
 | `gpuDevice` | `"auto"` | `auto` = boot display card when determinable, else `card0`; or a specific `cardN` |
 
@@ -90,23 +91,28 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
 - **Memory**: composition splits RAM into Applications / Kernel
   (unreclaimable slab) / Cache (page cache + **Buffers** + SReclaimable) /
   Free. The process column is "% of RAM". The pressure ring is PSI memory
-  `some avg10`; PSI is **optional** — when `/proc/pressure` is unreadable
-  the ring shows `--`, not zero.
-- **GPU**: AMD reads `amdgpu` sysfs (`gpu_busy_percent`, VRAM info, hwmon
-  temp/power, active DPM sclk). NVIDIA runs `nvidia-smi` (timeout-bounded,
+  `some avg10`; PSI is **optional per resource** — when `/proc/pressure/cpu`
+  or `/proc/pressure/memory` is unreadable that half is JSON `null` and the
+  ring shows `--`, not zero.
+- **GPU**: AMD reads `amdgpu` sysfs (`gpu_busy_percent`, `mem_busy_percent`,
+  per-engine `engine/*/busy_percent`, VRAM info, hwmon temp/power, active
+  DPM sclk). NVIDIA runs `nvidia-smi` (timeout-bounded,
   row-capped) **only while the GPU segment or tab is visible** — never in
   the 1 Hz stream. Intel shows a **frequency-ratio estimate labeled
   "freq"**, never "busy": true busy % needs `CAP_PERFMON`, which Quadrant
   refuses to require. Every sysfs file is treated as optional; availability
   varies by kernel and ASIC. Multi-GPU systems get a card selector in the
-  GPU tab. Per-process GPU attribution is v2.
+  GPU tab; the choice is persisted with `omarchy bar set … gpuDevice`.
+  Per-process GPU attribution is v2.
 - **Network**: rates for the selected interface plus 60s down/up history.
   Per-process attribution uses per-socket TCP byte counters from
-  `ss -tinp`. UDP, sockets owned by other users, and closed-socket
-  remainders cannot be attributed — they appear as an honest **Other
-  traffic** row (keyed on `pid == 0`; a process literally named "Other
-  traffic" can never collide with it). The interface choice is documented
-  in the tab footer.
+  `ss -tinp`, scoped to the watched interface's addresses (ss is global;
+  the byte counters are not). UDP, sockets on other interfaces, sockets
+  owned by other users, and closed-socket remainders cannot be attributed
+  — they appear as an honest **Other traffic** row (keyed on `pid == 0`; a
+  process literally named "Other traffic" can never collide with it). The
+  tab footer says **Default route via …** when the interface is auto-picked,
+  or **Pinned interface …** when `networkInterface` is set.
 - **Temperature**: hwmon whitelist only (`k10temp`, `coretemp`,
   `zenpower`, `cpu_thermal`). There is no first-readable-sensor fallback —
   Quadrant shows `--` rather than another chip's temperature.
@@ -126,7 +132,9 @@ permissions** — the same model as every Quattro plugin. Concretely:
 - **Injection-safe rendering.** Every `Text` element bound to script output
   or process names sets `textFormat: Text.PlainText` (Qt's default
   AutoText can interpret HTML-like strings, including inline images). CI
-  enforces this with a check over all QML files.
+  enforces this with a check over all QML files. The bar tooltip is
+  rates/percentages (never process comm) and is rendered by the shell's
+  WidgetButton tooltip, which is already PlainText.
 - **Safe transport.** Process names and raw tool output travel as JSON
   strings built with `jq --arg` — never TSV through a name. The `ss`
   parser anchors on the kernel's trailing `pid=` field, so a forged
@@ -137,9 +145,10 @@ permissions** — the same model as every Quattro plugin. Concretely:
 - **Failures are visible.** A helper that exits non-zero or times out
   surfaces an error in the panel — never an empty list presented as "no
   activity". QML distinguishes `[]` + exit 0 from failure.
-- **Hardened scripts.** `set -euo pipefail`, `command -v` checks, quoted
-  expansions, POSIX awk only (CI runs the suite under mawk **and** gawk).
-- **Binaries invoked**: `bash`, `jq`, `ps`, `ss`, `timeout`, `mktemp`,
+- **Hardened scripts.** `set -euo pipefail`, helpers resolved from
+  `/usr/bin/<name>` first then `command -v`, quoted expansions, POSIX awk
+  only (CI runs the suite under mawk **and** gawk).
+- **Binaries invoked**: `bash`, `jq`, `ps`, `ss`, `ip`, `timeout`, `mktemp`,
   `mkfifo`, `nvidia-smi` (NVIDIA only, on demand). No root, no setcap, no
   setuid, no daemons.
 

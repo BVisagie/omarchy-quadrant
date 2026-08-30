@@ -25,16 +25,31 @@
 set -euo pipefail
 
 fail() {
-  local msg=$1
-  if command -v jq >/dev/null 2>&1; then
-    jq -cn --arg e "$msg" '{ok:false, error:$e}'
+  local msg=$1 bin=""
+  if [[ -x /usr/bin/jq ]]; then bin=/usr/bin/jq
+  else bin=$(command -v jq) || bin=""
+  fi
+  if [[ -n $bin ]]; then
+    "$bin" -cn --arg e "$msg" '{ok:false, error:$e}'
   else
     printf '{"ok":false,"error":"helper unavailable"}\n'
   fi
   exit 1
 }
 
-JQ=$(command -v jq) || fail "jq not found"
+# Prefer the distro path so a user-writable PATH entry cannot shadow the
+# helper. Fall back to command -v for non-standard prefixes (Nix, etc.).
+resolve_bin() {
+  local n=$1
+  [[ $n =~ ^[A-Za-z0-9._+-]+$ ]] || return 1
+  if [[ -x /usr/bin/$n ]]; then
+    printf '%s\n' "/usr/bin/$n"
+    return 0
+  fi
+  command -v "$n"
+}
+
+JQ=$(resolve_bin jq) || fail "jq not found"
 
 vendor_name() {
   case $1 in
@@ -79,7 +94,7 @@ cmd_list() {
         intel_freq_cur "$dev" >/dev/null || continue
         ;;
       nvidia)
-        command -v nvidia-smi >/dev/null || continue
+        resolve_bin nvidia-smi >/dev/null || continue
         ;;
     esac
     boot=0
@@ -117,6 +132,7 @@ cmd_sample_amd() {
   local dev=$1
   PAYLOAD=""
   emit_file gpu_busy_percent "$dev/gpu_busy_percent"
+  emit_file mem_busy_percent "$dev/mem_busy_percent"
   emit_file mem_info_vram_used "$dev/mem_info_vram_used"
   emit_file mem_info_vram_total "$dev/mem_info_vram_total"
   local h
@@ -139,8 +155,20 @@ cmd_sample_amd() {
           [[ $f =~ ^[0-9]+$ ]] && PAYLOAD+="sclk_mhz=$f"$'\n'
           ;;
       esac
-    done < "$dev/pp_dpm_sclk" || true
+      done < "$dev/pp_dpm_sclk" || true
   fi
+  local eng_dir name key eng_count=0
+  for eng_dir in "$dev"/engine/*; do
+    [[ -d $eng_dir ]] || continue
+    name=${eng_dir##*/}
+    key=${name,,}
+    key=${key//./_}
+    key=${key//-/_}
+    [[ $key =~ ^[a-z0-9_]+$ ]] || continue
+    emit_file "eng_$key" "$eng_dir/busy_percent"
+    eng_count=$(( eng_count + 1 ))
+    (( eng_count >= 32 )) && break
+  done
   [[ -n $PAYLOAD ]] || fail "no readable amd metrics under $dev"
   "$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$PAYLOAD" \
     '{ok:true, ts:($ts|tonumber), vendor:"amd", payload:$payload}'
@@ -164,15 +192,18 @@ cmd_sample_intel() {
 
 cmd_sample_nvidia() {
   local index=$1
-  local SMI TIMEOUT_BIN payload
-  SMI=$(command -v nvidia-smi) || fail "nvidia-smi not found"
-  TIMEOUT_BIN=$(command -v timeout) || fail "timeout not found"
+  local SMI TIMEOUT_BIN AWK_BIN payload
+  SMI=$(resolve_bin nvidia-smi) || fail "nvidia-smi not found"
+  TIMEOUT_BIN=$(resolve_bin timeout) || fail "timeout not found"
+  local awk_name=${QUADRANT_AWK:-awk}
+  [[ $awk_name =~ ^[A-Za-z0-9._+-]+$ ]] || fail "bad awk name"
+  AWK_BIN=$(resolve_bin "$awk_name") || fail "awk not found"
   local -a select=()
   [[ -n $index ]] && select=(-i "$index")
   # Row cap via awk (drains stdin, no SIGPIPE); timeout bounds a hung driver.
   if ! payload=$("$TIMEOUT_BIN" 2 "$SMI" "${select[@]}" \
       --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,clocks.gr \
-      --format=csv,noheader,nounits 2>/dev/null | "${QUADRANT_AWK:-awk}" 'NR <= 8'); then
+      --format=csv,noheader,nounits 2>/dev/null | "$AWK_BIN" 'NR <= 8'); then
     fail "nvidia-smi failed or timed out"
   fi
   [[ -n $payload ]] || fail "nvidia-smi returned no rows"

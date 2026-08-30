@@ -52,7 +52,7 @@ function safeJson(line) {
 //   "vm":  { "swpin","swpout" },                  // pages, cumulative
 //   "net": [ { "n","rx","tx" } ],                 // bytes, cumulative
 //   "r4":  [ { "n","m" } ], "r6": [ { "n","m" }], // default routes + metric
-//   "gpu": { "busy","vrU","vrT","t","w","mhz","kind" } | null,
+//   "gpu": { "busy","mb","vrU","vrT","t","w","mhz","fc","fm","eng","kind" } | null,
 //   "t": 52.0 | null,                             // CPU package temp, deg C
 //   "load": [l1, l5, l15],
 //   "up": 12345.6, "cores": 16
@@ -87,10 +87,22 @@ function parseStreamPsi(value) {
   if (typeof value !== "object") return null
   var keys = ["cs10", "cs60", "cs300", "cf10", "ms10", "ms60", "ms300", "mf10"]
   var out = {}
+  var any = false
   for (var i = 0; i < keys.length; i++) {
-    out[keys[i]] = nonNeg(value[keys[i]])
+    var raw = value[keys[i]]
+    if (raw === null || raw === undefined || raw === "") {
+      out[keys[i]] = null
+      continue
+    }
+    var n = num(raw, null)
+    if (n === null) {
+      out[keys[i]] = null
+      continue
+    }
+    out[keys[i]] = n < 0 ? 0 : n
+    any = true
   }
-  return out
+  return any ? out : null
 }
 
 function parseStreamNet(value) {
@@ -121,12 +133,31 @@ function parseStreamRoutes(value) {
   return out
 }
 
+function parseGpuEngines(value) {
+  var out = []
+  if (!value || typeof value !== "object" || Array.isArray(value)) return out
+  for (var k in value) {
+    if (!Object.prototype.hasOwnProperty.call(value, k)) continue
+    if (!/^[a-z0-9_]+$/.test(k)) continue
+    var n = num(value[k], null)
+    if (n === null || n < 0) continue
+    out.push({ id: k, busy: n })
+  }
+  out.sort(function (a, b) {
+    if (a.id < b.id) return -1
+    if (a.id > b.id) return 1
+    return 0
+  })
+  return out
+}
+
 function parseStreamGpu(value) {
   if (value === null || value === undefined) return null
   if (typeof value !== "object") return null
   var kind = (value.kind === "amd" || value.kind === "intel") ? value.kind : ""
   return {
     busy: num(value.busy, null),
+    memBusy: num(value.mb, null),
     vramUsed: num(value.vrU, null),
     vramTotal: num(value.vrT, null),
     tempC: num(value.t, null),
@@ -134,6 +165,7 @@ function parseStreamGpu(value) {
     clockMhz: num(value.mhz, null),
     freqCurMhz: num(value.fc, null),
     freqMaxMhz: num(value.fm, null),
+    engines: parseGpuEngines(value.eng),
     kind: kind
   }
 }
@@ -343,6 +375,38 @@ function parsePs(text, maxRows) {
 // `,pid=N,fd=M` trailer after the quoted comm, so a forged inner pid lands
 // inside the displayed comm string instead of the parsed pid.
 
+// Strip the port from an ss Local-Address:Port field and normalize so
+// IPv4-mapped IPv6 (`::ffff:10.0.0.2`) matches `ip addr` IPv4, and
+// scoped link-locals drop the `%iface` zone.
+function normalizeAddr(value) {
+  var a = String(value || "").replace(/^\s+|\s+$/g, "").toLowerCase()
+  if (a === "") return ""
+  var pct = a.indexOf("%")
+  if (pct >= 0) a = a.slice(0, pct)
+  if (a.indexOf("::ffff:") === 0) {
+    var v4 = a.slice(7)
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(v4)) return v4
+  }
+  return a
+}
+
+function stripSsLocal(addrPort) {
+  var s = String(addrPort || "")
+  if (s.charAt(0) === "[") {
+    var close = s.indexOf("]")
+    if (close > 1) return normalizeAddr(s.slice(1, close))
+  }
+  var c = s.lastIndexOf(":")
+  if (c <= 0) return normalizeAddr(s)
+  return normalizeAddr(s.slice(0, c))
+}
+
+function ssParseLocal(line, sock) {
+  var m = String(line).match(/^\s*\d+\s+\d+\s+(\S+)/)
+  if (!m) return
+  sock.localAddr = stripSsLocal(m[1])
+}
+
 function ssParseUsers(line, sock) {
   var open = line.indexOf('users:(("')
   if (open < 0) return
@@ -386,8 +450,9 @@ function parseSs(text) {
       // New socket record. Note: `ss ... state established` omits the state
       // column entirely, so records may lead with the Recv-Q number rather
       // than "ESTAB" — any non-indented line starts a record.
-      cur = { pid: 0, comm: "", rx: null, tx: null }
+      cur = { pid: 0, comm: "", rx: null, tx: null, localAddr: "" }
       out.push(cur)
+      ssParseLocal(line, cur)
     }
     if (!cur) continue
     ssParseUsers(line, cur)
@@ -398,7 +463,8 @@ function parseSs(text) {
   for (var j = 0; j < out.length; j++) {
     if (out[j].rx === null && out[j].tx === null) continue
     kept.push({ pid: out[j].pid, comm: out[j].comm,
-                rx: out[j].rx || 0, tx: out[j].tx || 0 })
+                rx: out[j].rx || 0, tx: out[j].tx || 0,
+                localAddr: out[j].localAddr || "" })
   }
   return kept
 }
@@ -418,18 +484,40 @@ function sumSocketsByPid(sockets) {
   return byPid
 }
 
+function socketsOnIface(sockets, ifaceAddrs) {
+  if (!Array.isArray(sockets)) return []
+  if (!Array.isArray(ifaceAddrs)) return sockets
+  var want = {}
+  var i
+  for (i = 0; i < ifaceAddrs.length; i++) {
+    var a = normalizeAddr(ifaceAddrs[i])
+    if (a) want[a] = true
+  }
+  var out = []
+  for (i = 0; i < sockets.length; i++) {
+    var s = sockets[i]
+    if (!s) continue
+    if (want[normalizeAddr(s.localAddr)]) out.push(s)
+  }
+  return out
+}
+
 // Per-process network rates plus the honest unattributed remainder.
 //   prev/curr:    parseSs output from two samples
 //   ifPrev/ifCurr: { rx, tx } interface counters at the same instants
+//   ifaceAddrs:   optional list of addresses on the watched interface.
+//                 When provided, sockets whose local address is not on
+//                 that list are excluded from process rows and land in
+//                 Other — ss is global, the interface counters are not.
 // Rows carry raw per-interval byte rates. Anything the interface moved that
 // could not be attributed to a visible process lands in `other` (pid 0) —
 // never silently dropped, never presented as a real process.
-function computeNetAppRows(prev, curr, ifPrev, ifCurr, dtS) {
+function computeNetAppRows(prev, curr, ifPrev, ifCurr, dtS, ifaceAddrs) {
   var empty = { rows: [], other: { rxBps: 0, txBps: 0 }, ifRxBps: 0, ifTxBps: 0 }
   if (!Array.isArray(curr) || !ifCurr || !(dtS > 0)) return empty
 
-  var prevByPid = sumSocketsByPid(prev)
-  var currByPid = sumSocketsByPid(curr)
+  var prevByPid = sumSocketsByPid(socketsOnIface(prev, ifaceAddrs))
+  var currByPid = sumSocketsByPid(socketsOnIface(curr, ifaceAddrs))
 
   var ifRxBps = ifPrev ? Math.max(0, ifCurr.rx - ifPrev.rx) / dtS : 0
   var ifTxBps = ifPrev ? Math.max(0, ifCurr.tx - ifPrev.tx) / dtS : 0
@@ -501,7 +589,9 @@ function mergeRoster(prevRows, nextRows, maxRows) {
 // Parse `nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,
 // memory.total,temperature.gpu,power.draw,clocks.gr --format=csv,noheader,
 // nounits`. Fields may be "N/A" or "[Not Supported]" — those become null.
-// Malformed lines are skipped; the row count is capped.
+// GPU names can contain commas; extra fields are rejoined into `name` so
+// the last six numeric columns stay aligned. Malformed lines are skipped;
+// the row count is capped.
 function parseNvidiaCsv(text, maxRows) {
   var limit = (maxRows === undefined) ? 8 : maxRows
   var out = []
@@ -512,22 +602,25 @@ function parseNvidiaCsv(text, maxRows) {
     if (line === "") continue
     var f = line.split(",")
     if (f.length < 8) continue
-    var index = parseInt(f[0].replace(/^\s+|\s+$/g, ""), 10)
+    var extra = f.length - 8
+    var index = parseInt(String(f[0]).replace(/^\s+|\s+$/g, ""), 10)
     if (!isFinite(index)) continue
+    var name = f.slice(1, 2 + extra).join(",").replace(/^\s+|\s+$/g, "")
+    var rest = f.slice(2 + extra)
     var field = function (n) {
-      var v = String(f[n] || "").replace(/^\s+|\s+$/g, "")
+      var v = String(rest[n] || "").replace(/^\s+|\s+$/g, "")
       if (v === "" || v === "N/A" || v === "[Not Supported]" || v === "[N/A]") return null
       return num(v, null)
     }
     out.push({
       index: index,
-      name: String(f[1] || "").replace(/^\s+|\s+$/g, ""),
-      utilPct: field(2),
-      memUsedM: field(3),
-      memTotalM: field(4),
-      tempC: field(5),
-      powerW: field(6),
-      clockMhz: field(7)
+      name: name,
+      utilPct: field(0),
+      memUsedM: field(1),
+      memTotalM: field(2),
+      tempC: field(3),
+      powerW: field(4),
+      clockMhz: field(5)
     })
   }
   return out
@@ -563,17 +656,38 @@ function microToWhole(value) {
   return n === null ? null : n / 1000000
 }
 
+function enginesFromKv(kv) {
+  var out = []
+  if (!kv || typeof kv !== "object") return out
+  for (var k in kv) {
+    if (k.indexOf("eng_") !== 0) continue
+    var id = k.slice(4)
+    if (!id || !/^[a-z0-9_]+$/.test(id)) continue
+    var n = num(kv[k], null)
+    if (n === null || n < 0) continue
+    out.push({ id: id, busy: n })
+  }
+  out.sort(function (a, b) {
+    if (a.id < b.id) return -1
+    if (a.id > b.id) return 1
+    return 0
+  })
+  return out
+}
+
 function normalizeAmdGpu(kv) {
   if (!kv || typeof kv !== "object") return null
   return {
     kind: "amd",
     busy: num(kv.gpu_busy_percent, null),
+    memBusy: num(kv.mem_busy_percent, null),
     vramUsed: num(kv.mem_info_vram_used, null),
     vramTotal: num(kv.mem_info_vram_total, null),
     tempC: milliToWhole(kv.temp_edge_mc),        // temp1_input, millidegrees
     tempJunctionC: milliToWhole(kv.temp_junction_mc),
     powerW: microToWhole(kv.power1_average_uw),  // microwatts
-    clockMhz: num(kv.sclk_mhz, null)
+    clockMhz: num(kv.sclk_mhz, null),
+    engines: enginesFromKv(kv)
   }
 }
 
@@ -723,6 +837,7 @@ if (typeof module !== "undefined" && module.exports) {
     parsePs: parsePs,
     parseSs: parseSs,
     sumSocketsByPid: sumSocketsByPid,
+    socketsOnIface: socketsOnIface,
     computeNetAppRows: computeNetAppRows,
     mergeRoster: mergeRoster,
     parseNvidiaCsv: parseNvidiaCsv,

@@ -46,6 +46,20 @@ test("parseStreamLine accepts missing PSI and Intel gpu shape", () => {
   assert.deepEqual(s.r6, [{ n: "wlan0", m: 600 }]);
 });
 
+test("parseStreamLine keeps unread PSI half as null, not zero", () => {
+  const s = Model.parseStreamLine(fixture("stream-partial-psi.json"));
+  assert.ok(s);
+  assert.equal(s.psi.cs10, 1.5);
+  assert.equal(s.psi.ms10, null);
+  assert.equal(s.psi.ms60, null);
+  assert.equal(s.gpu.kind, "amd");
+  assert.equal(s.gpu.memBusy, 22);
+  assert.deepEqual(s.gpu.engines, [
+    { id: "comp_1_0_0", busy: 5 },
+    { id: "gfx", busy: 40 }
+  ]);
+});
+
 test("parseStreamLine rejects garbage", () => {
   assert.equal(Model.parseStreamLine(""), null);
   assert.equal(Model.parseStreamLine("not json"), null);
@@ -201,6 +215,11 @@ test("parseSs parses real captured output", () => {
   assert.equal(node.comm, "node");
   assert.equal(node.rx, 68697);              // bytes_received
   assert.equal(node.tx, 3415954);            // bytes_sent preferred over bytes_acked
+  assert.equal(node.localAddr, "172.30.0.2");
+  // IPv4-mapped IPv6 local addresses normalize to the v4 form
+  const mapped = socks.find(s => s.pid === 1501 && s.rx === 29961);
+  assert.ok(mapped);
+  assert.equal(mapped.localAddr, "172.30.0.2");
   // sockets without a users:(...) group stay unattributed (pid 0)
   assert.ok(socks.some(s => s.pid === 0));
 });
@@ -256,6 +275,32 @@ test("computeNetAppRows attributes rates and computes the Other remainder", () =
 test("computeNetAppRows first sample reports zero rates", () => {
   const r = Model.computeNetAppRows(null, [{ pid: 1, comm: "x", rx: 500, tx: 0 }], null, { rx: 500, tx: 0 }, 1);
   assert.equal(r.rows.length, 0);
+  assert.equal(r.other.rxBps, 0);
+});
+
+test("computeNetAppRows scopes sockets to the watched interface", () => {
+  const prev = [
+    { pid: 1, comm: "a", rx: 100, tx: 0, localAddr: "10.0.0.2" },
+    { pid: 2, comm: "b", rx: 100, tx: 0, localAddr: "172.16.0.2" }
+  ];
+  const curr = [
+    { pid: 1, comm: "a", rx: 1100, tx: 0, localAddr: "10.0.0.2" },
+    { pid: 2, comm: "b", rx: 5100, tx: 0, localAddr: "172.16.0.2" }
+  ];
+  const r = Model.computeNetAppRows(prev, curr, { rx: 0, tx: 0 }, { rx: 2000, tx: 0 }, 1, ["10.0.0.2"]);
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0].pid, 1);
+  assert.equal(r.rows[0].rxBps, 1000);
+  // iface moved 2000; 1000 attributed to pid 1; docker pid 2 is Other
+  assert.equal(r.other.rxBps, 1000);
+});
+
+test("computeNetAppRows matches IPv4-mapped ss addresses to iface IPv4", () => {
+  const prev = [{ pid: 9, comm: "n", rx: 0, tx: 0, localAddr: "10.0.0.2" }];
+  const curr = [{ pid: 9, comm: "n", rx: 500, tx: 0, localAddr: "10.0.0.2" }];
+  const r = Model.computeNetAppRows(prev, curr, { rx: 0, tx: 0 }, { rx: 500, tx: 0 }, 1, ["::ffff:10.0.0.2"]);
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0].rxBps, 500);
   assert.equal(r.other.rxBps, 0);
 });
 
@@ -323,6 +368,16 @@ test("parseNvidiaCsv maps N/A and [Not Supported] to null", () => {
   assert.equal(Model.parseNvidiaCsv("garbage line").length, 0);
 });
 
+test("parseNvidiaCsv rejoins comma-containing GPU names", () => {
+  const rows = Model.parseNvidiaCsv(fixture("nvidia-comma.csv"));
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].name, "NVIDIA RTX 4070, Laptop GPU");
+  assert.equal(rows[0].utilPct, 12);
+  assert.equal(rows[0].clockMhz, 1800);
+  assert.equal(rows[1].name, "NVIDIA GeForce GT 1030");
+  assert.equal(rows[1].utilPct, 0);
+});
+
 // -------------------------------------------------------------- amd / intel
 
 test("parseKeyValues reads key=value payloads", () => {
@@ -341,6 +396,11 @@ test("normalizeAmdGpu converts sysfs units", () => {
   assert.equal(g.tempJunctionC, 61);
   assert.equal(g.powerW, 85);
   assert.equal(g.clockMhz, 1800);
+  assert.equal(g.memBusy, 22);
+  assert.deepEqual(g.engines, [
+    { id: "comp_1_0_0", busy: 5 },
+    { id: "gfx", busy: 40 }
+  ]);
 });
 
 test("normalizeAmdGpu tolerates missing files", () => {
@@ -348,6 +408,8 @@ test("normalizeAmdGpu tolerates missing files", () => {
   assert.equal(g.busy, 7);
   assert.equal(g.vramUsed, null);
   assert.equal(g.tempC, null);
+  assert.equal(g.memBusy, null);
+  assert.deepEqual(g.engines, []);
 });
 
 test("normalizeIntelGpu reports a labeled frequency estimate, never busy", () => {

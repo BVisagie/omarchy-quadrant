@@ -203,6 +203,28 @@ Item {
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
+    Components.StatRow {
+      width: parent.width
+      visible: root.vendor === "amd" && root.live && root.live.memBusy !== null && root.live.memBusy !== undefined
+      label: "Memory busy"
+      value: root.live ? Model.formatPct(root.live.memBusy, 1) : "--"
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
+
+    Repeater {
+      model: root.live && root.live.engines ? root.live.engines : []
+
+      delegate: Components.StatRow {
+        required property var modelData
+        width: column.width
+        label: String(modelData.id || "")
+        value: Model.formatPct(modelData.busy, 1)
+        foreground: root.panel ? root.panel.barForeground : "#cacccc"
+        fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      }
+    }
+
     Text {
       textFormat: Text.PlainText
       visible: root.vendor === "intel"

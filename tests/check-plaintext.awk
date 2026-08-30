@@ -5,6 +5,12 @@
 # HTML-like strings (including inline images), and several labels render
 # attacker-controlled process names. Run under both mawk and gawk in CI.
 #
+# WidgetButton.tooltipText is rendered by the shell's own tooltip Text,
+# which is already PlainText. Quadrant's tooltipLine is rates and
+# percentages — never process comm — so it is not in scope for this
+# check. This matcher covers `Text {` blocks; a Text that opens on a
+# following line would not be caught, so keep Text braces on one line.
+#
 # Usage: awk -f tests/check-plaintext.awk *.qml tabs/*.qml components/*.qml
 
 BEGIN { bad = 0 }

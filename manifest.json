@@ -43,13 +43,13 @@
         "key": "barIntervalMs",
         "type": "number",
         "label": "Bar refresh (ms)",
-        "description": "Cadence of the streaming sampler that feeds the bar segments and history graphs. 250-10000."
+        "description": "Cadence of the streaming sampler that feeds the bar segments and history graphs. 250-60000."
       },
       {
         "key": "panelIntervalMs",
         "type": "number",
         "label": "Panel refresh (ms)",
-        "description": "Cadence of the on-demand samplers that run while the panel is open. 500-10000."
+        "description": "Cadence of the on-demand samplers that run while the panel is open. 500-60000."
       },
       {
         "key": "networkInterface",

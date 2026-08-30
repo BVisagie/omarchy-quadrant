@@ -16,18 +16,35 @@
 set -euo pipefail
 
 fail() {
-  local msg=$1
-  if command -v jq >/dev/null 2>&1; then
-    jq -cn --arg e "$msg" '{ok:false, error:$e}'
+  local msg=$1 bin=""
+  if [[ -x /usr/bin/jq ]]; then bin=/usr/bin/jq
+  else bin=$(command -v jq) || bin=""
+  fi
+  if [[ -n $bin ]]; then
+    "$bin" -cn --arg e "$msg" '{ok:false, error:$e}'
   else
     printf '{"ok":false,"error":"helper unavailable"}\n'
   fi
   exit 1
 }
 
-JQ=$(command -v jq) || fail "jq not found"
-PS=$(command -v ps) || fail "ps not found"
-AWK=$(command -v "${QUADRANT_AWK:-awk}") || fail "awk not found"
+# Prefer the distro path so a user-writable PATH entry cannot shadow the
+# helper. Fall back to command -v for non-standard prefixes (Nix, etc.).
+resolve_bin() {
+  local n=$1
+  [[ $n =~ ^[A-Za-z0-9._+-]+$ ]] || return 1
+  if [[ -x /usr/bin/$n ]]; then
+    printf '%s\n' "/usr/bin/$n"
+    return 0
+  fi
+  command -v "$n"
+}
+
+JQ=$(resolve_bin jq) || fail "jq not found"
+PS=$(resolve_bin ps) || fail "ps not found"
+awk_name=${QUADRANT_AWK:-awk}
+[[ $awk_name =~ ^[A-Za-z0-9._+-]+$ ]] || fail "bad awk name"
+AWK=$(resolve_bin "$awk_name") || fail "awk not found"
 
 count=${1:-5}
 [[ $count =~ ^[0-9]+$ ]] || fail "bad row count '$count'"

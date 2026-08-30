@@ -10,7 +10,7 @@ import "tabs" as Tabs
 // Quadrant detail panel: one KeyboardPanel with a tab strip. Keyboard
 // contract follows Quattro conventions — Tab keeps its shell meaning
 // (switch to the adjacent bar panel), so Quadrant's own tabs move with
-// Left/Right and 1-4; R refreshes the active tab; Esc closes.
+// Left/Right and 1-N (N = visible tabs); R refreshes the active tab; Esc closes.
 Panel {
   id: root
   moduleName: "dev.bvisagie.quadrant"
@@ -104,7 +104,10 @@ Panel {
       }
       onTextKey: function(t) {
         if (t === "r" || t === "R") { root.refreshActiveTab(); return }
-        if (t >= "1" && t <= "4") root.selectTabIndex(parseInt(t, 10) - 1)
+        if (t >= "1" && t <= "9") {
+          var n = parseInt(t, 10)
+          if (n >= 1 && n <= root.tabs.length) root.selectTabIndex(n - 1)
+        }
       }
 
       Column {
@@ -168,7 +171,14 @@ Panel {
         StackLayout {
           id: stack
           width: parent.width
-          currentIndex: Math.max(0, root.tabs.indexOf(root.currentTab))
+          // Children are always cpu/mem/gpu/net in that order. Map by tab
+          // id rather than by the filtered `tabs` array — otherwise a
+          // no-GPU machine puts Network at index 2, which is GpuTab.
+          currentIndex: {
+            var map = { "cpu": 0, "mem": 1, "gpu": 2, "net": 3 }
+            var i = map[root.currentTab]
+            return (i === undefined) ? 0 : i
+          }
 
           Tabs.CpuTab {
             id: cpuTab
@@ -195,7 +205,7 @@ Panel {
         // ---- footer hint ----
         Text {
           textFormat: Text.PlainText
-          text: "←/→ or 1-4 switch tab · R refresh · Esc close"
+          text: "←/→ or 1-" + root.tabs.length + " switch tab · R refresh · Esc close"
           color: Qt.darker(root.barForeground, 1.6)
           font.family: root.bar ? root.bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.caption

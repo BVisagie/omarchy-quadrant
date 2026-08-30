@@ -132,9 +132,12 @@ psi_cpu_ok=0 psi_mem_ok=0
 # GPU startup probes.
 gpu_busy_f="" gpu_vram_used_f="" gpu_vram_total_f=""
 gpu_temp_edge_f="" gpu_power_f="" gpu_sclk_f=""
+gpu_mem_busy_f=""
 gpu_freq_cur_f="" gpu_freq_max_f="" gpu_temp_f=""
+declare -a GPU_ENG_PATHS=() GPU_ENG_KEYS=()
 if [[ $gpu_vendor == amd ]]; then
   [[ -r $gpu_path/gpu_busy_percent ]] && gpu_busy_f=$gpu_path/gpu_busy_percent
+  [[ -r $gpu_path/mem_busy_percent ]] && gpu_mem_busy_f=$gpu_path/mem_busy_percent
   [[ -r $gpu_path/mem_info_vram_used ]] && gpu_vram_used_f=$gpu_path/mem_info_vram_used
   [[ -r $gpu_path/mem_info_vram_total ]] && gpu_vram_total_f=$gpu_path/mem_info_vram_total
   for h in "$gpu_path"/hwmon/hwmon*; do
@@ -144,6 +147,17 @@ if [[ $gpu_vendor == amd ]]; then
     break
   done
   [[ -r $gpu_path/pp_dpm_sclk ]] && gpu_sclk_f=$gpu_path/pp_dpm_sclk
+  for eng_dir in "$gpu_path"/engine/*; do
+    [[ -d $eng_dir && -r $eng_dir/busy_percent ]] || continue
+    eng_name=${eng_dir##*/}
+    eng_key=${eng_name,,}
+    eng_key=${eng_key//./_}
+    eng_key=${eng_key//-/_}
+    [[ $eng_key =~ ^[a-z0-9_]+$ ]] || continue
+    GPU_ENG_PATHS+=("$eng_dir/busy_percent")
+    GPU_ENG_KEYS+=("$eng_key")
+    (( ${#GPU_ENG_KEYS[@]} >= 32 )) && break
+  done
 elif [[ $gpu_vendor == intel ]]; then
   # i915 keeps the gt files on the card root; xe nests them under tile/gt.
   for cand in "$gpu_path/gt_cur_freq_mhz" "$gpu_path"/gt/gt_cur_freq_mhz "$gpu_path"/tile*/gt*/freq0/cur_freq; do
@@ -274,8 +288,9 @@ read_gpu() {
   # Rewrites global GPU_JSON with a JSON object or the string "null".
   GPU_JSON="null"
   if [[ $gpu_vendor == amd ]]; then
-    local busy vru vrt te pw sclk=""
+    local busy vru vrt te pw mb="" sclk="" eng_json="" ev i
     read_int_file "$gpu_busy_f" busy
+    read_int_file "$gpu_mem_busy_f" mb
     read_int_file "$gpu_vram_used_f" vru
     read_int_file "$gpu_vram_total_f" vrt
     read_int_file "$gpu_temp_edge_f" te
@@ -295,7 +310,14 @@ read_gpu() {
         esac
       done < "$gpu_sclk_f"
     fi
-    GPU_JSON="{\"busy\":${busy:-null},\"vrU\":${vru:-null},\"vrT\":${vrt:-null},\"t\":${te:-null},\"w\":${pw:-null},\"mhz\":${sclk:-null},\"kind\":\"amd\"}"
+    for i in "${!GPU_ENG_PATHS[@]}"; do
+      ev=""
+      read_int_file "${GPU_ENG_PATHS[$i]}" ev
+      [[ -n $ev ]] || continue
+      [[ -n $eng_json ]] && eng_json+=","
+      eng_json+="\"${GPU_ENG_KEYS[$i]}\":$ev"
+    done
+    GPU_JSON="{\"busy\":${busy:-null},\"mb\":${mb:-null},\"vrU\":${vru:-null},\"vrT\":${vrt:-null},\"t\":${te:-null},\"w\":${pw:-null},\"mhz\":${sclk:-null},\"eng\":{${eng_json}},\"kind\":\"amd\"}"
   elif [[ $gpu_vendor == intel ]]; then
     local fc fm t
     read_int_file "$gpu_freq_cur_f" fc
@@ -326,14 +348,24 @@ emit() {
   local psi_json="null"
   if (( psi_cpu_ok || psi_mem_ok )); then
     local -a pc=(0 0 0 0 0 0) pm=(0 0 0 0 0 0)
-    if (( psi_cpu_ok )); then read_psi_file /proc/pressure/cpu pc; fi
-    if (( psi_mem_ok )); then read_psi_file /proc/pressure/memory pm; fi
+    local cs10=null cs60=null cs300=null cf10=null
+    local ms10=null ms60=null ms300=null mf10=null
     local i
-    for i in 0 1 2 3 4 5; do
-      [[ ${pc[$i]} =~ ^[0-9.]+$ ]] || pc[i]=0
-      [[ ${pm[$i]} =~ ^[0-9.]+$ ]] || pm[i]=0
-    done
-    psi_json="{\"cs10\":${pc[0]:-0},\"cs60\":${pc[1]:-0},\"cs300\":${pc[2]:-0},\"cf10\":${pc[3]:-0},\"ms10\":${pm[0]:-0},\"ms60\":${pm[1]:-0},\"ms300\":${pm[2]:-0},\"mf10\":${pm[3]:-0}}"
+    if (( psi_cpu_ok )); then
+      read_psi_file /proc/pressure/cpu pc
+      for i in 0 1 2 3; do
+        [[ ${pc[$i]} =~ ^[0-9.]+$ ]] || pc[i]=0
+      done
+      cs10=${pc[0]}; cs60=${pc[1]}; cs300=${pc[2]}; cf10=${pc[3]}
+    fi
+    if (( psi_mem_ok )); then
+      read_psi_file /proc/pressure/memory pm
+      for i in 0 1 2 3; do
+        [[ ${pm[$i]} =~ ^[0-9.]+$ ]] || pm[i]=0
+      done
+      ms10=${pm[0]}; ms60=${pm[1]}; ms300=${pm[2]}; mf10=${pm[3]}
+    fi
+    psi_json="{\"cs10\":$cs10,\"cs60\":$cs60,\"cs300\":$cs300,\"cf10\":$cf10,\"ms10\":$ms10,\"ms60\":$ms60,\"ms300\":$ms300,\"mf10\":$mf10}"
   fi
 
   local temp_json="null"

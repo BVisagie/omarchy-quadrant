@@ -34,7 +34,10 @@ jobs:
       - name: bash syntax
         run: for f in scripts/*; do bash -n "$f"; done
       - name: PlainText grep check (${{ matrix.awk }})
-        run: "${{ matrix.awk }}" -f tests/check-plaintext.awk BarWidget.qml Panel.qml tabs/*.qml components/*.qml
+        # Quote the whole command so GitHub Actions YAML stays valid; the
+        # block scalar still lets the shell expand the QML globs.
+        run: |
+          ${{ matrix.awk }} -f tests/check-plaintext.awk BarWidget.qml Panel.qml tabs/*.qml components/*.qml
       - name: Script smoke tests (${{ matrix.awk }})
         run: |
           set -e
