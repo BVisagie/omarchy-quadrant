@@ -99,6 +99,15 @@ BarWidget {
       return Theme.trackFor(String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground))
     return themePal.track
   }
+  // Stretch C/M/G meters to the two-line network stack when it is shown,
+  // so they fill the slot instead of sitting as 10px pills on the ↑ line.
+  // Falls back to Theme.metrics.barMeterHeight when network is hidden.
+  readonly property int meterHeight: {
+    var floor = Style.space(Theme.metrics.barMeterHeight)
+    if (!root.segmentEnabled("network")) return floor
+    var h = netCol.implicitHeight
+    return h > floor ? h : floor
+  }
   readonly property bool gpuAvailable: gpu !== null
   readonly property bool nvidiaSelected: gpu !== null && gpu.vendor === "nvidia"
   // Position of the selected card among the NVIDIA cards — nvidia-smi -i
@@ -436,15 +445,21 @@ BarWidget {
       columns: root.vertical ? 1 : root.visibleSegmentCount
       columnSpacing: Style.space(Theme.metrics.barSegmentGap)
       rowSpacing: Style.space(4)
+      // Network is two caption lines; C/M/G are a letter + meter. Default
+      // Grid alignment pins those to the top of the cell, which is what
+      // makes the meters sit on the ↑ line in a horizontal bar.
+      verticalItemAlignment: Grid.AlignVCenter
+      horizontalItemAlignment: Grid.AlignHCenter
 
       // ---- CPU segment ----
       Item {
         visible: root.segmentEnabled("cpu")
         implicitWidth: cpuRow.implicitWidth
-        implicitHeight: cpuRow.implicitHeight
+        implicitHeight: root.meterHeight
 
         Row {
           id: cpuRow
+          height: root.meterHeight
           spacing: Style.space(4)
           Text {
             textFormat: Text.PlainText
@@ -455,6 +470,7 @@ BarWidget {
             anchors.verticalCenter: parent.verticalCenter
           }
           Components.MeterBar {
+            height: root.meterHeight
             trackColor: root.meterTrack
             segments: [
               { fraction: root.cpuPct ? root.cpuPct.user / 100 : 0, color: root.cpuMeterUser },
@@ -477,10 +493,11 @@ BarWidget {
       Item {
         visible: root.segmentEnabled("memory")
         implicitWidth: memRow.implicitWidth
-        implicitHeight: memRow.implicitHeight
+        implicitHeight: root.meterHeight
 
         Row {
           id: memRow
+          height: root.meterHeight
           spacing: Style.space(4)
           Text {
             textFormat: Text.PlainText
@@ -491,6 +508,7 @@ BarWidget {
             anchors.verticalCenter: parent.verticalCenter
           }
           Components.MeterBar {
+            height: root.meterHeight
             trackColor: root.meterTrack
             segments: [
               { fraction: root.memComp ? root.memComp.usedPct / 100 : 0, color: root.memMeterFill }
@@ -512,10 +530,11 @@ BarWidget {
       Item {
         visible: root.segmentEnabled("gpu") && root.gpuAvailable
         implicitWidth: gpuRow.implicitWidth
-        implicitHeight: gpuRow.implicitHeight
+        implicitHeight: root.meterHeight
 
         Row {
           id: gpuRow
+          height: root.meterHeight
           spacing: Style.space(4)
           Text {
             textFormat: Text.PlainText
@@ -526,6 +545,7 @@ BarWidget {
             anchors.verticalCenter: parent.verticalCenter
           }
           Components.MeterBar {
+            height: root.meterHeight
             trackColor: root.meterTrack
             segments: [
               { fraction: root.gpuDisplay ? root.gpuDisplay.pct / 100 : 0, color: root.gpuMeterFill }

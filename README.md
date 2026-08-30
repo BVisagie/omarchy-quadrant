@@ -57,7 +57,8 @@ Move it with `omarchy bar move dev.bvisagie.quadrant --section center`.
   the live Omarchy accent (with the theme's urgent color at ≥90% load);
   `barPalette vivid` restores the original per-resource hues. Network rates
   use a fixed-width compact format (`1.0K`, `99K`) so the slot does not
-  resize as the magnitude changes.
+  resize as the magnitude changes. C/M/G meters stretch to the two-line
+  network stack and sit vertically centered in the slot.
 - **Panel**: click the widget. `←`/`→` or `1`–`N` (N = visible tabs; GPU
   is omitted when no supported card is present) switch tabs, `R`
   refreshes the active tab, `Esc` closes. `Tab` keeps its Quattro meaning
