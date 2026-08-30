@@ -17,18 +17,51 @@ var series = {
   gpu: "#7dcfff",        // cyan
   netRx: "#73daca",      // teal
   netTx: "#e0af68",      // amber
+  diskRead: "#7aa2f7",   // blue
+  diskWrite: "#e0af68",  // amber
   swap: "#f7768e"        // red
 }
 
 // Sizes are px at the shell's base scale; QML wraps them in Style.space().
 var metrics = {
-  barMeterWidth: 18,
-  barMeterHeight: 10,
+  barMeterThickness: 3,
+  barLabelGap: 3,
   barSegmentGap: 8,
   graphHeight: 96,
   ringSize: 92,
   ringThickness: 9,
   processIcon: 16
+}
+
+// Nerd Fonts v3 private-use glyphs for bar metric cells. Literal UTF-8,
+// matching the existing ↑ / °C style. Verified against glyphnames.json:
+//   cpu  md-cpu_64_bit      U+F0EE0
+//   gpu  md-expansion_card  U+F08AE
+//   mem  fa-memory          U+EFC5   (DIMM silhouette; not md-memory,
+//                                    which collides with the CPU die)
+//   disk md-harddisk        U+F02CA
+var barGlyphs = {
+  cpu: "󰻠",
+  gpu: "󰢮",
+  mem: "",
+  disk: "󰋊"
+}
+
+var barLetters = {
+  cpu: "C",
+  gpu: "G",
+  mem: "M",
+  disk: "D"
+}
+
+// Resolve a bar-cell label. Unknown modes fall back to glyphs so a typo
+// in barLabels never blanks the cells.
+function barLabelFor(mode, metric) {
+  var m = String(mode || "").toLowerCase()
+  var key = String(metric || "")
+  if (m === "letter") return barLetters[key] || ""
+  if (m === "none") return ""
+  return barGlyphs[key] || ""
 }
 
 // "#RRGGBB" + alpha 0..1 -> Qt's "#AARRGGBB". QML uses the alpha-first
@@ -69,7 +102,7 @@ function normalizeHex(hex) {
 
 // Theme-native bar meter palette. Accent is the fill; a 0.45-alpha accent
 // is the stacked CPU "system" layer; the track is foreground at 0.14 (the
-// first-party Util.alpha(fg, 0.18) idiom, slightly quieter for an 18px
+// first-party Util.alpha(fg, 0.18) idiom, slightly quieter for a thin
 // meter). Urgent is the high-load fill. Malformed input falls back
 // field-by-field to the vivid constants so a bad color can never blank
 // the bars.
@@ -85,6 +118,9 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     series: series,
     metrics: metrics,
+    barGlyphs: barGlyphs,
+    barLetters: barLetters,
+    barLabelFor: barLabelFor,
     alphaHex: alphaHex,
     gridFor: gridFor,
     trackFor: trackFor,

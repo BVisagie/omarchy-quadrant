@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# disk-info — one-shot block-device identity and mount capacity for Quadrant.
+#
+# Emits one JSON envelope on stdout:
+#   {"ok":true,"disks":[{name,model,rotational,sizeBytes,tempC}],"dfPayload":"..."}
+#
+# Disks are whole block devices under /sys/block (loop/ram/zram/fd/nbd/sr
+# dropped, matching quadrant-stream). Capacity is the raw `df -P -B1 -T`
+# payload so Model.js can parse and fixture-test it. NVMe temperature is
+# read from the `nvme` hwmon only — never a first-readable-sensor fallback.
+#
+# Usage: disk-info
+
+# shellcheck disable=SC2016  # jq programs are single-quoted on purpose
+set -euo pipefail
+
+fail() {
+  local msg=$1 bin=""
+  if [[ -x /usr/bin/jq ]]; then bin=/usr/bin/jq
+  else bin=$(command -v jq) || bin=""
+  fi
+  if [[ -n $bin ]]; then
+    "$bin" -cn --arg e "$msg" '{ok:false, error:$e}'
+  else
+    printf '{"ok":false,"error":"helper unavailable"}\n'
+  fi
+  exit 1
+}
+
+resolve_bin() {
+  local n=$1
+  [[ $n =~ ^[A-Za-z0-9._+-]+$ ]] || return 1
+  if [[ -x /usr/bin/$n ]]; then
+    printf '%s\n' "/usr/bin/$n"
+    return 0
+  fi
+  command -v "$n"
+}
+
+JQ=$(resolve_bin jq) || fail "jq not found"
+DF=$(resolve_bin df) || fail "df not found"
+
+trim() {
+  local s=$1
+  s=${s#"${s%%[![:space:]]*}"}
+  s=${s%"${s##*[![:space:]]}"}
+  printf '%s' "$s"
+}
+
+# shellcheck disable=SC2034  # dst is a nameref; writes land in the caller
+read_int_file() {
+  local path=$1 v
+  local -n dst=$2
+  dst=""
+  [[ -n $path && -r $path ]] || return 0
+  if IFS= read -r v < "$path" 2>/dev/null && [[ $v =~ ^[0-9]+$ ]]; then
+    dst=$v
+  fi
+}
+
+# shellcheck disable=SC2034  # dst is a nameref; writes land in the caller
+read_line_file() {
+  local path=$1
+  local -n dst=$2
+  dst=""
+  [[ -n $path && -r $path ]] || return 0
+  IFS= read -r dst < "$path" 2>/dev/null || dst=""
+  dst=$(trim "$dst")
+}
+
+nvme_temp_mc() {
+  local name=$1 ctrl h hname t
+  [[ $name =~ ^(nvme[0-9]+)n[0-9]+$ ]] || return 0
+  ctrl=${BASH_REMATCH[1]}
+  for h in /sys/class/nvme/"$ctrl"/hwmon/hwmon* \
+           /sys/class/nvme/"$ctrl"/device/hwmon/hwmon* \
+           /sys/block/"$name"/device/hwmon/hwmon*; do
+    [[ -r $h/name && -r $h/temp1_input ]] || continue
+    IFS= read -r hname < "$h/name" || continue
+    [[ $hname == nvme ]] || continue
+    IFS= read -r t < "$h/temp1_input" || continue
+    [[ $t =~ ^[0-9]+$ ]] || continue
+    printf '%s' "$t"
+    return 0
+  done
+}
+
+# --- disks -----------------------------------------------------------------
+
+disk_fields=()
+disk_count=0
+for dev in /sys/block/*; do
+  [[ -d $dev ]] || continue
+  name=${dev##*/}
+  [[ $name =~ ^[A-Za-z0-9._+-]+$ ]] || continue
+  case $name in
+    loop*|ram*|zram*|fd*|nbd*|sr*) continue ;;
+  esac
+  model=""
+  read_line_file "$dev/device/model" model
+  if [[ -z $model && $name =~ ^(nvme[0-9]+)n[0-9]+$ ]]; then
+    read_line_file "/sys/class/nvme/${BASH_REMATCH[1]}/model" model
+  fi
+  # Model strings from firmware can be long; clip in Model.js too.
+  if (( ${#model} > 64 )); then model=${model:0:64}; fi
+
+  rot=""
+  read_int_file "$dev/queue/rotational" rot
+  rot_json=null
+  if [[ $rot == 0 ]]; then rot_json=false
+  elif [[ $rot == 1 ]]; then rot_json=true
+  fi
+
+  sect=""
+  read_int_file "$dev/size" sect
+  size_json=null
+  if [[ -n $sect ]]; then
+    size_json=$(( sect * 512 ))
+  fi
+
+  temp_json=null
+  tmc=$(nvme_temp_mc "$name" || true)
+  if [[ -n ${tmc:-} ]]; then
+    temp_json=$(( tmc / 1000 ))
+  fi
+
+  disk_fields+=("$name" "$model" "$rot_json" "$size_json" "$temp_json")
+  disk_count=$(( disk_count + 1 ))
+  if (( disk_count >= 16 )); then break; fi
+done
+
+if (( ${#disk_fields[@]} == 0 )); then
+  disk_json='[]'
+else
+  disk_json=$("$JQ" -cn --args '
+    [range(0; ($ARGS.positional | length); 5) as $i |
+      { name: $ARGS.positional[$i],
+        model: $ARGS.positional[$i + 1],
+        rotational: (if $ARGS.positional[$i + 2] == "true" then true
+                     elif $ARGS.positional[$i + 2] == "false" then false
+                     else null end),
+        sizeBytes: (if $ARGS.positional[$i + 3] == "null" then null
+                    else ($ARGS.positional[$i + 3] | tonumber) end),
+        tempC: (if $ARGS.positional[$i + 4] == "null" then null
+                else ($ARGS.positional[$i + 4] | tonumber) end) }]' "${disk_fields[@]}")
+fi
+
+# --- mounts ----------------------------------------------------------------
+
+dfPayload=""
+if ! dfPayload=$("$DF" -P -B1 -T 2>/dev/null); then
+  fail "df failed"
+fi
+if (( ${#dfPayload} > 65536 )); then
+  dfPayload=${dfPayload:0:65536}
+fi
+
+"$JQ" -n \
+  --argjson disks "$disk_json" \
+  --arg dfPayload "$dfPayload" \
+  '{ ok: true, disks: $disks, dfPayload: $dfPayload }'

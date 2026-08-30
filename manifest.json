@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "Bernard Visagie",
   "license": "MIT",
-  "description": "Unified system monitor for the Quattro bar: CPU, memory, GPU, and network in one compact widget with a tabbed detail panel.",
+  "description": "Unified system monitor for the Quattro bar: CPU, GPU, memory, network, and an optional disk segment, with a tabbed detail panel.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,25 +14,27 @@
   },
   "barWidget": {
     "displayName": "Quadrant",
-    "description": "CPU, memory, GPU, and network meters with a tabbed detail panel",
+    "description": "CPU, GPU, memory, and network meters with a tabbed detail panel (Drives tab included; disk bar segment opt-in)",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "segments": ["cpu", "memory", "gpu", "network"],
+      "segments": ["cpu", "gpu", "memory", "network"],
       "processCount": 5,
       "barIntervalMs": 1000,
       "panelIntervalMs": 2000,
       "networkInterface": "auto",
       "gpuDevice": "auto",
-      "barPalette": "theme"
+      "diskDevice": "auto",
+      "barPalette": "theme",
+      "barLabels": "glyph"
     },
     "schema": [
       {
         "key": "segments",
         "type": "list",
         "label": "Bar segments",
-        "description": "Which metric segments appear in the bar slot. Any subset of: cpu, memory, gpu, network. The GPU segment hides itself when no supported GPU is detected."
+        "description": "Which metric segments appear in the bar slot. Any subset of: cpu, gpu, memory, disk, network. disk is opt-in and absent from the default. GPU and disk segments hide themselves when no supported device is detected."
       },
       {
         "key": "processCount",
@@ -65,10 +67,22 @@
         "description": "Which card the GPU segment and tab read. 'auto' prefers the boot display card, else card0."
       },
       {
+        "key": "diskDevice",
+        "type": "string",
+        "label": "Disk (auto or name)",
+        "description": "Which whole block device the disk segment and Drives tab follow. 'auto' prefers the disk backing /, else the largest."
+      },
+      {
         "key": "barPalette",
         "type": "string",
         "label": "Bar palette (theme or vivid)",
         "description": "theme (default) paints bar meters with the live Omarchy accent, a foreground-derived track, and urgent at ≥90% load. vivid keeps the original per-resource Tokyo-night hues."
+      },
+      {
+        "key": "barLabels",
+        "type": "string",
+        "label": "Bar labels (glyph, letter, or none)",
+        "description": "How CPU, GPU, memory, and disk cells are labelled. glyph (default) uses Nerd Font icons; letter falls back to C/G/M/D; none shows only the percentage."
       }
     ]
   }

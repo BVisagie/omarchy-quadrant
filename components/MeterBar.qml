@@ -4,15 +4,18 @@ import "../Theme.js" as Theme
 
 // Stacked horizontal meter for a bar segment. `segments` is an ordered list
 // of { fraction: 0..1, color } painted left to right on a muted track.
+// Height defaults to a 3px hairline so the meter reads as a gauge under a
+// percentage rather than a swatch; radius is half the height so the fill
+// is a capsule.
 Item {
   id: root
 
   property var segments: []
   property color trackColor: Theme.trackFor("#cacccc")
-  property real radius: Math.max(2, Math.round(Math.min(width, height) / 6))
+  property real radius: Math.max(0, Math.min(width, height) / 2)
 
-  implicitWidth: Style.space(Theme.metrics.barMeterWidth)
-  implicitHeight: Style.space(Theme.metrics.barMeterHeight)
+  implicitWidth: Style.space(32)
+  implicitHeight: Style.space(Theme.metrics.barMeterThickness)
 
   function offsetFor(index) {
     var sum = 0

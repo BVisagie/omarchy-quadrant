@@ -1,0 +1,7 @@
+Filesystem     Type        1-blocks         Used    Available Capacity Mounted on
+/dev/sda1      ext4                1            1            0     100% /<img src=x>
+not-a-row
+/dev/sda2      ext4               -5            1            1      10% /var
+evil type      ../../..           10           1            1      10% /tmp
+/dev/sda3      ext4               10           1            1     10% relative
+/dev/zram0     ext4               100          10           90      10% /zram

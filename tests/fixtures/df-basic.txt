@@ -1,0 +1,8 @@
+Filesystem     Type        1-blocks         Used    Available Capacity Mounted on
+/dev/nvme0n1p2 ext4      512110190592  120000000000  392110190592      24% /
+/dev/nvme0n1p1 vfat          536870912      67108864     469762048      13% /boot
+tmpfs          tmpfs        8395972608             0    8395972608       0% /dev/shm
+overlay        overlay   270436077568    5626470400  251049013248       3% /var/lib/overlay
+/dev/sda1      ext4      1000000000000  800000000000   200000000000      80% /home
+/dev/loop0     squashfs      134217728     134217728             0     100% /snap/foo
+server:/share  nfs4        20000000000    5000000000    15000000000      25% /mnt/nas
