@@ -205,6 +205,11 @@ Panel {
             var i = map[root.currentTab]
             return (i === undefined) ? 0 : i
           }
+          // StackLayout otherwise reports the tallest child as its implicit
+          // height. That made short tabs (notably GPU) inherit the CPU or
+          // Memory tab height and left a large blank gap above the footer.
+          implicitHeight: currentIndex >= 0 && children[currentIndex]
+                          ? children[currentIndex].implicitHeight : 0
 
           Tabs.CpuTab {
             id: cpuTab
