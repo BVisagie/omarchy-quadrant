@@ -343,8 +343,9 @@ BarWidget {
   // Quattro's default open-panel mark is 55% of the slot. Quadrant is a
   // wide multi-segment widget, so that became a long underline. A short
   // centered mark matches first-party icon widgets.
-  readonly property real openPanelIndicatorWidth: Math.max(Style.space(10), Math.round(Style.bar.iconSlot * 0.55))
-  readonly property real openPanelIndicatorHeight: Math.max(Style.space(10), Math.round(Style.bar.iconSlot * 0.55))
+  readonly property real indicatorSlot: showMonitorFallback ? Style.bar.statusSlot : Style.bar.iconSlot
+  readonly property real openPanelIndicatorWidth: Math.max(Style.space(10), Math.round(indicatorSlot * 0.55))
+  readonly property real openPanelIndicatorHeight: Math.max(Style.space(10), Math.round(indicatorSlot * 0.55))
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
@@ -842,14 +843,18 @@ BarWidget {
     tooltipText: root.tooltipLine
     // tooltipLine is rates/percentages, never process comm. The shell's
     // WidgetButton tooltip Text is already PlainText.
+    // Empty-segment fallback is a compact status item. It keeps the shell's
+    // standard icon canvas/font while avoiding icon-slot padding.
+    slotSize: root.showMonitorFallback ? Style.bar.statusSlot : Style.bar.iconSlot
+    fontSize: Style.bar.iconFont
     fixedWidth: root.vertical
                 ? -1
                 : (root.showMonitorFallback
-                   ? Style.bar.iconSlot
+                   ? Style.bar.statusSlot
                    : segGrid.implicitWidth + Style.spaceReal(Theme.metrics.barOuterPad) * 2)
     fixedHeight: root.vertical
                  ? (root.showMonitorFallback
-                    ? Style.bar.iconSlot
+                    ? Style.bar.statusSlot
                     : segGrid.implicitHeight + Style.spaceReal(Theme.metrics.barOuterPad) * 2)
                  : -1
 
@@ -924,6 +929,7 @@ BarWidget {
     Grid {
       id: segGrid
       z: 1
+      visible: !root.showMonitorFallback
       anchors.centerIn: parent
       columns: root.vertical ? 1 : Math.max(1, root.visibleBarCells.length)
       columnSpacing: Style.space(Theme.metrics.barSegmentGap)
