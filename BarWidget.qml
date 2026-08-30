@@ -620,8 +620,20 @@ BarWidget {
       // ---- Network segment (two-line rates) ----
       Item {
         visible: root.segmentEnabled("network")
-        implicitWidth: Style.space(Theme.metrics.barNetWidth)
+        // Reserve exactly the widest compact label in the active font.
+        // The old fixed 86-unit slot was much wider than values such as
+        // "↑ 8.0K", creating an apparent gap after the GPU meter.
+        implicitWidth: netSizer.implicitWidth
         implicitHeight: netCol.implicitHeight
+
+        Text {
+          id: netSizer
+          visible: false
+          textFormat: Text.PlainText
+          text: "↓ 999T"
+          font.family: button.fontFamily
+          font.pixelSize: Style.font.caption
+        }
 
         Column {
           id: netCol
