@@ -1,9 +1,10 @@
 # Quadrant
 
 A unified system monitor for the Omarchy Quattro bar: CPU, GPU, memory, and
-network in one compact bar widget and one tabbed panel — plus a Drives tab,
-with the disk bar segment off by default so the four defaults keep the name. Each
-panel tab identifies the hardware it is measuring — CPU model and topology,
+network in one compact bar widget and one tabbed panel — plus a Drives tab.
+The disk bar segment is off by default: it keeps the slot narrower on an
+already-crowded bar, and per-process disk attribution is not available.
+Each panel tab identifies the hardware it is measuring — CPU model and topology,
 GPU name and driver, installed RAM and swap devices, block devices and
 mounts — then shows live usage.
 
@@ -107,8 +108,8 @@ or manual deletion under `~/.config/omarchy/plugins/` is required.
   toggles independently; the slot shrinks to fit. The GPU segment hides
   itself when no supported GPU is detected — no dead chrome for hardware
   that is not there. A **disk** segment (utilization over a meter, read/write
-  in the tooltip) is off by default so the bar still ships as a quadrant;
-  enable it from the Drives tab's **Show in bar** checkbox or via
+  in the tooltip) is off by default so the slot stays compact on a crowded
+  bar; enable it from the Drives tab's **Show in bar** checkbox or via
   `segments`. Unchecking every segment leaves a compact system-monitor
   glyph; clicking it still opens the full panel. Vertical bars are supported
   (segments stack; cells clamp to the 28 px slot and drop the glyph). Meter
