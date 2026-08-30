@@ -1,0 +1,57 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Manifest parses
+        run: jq -e '.id and .kinds and .entryPoints.barWidget and .barWidget.schema' manifest.json
+      - name: Model tests
+        run: node --test tests/model.test.js
+
+  scripts:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        awk: [mawk, gawk]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck jq iproute2 procps "${{ matrix.awk }}"
+      - name: shellcheck
+        run: shellcheck scripts/*
+      - name: bash syntax
+        run: for f in scripts/*; do bash -n "$f"; done
+      - name: PlainText grep check (${{ matrix.awk }})
+        run: "${{ matrix.awk }}" -f tests/check-plaintext.awk BarWidget.qml Panel.qml tabs/*.qml components/*.qml
+      - name: Script smoke tests (${{ matrix.awk }})
+        run: |
+          set -e
+          export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/quadrant-ci}"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          export QUADRANT_AWK="${{ matrix.awk }}"
+          ./scripts/process-cpu 3 | jq -e '.ok == true and .metric == "pcpu"'
+          ./scripts/process-memory 3 | jq -e '.ok == true and .metric == "rssKb"'
+          ./scripts/process-net eth0 | jq -e '.ok == true'
+          ./scripts/gpu-stats list | jq -e '.ok == true'
+          # failure path: bad input must produce an ok:false envelope
+          if ./scripts/process-cpu nope | jq -e '.ok == false' >/dev/null; then
+            echo "failure envelope OK"
+          else
+            echo "process-cpu did not report failure correctly"
+            exit 1
+          fi
+          timeout 3 ./scripts/quadrant-stream 500 | head -n 2 | while IFS= read -r line; do
+            echo "$line" | jq -e '.v == 1 and .cpu and .mem and .net'
+          done

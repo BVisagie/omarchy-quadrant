@@ -1,0 +1,7 @@
+gpu_busy_percent=34
+mem_info_vram_used=4294967296
+mem_info_vram_total=12884901888
+temp_edge_mc=52000
+temp_junction_mc=61000
+power1_average_uw=85000000
+sclk_mhz=1800
