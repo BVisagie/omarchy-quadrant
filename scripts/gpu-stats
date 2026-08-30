@@ -2,11 +2,13 @@
 # gpu-stats — vendor-dispatching GPU helper for Quadrant.
 #
 #   gpu-stats list
-#       Enumerate /sys/class/drm/card[0-9]* and report cards whose vendor is
-#       known (AMD 0x1002, Intel 0x8086, NVIDIA 0x10de) AND that have at
-#       least one readable metric. Output:
+#       Enumerate /sys/class/drm/cardN (not connectors) and report cards whose
+#       vendor is known (AMD 0x1002, Intel 0x8086, NVIDIA 0x10de) AND that
+#       have at least one readable metric. Output:
 #       {"ok":true,"gpus":[{"card":"card0","vendor":"amd",
-#                           "path":"/sys/class/drm/card0/device","boot":true}]}
+#                           "path":"/sys/class/drm/card0/device","boot":true,
+#                           "slot":"0000:03:00.0","pciClass":"0x030000",
+#                           "pciId":"1002:744c","driver":"amdgpu"}]}
 #
 #   gpu-stats sample amd|intel <device_path>
 #       Emit readable sysfs fields as raw key=value lines inside the
@@ -51,6 +53,31 @@ resolve_bin() {
 
 JQ=$(resolve_bin jq) || fail "jq not found"
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=gpu-intel-paths.sh
+source "$SCRIPT_DIR/gpu-intel-paths.sh"
+
+trim() {
+  local s=$1
+  s=${s#"${s%%[![:space:]]*}"}
+  s=${s%"${s##*[![:space:]]}"}
+  printf '%s' "$s"
+}
+
+uevent_field() {
+  local path=$1 want=$2 line key val
+  [[ -r $path ]] || return 1
+  while IFS= read -r line; do
+    key=${line%%=*}
+    val=${line#*=}
+    if [[ $key == "$want" ]]; then
+      printf '%s' "$val"
+      return 0
+    fi
+  done < "$path"
+  return 1
+}
+
 vendor_name() {
   case $1 in
     0x1002) printf 'amd' ;;
@@ -60,29 +87,15 @@ vendor_name() {
   esac
 }
 
-intel_freq_cur() {
-  local dev=$1 cand
-  for cand in "$dev/gt_cur_freq_mhz" "$dev"/gt/gt_cur_freq_mhz "$dev"/tile*/gt*/freq0/cur_freq; do
-    [[ -r $cand ]] && { printf '%s' "$cand"; return 0; }
-  done
-  return 1
-}
-
-intel_freq_max() {
-  local dev=$1 cand
-  for cand in "$dev/gt_max_freq_mhz" "$dev"/gt/gt_max_freq_mhz "$dev"/tile*/gt*/freq0/rpn_freq; do
-    [[ -r $cand ]] && { printf '%s' "$cand"; return 0; }
-  done
-  return 1
-}
-
 cmd_list() {
-  local dev card vend vid boot fields=()
+  local dev card vend vid boot fields=() slot driver pciClass pciId did vid_hex did_hex
   for dev in /sys/class/drm/card[0-9]*/device; do
     [[ -d $dev ]] || continue
     card=${dev%/*}; card=${card##*/}
+    [[ $card =~ ^card[0-9]+$ ]] || continue
     [[ -r $dev/vendor ]] || continue
     IFS= read -r vid < "$dev/vendor" || continue
+    vid=$(trim "$vid")
     vend=$(vendor_name "$vid")
     [[ -n $vend ]] || continue
     # A card qualifies only when at least one metric is readable.
@@ -91,7 +104,7 @@ cmd_list() {
         [[ -r $dev/gpu_busy_percent || -r $dev/mem_info_vram_used ]] || continue
         ;;
       intel)
-        intel_freq_cur "$dev" >/dev/null || continue
+        intel_freq_cur_path "$dev" >/dev/null || continue
         ;;
       nvidia)
         resolve_bin nvidia-smi >/dev/null || continue
@@ -103,7 +116,38 @@ cmd_list() {
       IFS= read -r b < "$dev/boot_vga" || b=0
       [[ $b == 1 ]] && boot=1
     fi
-    fields+=("$card" "$vend" "$dev" "$boot")
+    slot=""
+    if slot=$(uevent_field "$dev/uevent" PCI_SLOT_NAME); then
+      [[ $slot =~ ^[0-9a-fA-F:.]+$ ]] || slot=""
+    else
+      slot=""
+    fi
+    driver=""
+    if driver=$(uevent_field "$dev/uevent" DRIVER); then
+      [[ $driver =~ ^[A-Za-z0-9._+-]+$ ]] || driver=""
+    else
+      driver=""
+    fi
+    pciClass=""
+    if [[ -r $dev/class ]]; then
+      IFS= read -r pciClass < "$dev/class" || pciClass=""
+      pciClass=$(trim "$pciClass")
+      pciClass=${pciClass,,}
+    fi
+    pciId=""
+    did=""
+    if [[ -r $dev/device ]]; then
+      IFS= read -r did < "$dev/device" || did=""
+      did=$(trim "$did")
+    fi
+    vid_hex=${vid#0x}; vid_hex=${vid_hex#0X}
+    did_hex=${did#0x}; did_hex=${did_hex#0X}
+    vid_hex=${vid_hex,,}
+    did_hex=${did_hex,,}
+    if [[ $vid_hex =~ ^[0-9a-f]{4}$ && $did_hex =~ ^[0-9a-f]{4}$ ]]; then
+      pciId="$vid_hex:$did_hex"
+    fi
+    fields+=("$card" "$vend" "$dev" "$boot" "$slot" "$pciClass" "$pciId" "$driver")
   done
   if (( ${#fields[@]} == 0 )); then
     "$JQ" -cn '{ok:true, gpus:[]}'
@@ -112,11 +156,15 @@ cmd_list() {
   # Kernel-controlled card names and paths; grouped through $ARGS.positional
   # so the JSON is built by jq, never by string concatenation.
   "$JQ" -cn --args '
-    {ok:true, gpus: [range(0; ($ARGS.positional | length); 4) as $i |
+    {ok:true, gpus: [range(0; ($ARGS.positional | length); 8) as $i |
       { card: $ARGS.positional[$i],
         vendor: $ARGS.positional[$i + 1],
         path: $ARGS.positional[$i + 2],
-        boot: ($ARGS.positional[$i + 3] == "1") }]}' "${fields[@]}"
+        boot: ($ARGS.positional[$i + 3] == "1"),
+        slot: $ARGS.positional[$i + 4],
+        pciClass: $ARGS.positional[$i + 5],
+        pciId: $ARGS.positional[$i + 6],
+        driver: $ARGS.positional[$i + 7] }]}' "${fields[@]}"
 }
 
 emit_file() {
@@ -177,8 +225,8 @@ cmd_sample_amd() {
 cmd_sample_intel() {
   local dev=$1 cur_f max_f
   PAYLOAD=""
-  if cur_f=$(intel_freq_cur "$dev"); then emit_file gt_cur_freq_mhz "$cur_f"; fi
-  if max_f=$(intel_freq_max "$dev"); then emit_file gt_max_freq_mhz "$max_f"; fi
+  if cur_f=$(intel_freq_cur_path "$dev"); then emit_file gt_cur_freq_mhz "$cur_f"; fi
+  if max_f=$(intel_freq_max_path "$dev"); then emit_file gt_max_freq_mhz "$max_f"; fi
   local h
   for h in "$dev"/hwmon/hwmon*; do
     [[ -d $h ]] || continue

@@ -27,6 +27,13 @@ BarWidget {
   readonly property int processCount: Model.clamp(setting("processCount", 5), 1, 10)
   readonly property string networkInterface: Model.normalizeDeviceSetting(setting("networkInterface", "auto"))
   readonly property string gpuDevice: Model.normalizeDeviceSetting(setting("gpuDevice", "auto"))
+  readonly property string integratedGpuDevice: Model.normalizeIntegratedGpuDevice(setting("integratedGpuDevice", "auto"))
+  property var localDiskFallback: null
+  readonly property bool diskFallbackWithoutGpu: {
+    if (root.localDiskFallback === true || root.localDiskFallback === false)
+      return root.localDiskFallback
+    return Model.parseBoolSetting(setting("diskFallbackWithoutGpu", true), true)
+  }
   readonly property string diskDevice: Model.normalizeDeviceSetting(setting("diskDevice", "auto"))
   readonly property string barPaletteMode: {
     var v = String(setting("barPalette", "theme")).toLowerCase()
@@ -44,7 +51,7 @@ BarWidget {
   readonly property int visibleSegmentCount: {
     var n = 0
     if (segmentEnabled("cpu")) n++
-    if (segmentEnabled("gpu") && gpuAvailable) n++
+    if (segmentEnabled("gpu") && discreteGpuAvailable) n++
     if (segmentEnabled("memory")) n++
     if (segmentEnabled("disk") && diskAvailable) n++
     if (segmentEnabled("network")) n++
@@ -52,8 +59,16 @@ BarWidget {
   }
   readonly property bool showMonitorFallback: visibleSegmentCount === 0
 
+  readonly property var effectiveBarSegments: Model.effectiveSegments(
+    segmentsSetting,
+    gpuTopologyReady,
+    discreteGpuAvailable,
+    diskFallbackWithoutGpu,
+    gpuListFailed !== true
+  )
+
   function segmentEnabled(name) {
-    return segmentsSetting.indexOf(name) !== -1
+    return effectiveBarSegments.indexOf(name) !== -1
   }
 
   function localPath(rel) {
@@ -85,11 +100,22 @@ BarWidget {
   property string selectedDiskName: ""
 
   // ---- GPU state ----
+  property var rawGpus: []
   property var gpus: []
+  property var discreteGpus: []
+  property var integratedGpus: []
   property var gpu: null
+  property var integratedGpu: null
+  property bool gpuListReady: false
+  property bool gpuListFailed: false
+  property bool sysInfoReady: false
+  property bool gpuTopologyReady: false
   property var nvidiaGpu: null
   property string nvidiaError: ""
   property string gpuDetectionError: ""
+  property string gpuDeviceWarning: ""
+  property var integratedGpuLive: null
+  property string integratedGpuError: ""
 
   // ---- hardware identity (one-shot, re-run on R) ----
   property var sysInfo: null
@@ -165,7 +191,7 @@ BarWidget {
   // Reserving it machine-wide would pad every cell on hardware that
   // can never show it.
   readonly property bool reserveEstimatePrefix: {
-    if (!root.segmentEnabled("gpu") || !root.gpuAvailable) return false
+    if (!root.segmentEnabled("gpu") || !root.discreteGpuAvailable) return false
     return root.gpu && root.gpu.vendor === "intel"
   }
   readonly property int metricCellWidth: {
@@ -179,7 +205,8 @@ BarWidget {
     return w
   }
   readonly property int verticalSlot: root.bar ? root.bar.barSize : Style.bar.sizeVertical
-  readonly property bool gpuAvailable: gpu !== null
+  readonly property bool discreteGpuAvailable: gpuTopologyReady && gpu !== null && gpuListFailed !== true
+  readonly property bool gpuAvailable: discreteGpuAvailable
   readonly property bool diskAvailable: sample !== null && sample.disk && sample.disk.length > 0
   readonly property string effectiveDisk: {
     var rates = diskRateList
@@ -205,9 +232,10 @@ BarWidget {
   readonly property int nvidiaIndex: {
     if (!nvidiaSelected) return 0
     var idx = 0
-    for (var i = 0; i < gpus.length; i++) {
-      if (gpus[i].vendor !== "nvidia") continue
-      if (gpus[i].card === gpu.card) return idx
+    var list = discreteGpus
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].vendor !== "nvidia") continue
+      if (list[i].card === gpu.card) return idx
       idx++
     }
     return 0
@@ -215,6 +243,14 @@ BarWidget {
   readonly property bool panelGpuOpen: panelLoader.item
     ? (panelLoader.item.opened === true && panelLoader.item.currentTab === "gpu")
     : false
+  readonly property bool panelCpuOpen: panelLoader.item
+    ? (panelLoader.item.opened === true && panelLoader.item.currentTab === "cpu")
+    : false
+  readonly property bool igpuSampleable: {
+    if (!root.integratedGpu) return false
+    var v = root.integratedGpu.vendor
+    return v === "amd" || v === "intel"
+  }
 
   readonly property string effectiveInterface: {
     if (networkInterface !== "auto" && networkInterface !== "") return networkInterface
@@ -255,7 +291,7 @@ BarWidget {
     var parts = []
     if (segmentEnabled("cpu") && cpuPct)
       parts.push("CPU " + Model.formatPct(cpuPct.busy))
-    if (segmentEnabled("gpu") && gpuAvailable && gpuDisplay)
+    if (segmentEnabled("gpu") && discreteGpuAvailable && gpuDisplay)
       parts.push("GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (freq)" : ""))
     if (segmentEnabled("memory") && memComp)
       parts.push("MEM " + Model.formatPct(memComp.usedPct))
@@ -434,17 +470,48 @@ BarWidget {
   }
 
   // ---- GPU detection + on-demand NVIDIA sampling ----
+  function reconcileGpuTopology() {
+    if (!gpuListReady || !sysInfoReady) {
+      gpuTopologyReady = false
+      return
+    }
+    if (gpuListFailed) {
+      gpus = []
+      discreteGpus = []
+      integratedGpus = []
+      integratedGpu = null
+      gpu = null
+      gpuDeviceWarning = ""
+      gpuTopologyReady = true
+      return
+    }
+    var topo = Model.reconcileGpuTopology(rawGpus, sysInfo, integratedGpuDevice)
+    gpus = topo.gpus
+    discreteGpus = topo.discreteGpus
+    integratedGpus = topo.integratedGpus
+    integratedGpu = topo.integratedGpu
+    gpuDeviceWarning = Model.gpuDevicePinMessage(topo.gpus, gpuDevice)
+    gpu = Model.pickGpu(topo.discreteGpus, gpuDevice)
+    gpuTopologyReady = true
+  }
+
   function applyGpuList(text) {
     var data = Model.safeJson(text)
     if (!data || data.ok !== true) {
       gpuDetectionError = (data && data.error)
         ? "GPU detection failed: " + String(data.error)
         : "GPU detection returned invalid output"
+      rawGpus = []
+      gpuListFailed = true
+      gpuListReady = true
+      reconcileGpuTopology()
       return
     }
-    gpus = Model.normalizeGpuList(data)
-    gpu = Model.pickGpu(gpus, gpuDevice)
+    rawGpus = Model.normalizeGpuList(data)
+    gpuListFailed = false
+    gpuListReady = true
     gpuDetectionError = ""
+    reconcileGpuTopology()
   }
 
   function persistSegments(list) {
@@ -458,7 +525,25 @@ BarWidget {
     root.bar.run("omarchy bar set " + quotedId + " segments " + quotedValue)
   }
 
+  function persistBoolSetting(key, enabled) {
+    if (!root.bar || typeof root.bar.run !== "function") return
+    if (typeof key !== "string" || !/^[A-Za-z][A-Za-z0-9]*$/.test(key)) return
+    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
+      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
+    root.bar.run("omarchy bar set " + quotedId + " " + key + " " + (enabled ? "true" : "false"))
+  }
+
   function setBarSegment(name, enabled) {
+    if (name === "disk" && root.gpuTopologyReady && !root.discreteGpuAvailable && !root.gpuListFailed) {
+      root.localDiskFallback = enabled === true
+      persistBoolSetting("diskFallbackWithoutGpu", enabled === true)
+      if (enabled !== true && root.segmentsSetting.indexOf("disk") !== -1) {
+        var withoutDisk = Model.toggleSegment(root.segmentsSetting, "disk", false)
+        root.localSegments = withoutDisk
+        persistSegments(withoutDisk)
+      }
+      return
+    }
     var next = Model.toggleSegment(root.segmentsSetting, name, enabled)
     root.localSegments = next
     persistSegments(next)
@@ -476,7 +561,7 @@ BarWidget {
   }
 
   function selectGpu(card) {
-    var chosen = Model.pickGpu(gpus, card)
+    var chosen = Model.pickGpu(discreteGpus, card)
     if (chosen) {
       gpu = chosen
       persistGpuDevice(chosen.card)
@@ -484,8 +569,20 @@ BarWidget {
   }
 
   onGpuDeviceChanged: {
-    var chosen = Model.pickGpu(gpus, gpuDevice)
-    if (chosen) gpu = chosen
+    if (!gpuTopologyReady || gpuListFailed) return
+    gpuDeviceWarning = Model.gpuDevicePinMessage(gpus, gpuDevice)
+    var chosen = Model.pickGpu(discreteGpus, gpuDevice)
+    gpu = chosen
+  }
+
+  onIntegratedGpuDeviceChanged: {
+    if (gpuListReady && sysInfoReady) reconcileGpuTopology()
+  }
+
+  onIntegratedGpuChanged: {
+    integratedGpuLive = null
+    integratedGpuError = ""
+    if (igpuSampleable && panelCpuOpen) pollIgpu()
   }
 
   Process {
@@ -499,13 +596,25 @@ BarWidget {
     onExited: function(exitCode, exitStatus) {
       if (exitCode !== 0 && root.gpuDetectionError === "")
         root.gpuDetectionError = "GPU detection exited with code " + exitCode
+      if (exitCode !== 0) {
+        root.rawGpus = []
+        root.gpuListFailed = true
+        root.gpuListReady = true
+        root.reconcileGpuTopology()
+      }
     }
   }
 
   function applySysInfo(text) {
     var data = Model.safeJson(text)
-    if (!data || data.ok !== true) return
+    if (!data || data.ok !== true) {
+      sysInfoReady = true
+      reconcileGpuTopology()
+      return
+    }
     sysInfo = Model.parseSystemInfo(data)
+    sysInfoReady = true
+    reconcileGpuTopology()
   }
 
   function refreshSysInfo() {
@@ -520,6 +629,12 @@ BarWidget {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.applySysInfo(text)
+    }
+    onExited: function(exitCode, exitStatus) {
+      if (root.sysInfoReady) return
+      if (exitCode === 0) return
+      root.sysInfoReady = true
+      root.reconcileGpuTopology()
     }
   }
 
@@ -644,6 +759,69 @@ BarWidget {
     }
   }
 
+  function applyIgpu(text) {
+    var data = Model.safeJson(text)
+    if (!data || data.ok !== true) {
+      root.integratedGpuLive = null
+      root.integratedGpuError = (data && data.error) ? String(data.error) : "gpu-stats returned bad output"
+      return
+    }
+    var live = null
+    if (data.vendor === "intel") live = Model.normalizeIntelGpu(Model.parseKeyValues(data.payload))
+    else if (data.vendor === "amd") live = Model.normalizeAmdGpu(Model.parseKeyValues(data.payload))
+    root.integratedGpuLive = live
+    root.integratedGpuError = live ? "" : "gpu-stats returned no readable iGPU metrics"
+  }
+
+  function pollIgpu() {
+    if (!root.igpuSampleable || !root.panelCpuOpen) return
+    if (igpuProc.running) return
+    igpuWatchdog.restart()
+    igpuProc.running = true
+  }
+
+  Timer {
+    id: igpuTimer
+    interval: root.panelIntervalMs
+    repeat: true
+    running: root.igpuSampleable && root.panelCpuOpen
+    onRunningChanged: if (running) root.pollIgpu()
+    onTriggered: root.pollIgpu()
+  }
+
+  Process {
+    id: igpuProc
+    command: {
+      if (!root.igpuSampleable) return [root.gpuStatsScript, "sample", "intel", "/sys/class/drm"]
+      return [root.gpuStatsScript, "sample", root.integratedGpu.vendor, root.integratedGpu.path]
+    }
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyIgpu(text)
+    }
+    onExited: function(exitCode, exitStatus) {
+      igpuWatchdog.stop()
+      if (exitCode !== 0) {
+        root.integratedGpuLive = null
+        if (root.integratedGpuError === "")
+          root.integratedGpuError = "gpu-stats exited with code " + exitCode
+      }
+    }
+  }
+
+  Timer {
+    id: igpuWatchdog
+    interval: 6000
+    repeat: false
+    onTriggered: {
+      if (igpuProc.running) {
+        igpuProc.signal(9)
+        root.integratedGpuLive = null
+        root.integratedGpuError = "gpu-stats timed out"
+      }
+    }
+  }
+
   Loader {
     id: panelLoader
     active: true
@@ -760,7 +938,7 @@ BarWidget {
       }
 
       MetricCell {
-        visible: root.segmentEnabled("gpu") && root.gpuAvailable
+        visible: root.segmentEnabled("gpu") && root.discreteGpuAvailable
         tab: "gpu"
         metric: "gpu"
         valueText: root.gpuValueText

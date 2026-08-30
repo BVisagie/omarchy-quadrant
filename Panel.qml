@@ -24,7 +24,7 @@ Panel {
   // Last-used tab survives close/reopen.
   property string currentTab: "cpu"
 
-  readonly property bool gpuAvailable: hostWidget ? hostWidget.gpuAvailable === true : false
+  readonly property bool gpuAvailable: hostWidget ? hostWidget.discreteGpuAvailable === true : false
   readonly property var tabs: {
     var all = ["cpu", "gpu", "mem", "disk", "net"]
     if (gpuAvailable) return all
@@ -277,6 +277,17 @@ Panel {
                 return messages.join(" · ")
               }
               color: Color.urgent
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.caption
+              width: parent.width
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              visible: root.hostWidget && root.hostWidget.gpuDeviceWarning !== ""
+              text: root.hostWidget ? String(root.hostWidget.gpuDeviceWarning || "") : ""
+              color: Qt.darker(root.barForeground, 1.4)
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.caption
               width: parent.width

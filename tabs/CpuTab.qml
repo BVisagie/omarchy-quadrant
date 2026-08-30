@@ -35,6 +35,7 @@ Item {
   function refresh() {
     if (!active) return
     if (model && model.refreshSysInfo) model.refreshSysInfo()
+    if (model && model.pollIgpu) model.pollIgpu()
     if (proc.running) return
     watchdog.restart()
     proc.running = true
@@ -243,6 +244,22 @@ Item {
       width: parent.width
       label: "Cores"
       value: root.sample ? String(root.sample.cores) : "--"
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
+
+    Components.IntegratedGraphics {
+      width: parent.width
+      panel: root.panel
+      gpu: root.model ? root.model.integratedGpu : null
+      gpuInfo: {
+        if (!root.model || !root.model.sysInfo || !root.model.sysInfo.gpusByCard) return null
+        var g = root.model.integratedGpu
+        if (!g) return null
+        return root.model.sysInfo.gpusByCard[g.card] || g
+      }
+      live: root.model ? root.model.integratedGpuLive : null
+      errorText: root.model ? String(root.model.integratedGpuError || "") : ""
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }

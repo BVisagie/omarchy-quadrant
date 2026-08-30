@@ -631,6 +631,94 @@ test("pickGpu auto prefers the boot card, then card0", () => {
   assert.equal(Model.pickGpu(noBoot, "auto").card, "card0");
 });
 
+test("effectiveSegments substitutes disk for gpu only after confirmed no dGPU", () => {
+  const def = ["cpu", "gpu", "memory", "network"];
+  assert.deepEqual(Model.effectiveSegments(def, false, false, true, true), def);
+  assert.deepEqual(Model.effectiveSegments(def, true, true, true, true), def);
+  assert.deepEqual(Model.effectiveSegments(def, true, false, true, false), def);
+  assert.deepEqual(
+    Model.effectiveSegments(def, true, false, true, true),
+    ["cpu", "memory", "disk", "network"]
+  );
+  assert.deepEqual(Model.effectiveSegments(def, true, false, false, true), def);
+  assert.deepEqual(
+    Model.effectiveSegments(["cpu", "gpu", "memory", "disk", "network"], true, false, true, true),
+    ["cpu", "memory", "disk", "network"]
+  );
+  assert.deepEqual(Model.effectiveSegments(["cpu", "memory", "network"], true, false, true, true), ["cpu", "memory", "network"]);
+  assert.deepEqual(Model.effectiveSegments([], true, false, true, true), []);
+});
+
+test("classifyGpuRole uses positive evidence and conservative defaults", () => {
+  assert.equal(Model.classifyGpuRole({ card: "card1", vendor: "intel", slot: "0000:00:02.0" }, "auto"), "integrated");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "intel", slot: "0000:01:00.0" }, "auto"), "discrete");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "nvidia", slot: "0000:01:00.0" }, "auto"), "discrete");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "amd" }, "auto", "Navi 31 [Radeon RX 7900 XTX]"), "discrete");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "amd" }, "auto", "Phoenix3 [Radeon 780M]"), "integrated");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "amd" }, "auto", ""), "discrete");
+  assert.equal(Model.classifyGpuRole({ card: "card1", vendor: "intel", slot: "0000:00:02.0" }, "none"), "discrete");
+  assert.equal(Model.classifyGpuRole({ card: "card0", vendor: "amd" }, "card0", "Navi 31"), "integrated");
+  assert.equal(Model.classifyGpuRole({ card: "card1", vendor: "amd" }, "card0", "Phoenix"), "discrete");
+});
+
+test("reconcileGpuTopology waits for names and never infers siblings as iGPU", () => {
+  const intelIgpu = {
+    card: "card1", vendor: "intel", path: "/sys/class/drm/card1/device",
+    boot: true, slot: "0000:00:02.0"
+  };
+  const nvidia = {
+    card: "card0", vendor: "nvidia", path: "/sys/class/drm/card0/device",
+    boot: false, slot: "0000:01:00.0"
+  };
+  const hybrid = Model.reconcileGpuTopology([intelIgpu, nvidia], null, "auto");
+  assert.equal(hybrid.integratedGpu.card, "card1");
+  assert.equal(hybrid.discreteGpus.length, 1);
+  assert.equal(hybrid.discreteGpus[0].card, "card0");
+  assert.equal(Model.pickGpu(hybrid.discreteGpus, "auto").card, "card0");
+  assert.match(Model.gpuDevicePinMessage(hybrid.gpus, "card1"), /integrated/);
+  assert.equal(Model.gpuDevicePinMessage(hybrid.gpus, "auto"), "");
+
+  const twoDgpu = Model.reconcileGpuTopology([
+    { card: "card0", vendor: "amd", path: "/sys/a", boot: true, slot: "0000:03:00.0" },
+    { card: "card1", vendor: "nvidia", path: "/sys/n", boot: false, slot: "0000:01:00.0" }
+  ], {
+    gpusByCard: {
+      card0: { name: "Navi 31 [Radeon RX 7900 XTX]" },
+      card1: { name: "GeForce RTX 4090" }
+    }
+  }, "auto");
+  assert.equal(twoDgpu.integratedGpu, null);
+  assert.equal(twoDgpu.discreteGpus.length, 2);
+
+  const amdFirst = Model.reconcileGpuTopology([
+    { card: "card0", vendor: "amd", path: "/sys/a", boot: true }
+  ], null, "auto");
+  assert.equal(amdFirst.integratedGpu, null);
+  const amdNamed = Model.reconcileGpuTopology([
+    { card: "card0", vendor: "amd", path: "/sys/a", boot: true }
+  ], { gpusByCard: { card0: { name: "Phoenix [Radeon Graphics]" } } }, "auto");
+  assert.equal(amdNamed.integratedGpu.card, "card0");
+
+  const empty = Model.reconcileGpuTopology([], null, "auto");
+  assert.equal(empty.integratedGpu, null);
+  assert.equal(empty.discreteGpus.length, 0);
+});
+
+test("normalizeGpuList keeps slot and pci identity", () => {
+  const list = Model.normalizeGpuList({
+    gpus: [{
+      card: "card1", vendor: "intel", path: "/sys/class/drm/card1/device",
+      boot: true, slot: "0000:00:02.0", pciClass: "0x030000",
+      pciId: "8086:7d55", driver: "i915"
+    }]
+  });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].slot, "0000:00:02.0");
+  assert.equal(list[0].pciId, "8086:7d55");
+  assert.equal(list[0].driver, "i915");
+  assert.equal(list[0].pciClass, "0x030000");
+});
+
 // --------------------------------------------------------------- formatters
 
 test("formatRate and formatBytes", () => {
