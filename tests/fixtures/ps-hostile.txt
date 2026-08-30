@@ -1,0 +1,7 @@
+   10011 33.3 <img src=x onerror=alert(1)>
+   2759  0.5 Other traffic
+   1501  0.3 name	with	tab
+   9999  1.2 bad
+row
+   812  notanumber chrome
+      1  0.0 init

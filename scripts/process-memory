@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# process-memory — one-shot top-by-RSS process sampler for the Quadrant panel.
+#
+# Emits one JSON envelope on stdout:
+#   {"ok":true,"ts":<epoch>,"metric":"rssKb","payload":"<raw ps output>"}
+# rss is KiB; the "% of RAM" column is computed in QML from the stream's
+# MemTotal. The raw ps text travels as a single JSON string built with
+# jq --arg; parsing happens in Model.js (node-tested). Failures emit
+# {"ok":false,...} and exit non-zero.
+#
+# Usage: process-memory [row_count]     row_count clamps to 1..10 (default 5)
+#
+# QUADRANT_AWK overrides the awk binary; CI runs this under mawk and gawk.
+
+# shellcheck disable=SC2016  # jq programs are single-quoted on purpose
+set -euo pipefail
+
+fail() {
+  local msg=$1 bin=""
+  if [[ -x /usr/bin/jq ]]; then bin=/usr/bin/jq
+  else bin=$(command -v jq) || bin=""
+  fi
+  if [[ -n $bin ]]; then
+    "$bin" -cn --arg e "$msg" '{ok:false, error:$e}'
+  else
+    printf '{"ok":false,"error":"helper unavailable"}\n'
+  fi
+  exit 1
+}
+
+# Prefer the distro path so a user-writable PATH entry cannot shadow the
+# helper. Fall back to command -v for non-standard prefixes (Nix, etc.).
+resolve_bin() {
+  local n=$1
+  [[ $n =~ ^[A-Za-z0-9._+-]+$ ]] || return 1
+  if [[ -x /usr/bin/$n ]]; then
+    printf '%s\n' "/usr/bin/$n"
+    return 0
+  fi
+  command -v "$n"
+}
+
+JQ=$(resolve_bin jq) || fail "jq not found"
+PS=$(resolve_bin ps) || fail "ps not found"
+awk_name=${QUADRANT_AWK:-awk}
+[[ $awk_name =~ ^[A-Za-z0-9._+-]+$ ]] || fail "bad awk name"
+AWK=$(resolve_bin "$awk_name") || fail "awk not found"
+
+count=${1:-5}
+[[ $count =~ ^[0-9]+$ ]] || fail "bad row count '$count'"
+(( count < 1 )) && count=1
+(( count > 10 )) && count=10
+
+if ! payload=$(LC_ALL=C "$PS" -eo pid=,rss=,comm= --sort=-rss | "$AWK" -v max="$count" 'NR <= max'); then
+  fail "ps failed"
+fi
+
+"$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$payload" \
+  '{ok:true, ts:($ts|tonumber), metric:"rssKb", payload:$payload}'

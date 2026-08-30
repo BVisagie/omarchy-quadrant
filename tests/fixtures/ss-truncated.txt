@@ -1,0 +1,4 @@
+0      0               10.0.0.2:443            10.0.0.1:5555  users:(("node",pid=2497,fd=24))
+	 cubic wscale:9,7 rto:220 bytes_sent:3415717 bytes_acked:3415717 bytes_received:68632 segs_out:2953
+0      0               10.0.0.2:443            10.0.0.1:40002 users:(("node",pid=2759,fd=28))
+	 cubic wsca

@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# process-net — one-shot per-process network sampler for the Quadrant panel.
+#
+# Emits one JSON envelope on stdout:
+#   {"ok":true,"ts":<epoch>,"ifname":"eth0","ifRx":123,"ifTx":456,
+#    "addrs":["172.30.0.2"],"payload":"<raw ss output>"}
+#
+# ifRx/ifTx are the interface's cumulative byte counters; addrs are the
+# interface's inet/inet6 addresses (no prefix) so Model.js can ignore
+# sockets whose local address is on a different iface. The payload is raw
+# `ss -H -t -i -n -p state established` output, whose per-socket
+# bytes_received/bytes_acked counters Model.js turns into per-process rates.
+# Sockets whose owners are not visible to us (other users, kernel) simply
+# lack a users:(...) group — Model.js folds their traffic into the honest
+# "Other traffic" row keyed on pid 0. UDP is not socket-attributed at all and
+# also lands in Other.
+#
+# The raw ss text travels as one JSON string via jq --arg: process names are
+# attacker-controlled and must never split a transport format. Failures emit
+# {"ok":false,...} and exit non-zero so QML can show an error instead of
+# "no activity".
+#
+# Usage: process-net <ifname>
+
+# shellcheck disable=SC2016  # jq programs are single-quoted on purpose
+set -euo pipefail
+
+fail() {
+  local msg=$1 bin=""
+  if [[ -x /usr/bin/jq ]]; then bin=/usr/bin/jq
+  else bin=$(command -v jq) || bin=""
+  fi
+  if [[ -n $bin ]]; then
+    "$bin" -cn --arg e "$msg" '{ok:false, error:$e}'
+  else
+    printf '{"ok":false,"error":"helper unavailable"}\n'
+  fi
+  exit 1
+}
+
+# Prefer the distro path so a user-writable PATH entry cannot shadow the
+# helper. Fall back to command -v for non-standard prefixes (Nix, etc.).
+resolve_bin() {
+  local n=$1
+  [[ $n =~ ^[A-Za-z0-9._+-]+$ ]] || return 1
+  if [[ -x /usr/bin/$n ]]; then
+    printf '%s\n' "/usr/bin/$n"
+    return 0
+  fi
+  command -v "$n"
+}
+
+ifname=${1:-}
+[[ -n $ifname ]] || fail "usage: process-net <ifname>"
+# The name comes from user settings; refuse anything that could escape
+# /sys/class/net before touching the filesystem.
+[[ $ifname != */* && $ifname != *..* ]] || fail "bad interface name"
+[[ -r "/sys/class/net/$ifname/statistics/rx_bytes" ]] || fail "no such interface: $ifname"
+[[ -r "/sys/class/net/$ifname/statistics/tx_bytes" ]] || fail "no such interface: $ifname"
+
+JQ=$(resolve_bin jq) || fail "jq not found"
+SS=$(resolve_bin ss) || fail "ss not found (iproute2)"
+TIMEOUT=$(resolve_bin timeout) || fail "timeout not found"
+IP=$(resolve_bin ip) || true
+
+if ! if_rx=$(<"/sys/class/net/$ifname/statistics/rx_bytes"); then fail "cannot read rx_bytes"; fi
+if ! if_tx=$(<"/sys/class/net/$ifname/statistics/tx_bytes"); then fail "cannot read tx_bytes"; fi
+[[ $if_rx =~ ^[0-9]+$ && $if_tx =~ ^[0-9]+$ ]] || fail "bad counters for $ifname"
+
+# Addresses on this interface, used by Model.js to drop sockets that
+# belong to other ifaces (ss is global; the byte counters are not).
+addrs=""
+if [[ -n ${IP:-} ]]; then
+  while read -r _idx _if family cidr _rest; do
+    case $family in
+      inet|inet6)
+        a=${cidr%%/*}
+        [[ -n $a && $a != *[[:space:]]* && $a == *[0-9]* ]] || continue
+        [[ -n $addrs ]] && addrs+=$'\n'
+        addrs+="$a"
+        ;;
+    esac
+  done < <("$IP" -o addr show dev "$ifname" 2>/dev/null || true)
+fi
+
+# -H no header, -t TCP, -i internal info (byte counters), -n numeric,
+# -p owning process. Bounded by timeout so a stuck netlink read can never
+# wedge the panel sampler.
+if ! ss_out=$("$TIMEOUT" 3 "$SS" -H -t -i -n -p state established 2>/dev/null); then
+  fail "ss failed or timed out"
+fi
+
+"$JQ" -cn --arg ts "$EPOCHREALTIME" --arg ifname "$ifname" \
+  --arg rx "$if_rx" --arg tx "$if_tx" --arg payload "$ss_out" --arg addrs "$addrs" \
+  '{ok:true, ts:($ts|tonumber), ifname:$ifname, ifRx:($rx|tonumber), ifTx:($tx|tonumber),
+    addrs:($addrs | split("\n") | map(select(length > 0))), payload:$payload}'

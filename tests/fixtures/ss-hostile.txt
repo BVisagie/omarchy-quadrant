@@ -1,0 +1,8 @@
+0      0               10.0.0.2:443            10.0.0.1:5555  users:(("<img src=x>",pid=4242,fd=7))
+	 cubic wscale:9,7 rto:220 bytes_sent:1000 bytes_acked:1000 bytes_received:2000 segs_out:9
+0      0               10.0.0.2:443            10.0.0.1:5556  users:(("Other traffic",pid=1337,fd=3))
+	 cubic wscale:9,7 rto:220 bytes_sent:5 bytes_acked:5 bytes_received:5 segs_out:2
+0      0               10.0.0.2:443            10.0.0.1:5557  users:(("evil",pid=1,fd=2",pid=666,fd=9))
+	 cubic wscale:9,7 rto:220 bytes_sent:77 bytes_acked:77 bytes_received:88 segs_out:3
+0      0               10.0.0.2:443            10.0.0.1:5558
+	 cubic wscale:9,7 rto:220 bytes_sent:300 bytes_acked:300 bytes_received:400 segs_out:4
