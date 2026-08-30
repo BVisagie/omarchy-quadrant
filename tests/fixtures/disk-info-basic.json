@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "disks": [
+    {"name": "nvme0n1", "model": "Samsung SSD 990 PRO 2TB", "rotational": false, "sizeBytes": 2000398934016, "tempC": 38},
+    {"name": "sda", "model": "ST2000DM008-2FR102", "rotational": true, "sizeBytes": 2000398934016, "tempC": null},
+    {"name": "loop0", "model": "", "rotational": false, "sizeBytes": 134217728, "tempC": null},
+    {"name": "evil", "model": "<img src=x>", "rotational": "maybe", "sizeBytes": -3, "tempC": "hot"}
+  ],
+  "dfPayload": "Filesystem     Type        1-blocks         Used    Available Capacity Mounted on\n/dev/nvme0n1p2 ext4      512110190592  120000000000  392110190592      24% /\n"
+}

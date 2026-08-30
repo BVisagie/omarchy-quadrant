@@ -53,6 +53,7 @@ jobs:
           ./scripts/process-net eth0 | jq -e '.ok == true'
           ./scripts/gpu-stats list | jq -e '.ok == true'
           ./scripts/system-info | jq -e '.ok == true and .cpu and .mem and .host'
+          ./scripts/disk-info | jq -e '.ok == true and .disks and .dfPayload'
           # failure path: bad input must produce an ok:false envelope
           if ./scripts/process-cpu nope | jq -e '.ok == false' >/dev/null; then
             echo "failure envelope OK"
@@ -61,5 +62,5 @@ jobs:
             exit 1
           fi
           timeout 3 ./scripts/quadrant-stream 500 | head -n 2 | while IFS= read -r line; do
-            echo "$line" | jq -e '.v == 1 and .cpu and .mem and .net and has("cf")'
+            echo "$line" | jq -e '.v == 1 and .cpu and .mem and .net and has("cf") and has("disk")'
           done

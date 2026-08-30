@@ -26,11 +26,11 @@ Panel {
 
   readonly property bool gpuAvailable: hostWidget ? hostWidget.gpuAvailable === true : false
   readonly property var tabs: {
-    var all = ["cpu", "gpu", "mem", "net"]
+    var all = ["cpu", "gpu", "mem", "disk", "net"]
     if (gpuAvailable) return all
     return all.filter(function (t) { return t !== "gpu" })
   }
-  readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "MEMORY", "net": "NETWORK" })
+  readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "MEMORY", "disk": "DRIVES", "net": "NETWORK" })
 
   readonly property string hostLine: {
     var info = hostWidget && hostWidget.sysInfo ? hostWidget.sysInfo.host : null
@@ -77,7 +77,8 @@ Panel {
   }
 
   function refreshActiveTab() {
-    var item = [cpuTab, memTab, gpuTab, netTab][["cpu", "mem", "gpu", "net"].indexOf(currentTab)]
+    var map = { "cpu": cpuTab, "mem": memTab, "gpu": gpuTab, "net": netTab, "disk": diskTab }
+    var item = map[currentTab]
     if (item && item.refresh) item.refresh()
   }
 
@@ -184,7 +185,8 @@ Panel {
           textFormat: Text.PlainText
           visible: root.hostWidget
                    && (root.hostWidget.streamLive !== true
-                       || root.hostWidget.gpuDetectionError !== "")
+                       || root.hostWidget.gpuDetectionError !== ""
+                       || root.hostWidget.diskInfoError !== "")
           text: {
             if (!root.hostWidget) return ""
             var messages = []
@@ -195,6 +197,8 @@ Panel {
             }
             if (root.hostWidget.gpuDetectionError !== "")
               messages.push(root.hostWidget.gpuDetectionError)
+            if (root.hostWidget.diskInfoError !== "")
+              messages.push(root.hostWidget.diskInfoError)
             return messages.join(" · ")
           }
           color: Color.urgent
@@ -208,11 +212,11 @@ Panel {
         StackLayout {
           id: stack
           width: parent.width
-          // Children are always cpu/mem/gpu/net in that order. Map by tab
-          // id rather than by the filtered `tabs` array — otherwise a
+          // Children are always cpu/mem/gpu/net/disk in that order. Map by
+          // tab id rather than by the filtered `tabs` array — otherwise a
           // no-GPU machine puts Network at index 2, which is GpuTab.
           currentIndex: {
-            var map = { "cpu": 0, "mem": 1, "gpu": 2, "net": 3 }
+            var map = { "cpu": 0, "mem": 1, "gpu": 2, "net": 3, "disk": 4 }
             var i = map[root.currentTab]
             return (i === undefined) ? 0 : i
           }
@@ -239,6 +243,11 @@ Panel {
           }
           Tabs.NetworkTab {
             id: netTab
+            panel: root
+            model: root.hostWidget
+          }
+          Tabs.DiskTab {
+            id: diskTab
             panel: root
             model: root.hostWidget
           }

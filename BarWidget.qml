@@ -6,10 +6,10 @@ import "Model.js" as Model
 import "Theme.js" as Theme
 import "components" as Components
 
-// Quadrant bar slot: one compact widget covering CPU, GPU, memory, and
-// network. Owns the long-lived sampler (quadrant-stream), the 60s history
-// buffers, and GPU detection; the nested Panel reads everything through
-// hostWidget.
+// Quadrant bar slot: one compact widget covering CPU, GPU, memory, network,
+// and an optional disk segment. Owns the long-lived sampler
+// (quadrant-stream), the 60s history buffers, and GPU/disk detection; the
+// nested Panel reads everything through hostWidget.
 BarWidget {
   id: root
   moduleName: "dev.bvisagie.quadrant"
@@ -25,6 +25,7 @@ BarWidget {
   readonly property int processCount: Model.clamp(setting("processCount", 5), 1, 10)
   readonly property string networkInterface: String(setting("networkInterface", "auto"))
   readonly property string gpuDevice: String(setting("gpuDevice", "auto"))
+  readonly property string diskDevice: String(setting("diskDevice", "auto"))
   readonly property string barPaletteMode: {
     var v = String(setting("barPalette", "theme")).toLowerCase()
     return v === "vivid" ? "vivid" : "theme"
@@ -37,8 +38,9 @@ BarWidget {
   readonly property int visibleSegmentCount: {
     var n = 0
     if (segmentEnabled("cpu")) n++
-    if (segmentEnabled("memory")) n++
     if (segmentEnabled("gpu") && gpuAvailable) n++
+    if (segmentEnabled("memory")) n++
+    if (segmentEnabled("disk") && diskAvailable) n++
     if (segmentEnabled("network")) n++
     return Math.max(1, n)
   }
@@ -53,6 +55,7 @@ BarWidget {
 
   readonly property string streamScript: localPath("scripts/quadrant-stream")
   readonly property string gpuStatsScript: localPath("scripts/gpu-stats")
+  readonly property string diskInfoScript: localPath("scripts/disk-info")
 
   // ---- sampler state ----
   property var sample: null
@@ -67,6 +70,12 @@ BarWidget {
   property var ifaceRates: null
   property var cpuHistory: []
   property var netHistory: []
+  property var diskHistory: []
+  property var diskRateList: null
+  property var diskRates: null
+  property var diskInfo: null
+  property string diskInfoError: ""
+  property string selectedDiskName: ""
 
   // ---- GPU state ----
   property var gpus: []
@@ -87,6 +96,7 @@ BarWidget {
   readonly property bool cpuHot: cpuPct !== null && cpuPct.busy >= 90
   readonly property bool memHot: memComp !== null && memComp.usedPct >= 90
   readonly property bool gpuHot: gpuDisplay !== null && gpuDisplay.pct >= 90
+  readonly property bool diskHot: diskRates !== null && diskRates.utilPct >= 90
   readonly property var cpuMeterUser: {
     if (barPaletteMode === "vivid") return cpuHot ? Theme.series.cpuSteal : Theme.series.cpuUser
     return cpuHot ? themePal.urgent : themePal.fill
@@ -103,6 +113,10 @@ BarWidget {
     if (barPaletteMode === "vivid") return gpuHot ? Theme.series.cpuSteal : Theme.series.gpu
     return gpuHot ? themePal.urgent : themePal.fill
   }
+  readonly property var diskMeterFill: {
+    if (barPaletteMode === "vivid") return diskHot ? Theme.series.cpuSteal : Theme.series.diskRead
+    return diskHot ? themePal.urgent : themePal.fill
+  }
   readonly property var meterTrack: {
     if (barPaletteMode === "vivid")
       return Theme.trackFor(String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground))
@@ -114,6 +128,7 @@ BarWidget {
     if (!gpuDisplay) return "--"
     return (gpuDisplay.estimated ? "~" : "") + Model.formatPct(gpuDisplay.pct)
   }
+  readonly property string diskValueText: diskRates ? Model.formatPct(diskRates.utilPct) : "--"
   readonly property color hotTextColor: {
     if (barPaletteMode === "vivid") return Theme.series.cpuSteal
     return themePal.urgent
@@ -129,7 +144,8 @@ BarWidget {
   }
   readonly property int metricLabelWidth: {
     if (root.vertical || root.barLabelsMode === "none") return 0
-    return Math.max(cpuGlyphSizer.implicitWidth, gpuGlyphSizer.implicitWidth, memGlyphSizer.implicitWidth)
+    return Math.max(cpuGlyphSizer.implicitWidth, gpuGlyphSizer.implicitWidth, memGlyphSizer.implicitWidth,
+                    (root.segmentEnabled("disk") && root.diskAvailable) ? diskGlyphSizer.implicitWidth : 0)
   }
   readonly property int metricCellWidth: {
     var w = pctSizer.implicitWidth
@@ -141,6 +157,19 @@ BarWidget {
   }
   readonly property int verticalSlot: root.bar ? root.bar.barSize : Style.bar.sizeVertical
   readonly property bool gpuAvailable: gpu !== null
+  readonly property bool diskAvailable: sample !== null && sample.disk && sample.disk.length > 0
+  readonly property string effectiveDisk: {
+    var rates = diskRateList
+    var disks = diskInfo && diskInfo.disks ? diskInfo.disks : []
+    var mounts = diskInfo && diskInfo.mounts ? diskInfo.mounts : []
+    return Model.pickDisk(disks, mounts, rates, selectedDiskName || diskDevice) || ""
+  }
+  readonly property bool pinnedDisk: diskDevice !== "auto" && diskDevice !== ""
+  readonly property string diskDeviceError: {
+    if (!pinnedDisk || !sample) return ""
+    if (effectiveDisk === diskDevice) return ""
+    return "Pinned disk " + diskDevice + " is not available"
+  }
   readonly property bool nvidiaSelected: gpu !== null && gpu.vendor === "nvidia"
   // Position of the selected card among the NVIDIA cards — nvidia-smi -i
   // indexes NVIDIA devices, not /sys cards.
@@ -201,6 +230,10 @@ BarWidget {
       parts.push("GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (freq)" : ""))
     if (segmentEnabled("memory") && memComp)
       parts.push("MEM " + Model.formatPct(memComp.usedPct))
+    if (segmentEnabled("disk") && diskAvailable && diskRates)
+      parts.push("DISK " + Model.formatPct(diskRates.utilPct)
+        + "  R " + Model.formatRate(diskRates.readBps)
+        + "  W " + Model.formatRate(diskRates.writeBps))
     if (segmentEnabled("network") && ifaceRates)
       parts.push("↑ " + Model.formatRate(ifaceRates.txBps) + " ↓ " + Model.formatRate(ifaceRates.rxBps))
     return parts.length > 0 ? parts.join("  ·  ") : "Quadrant"
@@ -276,6 +309,22 @@ BarWidget {
     if (ifaceRates)
       netHistory = Model.pushTimedWindow(
         netHistory, { rx: ifaceRates.rxBps, tx: ifaceRates.txBps },
+        s.ts, 60, historyLimit)
+    var dRates = Model.diskRates(prevSample ? prevSample.disk : null, s.disk, dt)
+    diskRateList = dRates
+    var chosen = Model.pickDisk(
+      diskInfo && diskInfo.disks ? diskInfo.disks : [],
+      diskInfo && diskInfo.mounts ? diskInfo.mounts : [],
+      dRates,
+      selectedDiskName || diskDevice
+    )
+    diskRates = null
+    for (var d = 0; d < dRates.length; d++) {
+      if (dRates[d].name === chosen) { diskRates = dRates[d]; break }
+    }
+    if (diskRates)
+      diskHistory = Model.pushTimedWindow(
+        diskHistory, { r: diskRates.readBps, w: diskRates.writeBps },
         s.ts, 60, historyLimit)
     prevSample = s
     sample = s
@@ -427,6 +476,70 @@ BarWidget {
     }
   }
 
+  function applyDiskInfo(text) {
+    var data = Model.safeJson(text)
+    if (!data || data.ok !== true) {
+      diskInfoError = (data && data.error)
+        ? "Disk detection failed: " + String(data.error)
+        : "Disk detection returned invalid output"
+      return
+    }
+    diskInfo = Model.parseDiskInfo(data)
+    diskInfoError = ""
+  }
+
+  function refreshDiskInfo() {
+    if (diskInfoProc.running) return
+    diskInfoWatchdog.restart()
+    diskInfoProc.running = true
+  }
+
+  function persistDiskDevice(name) {
+    if (!root.bar || typeof root.bar.run !== "function") return
+    if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+$/.test(name)) return
+    var value = '"' + name + '"'
+    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
+      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
+    var quotedValue = (typeof Util !== "undefined" && Util.shellQuote)
+      ? Util.shellQuote(value) : ("'" + value + "'")
+    root.bar.run("omarchy bar set " + quotedId + " diskDevice " + quotedValue)
+  }
+
+  function selectDisk(name) {
+    if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+$/.test(name)) return
+    selectedDiskName = name
+    persistDiskDevice(name)
+    diskHistory = []
+  }
+
+  Process {
+    id: diskInfoProc
+    command: [root.diskInfoScript]
+    running: true
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyDiskInfo(text)
+    }
+    onRunningChanged: if (running) diskInfoWatchdog.restart()
+    onExited: function(exitCode, exitStatus) {
+      diskInfoWatchdog.stop()
+      if (exitCode !== 0 && root.diskInfoError === "")
+        root.diskInfoError = "Disk detection exited with code " + exitCode
+    }
+  }
+
+  Timer {
+    id: diskInfoWatchdog
+    interval: 6000
+    repeat: false
+    onTriggered: {
+      if (diskInfoProc.running) {
+        diskInfoProc.signal(9)
+        root.diskInfoError = "Disk detection timed out"
+      }
+    }
+  }
+
   function applyNvidia(text) {
     var data = Model.safeJson(text)
     if (!data || data.ok !== true) {
@@ -553,6 +666,14 @@ BarWidget {
       font.family: button.fontFamily
       font.pixelSize: Style.font.caption
     }
+    Text {
+      id: diskGlyphSizer
+      visible: false
+      textFormat: Text.PlainText
+      text: Theme.barLabelFor(root.barLabelsMode, "disk")
+      font.family: button.fontFamily
+      font.pixelSize: Style.font.caption
+    }
 
     Grid {
       id: segGrid
@@ -595,6 +716,17 @@ BarWidget {
         hot: root.memHot
         meterSegments: [
           { fraction: root.memComp ? root.memComp.usedPct / 100 : 0, color: root.memMeterFill }
+        ]
+      }
+
+      MetricCell {
+        visible: root.segmentEnabled("disk") && root.diskAvailable
+        tab: "disk"
+        metric: "disk"
+        valueText: root.diskValueText
+        hot: root.diskHot
+        meterSegments: [
+          { fraction: root.diskRates ? root.diskRates.utilPct / 100 : 0, color: root.diskMeterFill }
         ]
       }
 

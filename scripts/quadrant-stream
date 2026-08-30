@@ -266,6 +266,30 @@ read_netdev() {
   done < /proc/net/dev
 }
 
+read_diskstats() {
+  # Rewrites global DISK_JSON with {"n","rd","rs","wr","ws","io"} fragments.
+  # Whole block devices only (/sys/block/<name>); drop loop/ram/zram/fd/nbd/sr.
+  local major minor name reads _m1 rsect _rt writes _m2 wsect _wt _infl io_ticks _rest
+  local count=0
+  DISK_JSON=""
+  while read -r major minor name reads _m1 rsect _rt writes _m2 wsect _wt _infl io_ticks _rest; do
+    [[ $name =~ ^[A-Za-z0-9._+-]+$ ]] || continue
+    case $name in
+      loop*|ram*|zram*|fd*|nbd*|sr*) continue ;;
+    esac
+    [[ -d /sys/block/$name ]] || continue
+    [[ $reads =~ ^[0-9]+$ ]] || reads=0
+    [[ $rsect =~ ^[0-9]+$ ]] || rsect=0
+    [[ $writes =~ ^[0-9]+$ ]] || writes=0
+    [[ $wsect =~ ^[0-9]+$ ]] || wsect=0
+    [[ $io_ticks =~ ^[0-9]+$ ]] || io_ticks=0
+    [[ -n $DISK_JSON ]] && DISK_JSON+=","
+    DISK_JSON+="{\"n\":\"$(esc_name "$name")\",\"rd\":$reads,\"rs\":$rsect,\"wr\":$writes,\"ws\":$wsect,\"io\":$io_ticks}"
+    count=$(( count + 1 ))
+    if (( count >= 16 )); then break; fi
+  done < /proc/diskstats
+}
+
 read_routes4() {
   local iface dest metric _rest
   R4_JSON=""
@@ -341,6 +365,7 @@ emit() {
   read_meminfo mem
   read_vmstat vm
   read_netdev
+  read_diskstats
   read_routes4
   read_routes6
   read_gpu
@@ -395,7 +420,7 @@ emit() {
   [[ $l15 =~ ^[0-9.]+$ ]] || l15=0
   [[ $up =~ ^[0-9.]+$ ]] || up=0
 
-  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s,"cf":%s}\n' \
+  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"disk":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s,"cf":%s}\n' \
     "$EPOCHREALTIME" \
     "${cpu[0]}" "${cpu[1]}" "${cpu[2]}" "${cpu[3]}" \
     "${cpu[4]}" "${cpu[5]}" "${cpu[6]}" "${cpu[7]}" \
@@ -403,7 +428,7 @@ emit() {
     "${mem[5]}" "${mem[6]}" "${mem[7]}" "${mem[8]}" \
     "$psi_json" \
     "${vm[0]}" "${vm[1]}" \
-    "$NET_JSON" "$R4_JSON" "$R6_JSON" \
+    "$NET_JSON" "$DISK_JSON" "$R4_JSON" "$R6_JSON" \
     "$GPU_JSON" "$temp_json" \
     "$l1" "$l5" "$l15" "$up" "${cpu[8]}" "$cf_json"
 }

@@ -51,6 +51,7 @@ function safeJson(line) {
 //   "psi": { "cs10","cs60","cs300","cf10","ms10","ms60","ms300","mf10" } | null,
 //   "vm":  { "swpin","swpout" },                  // pages, cumulative
 //   "net": [ { "n","rx","tx" } ],                 // bytes, cumulative
+//   "disk": [ { "n","rd","rs","wr","ws","io" } ],  // diskstats, cumulative
 //   "r4":  [ { "n","m" } ], "r6": [ { "n","m" }], // default routes + metric
 //   "gpu": { "busy","mb","vrU","vrT","t","w","mhz","fc","fm","eng","kind" } | null,
 //   "t": 52.0 | null,                             // CPU package temp, deg C
@@ -116,6 +117,31 @@ function parseStreamNet(value) {
     var rx = num(e.rx, null), tx = num(e.tx, null)
     if (rx === null || tx === null || rx < 0 || tx < 0) continue
     out.push({ n: e.n, rx: rx, tx: tx })
+  }
+  return out
+}
+
+function parseStreamDisk(value) {
+  if (!Array.isArray(value)) return []
+  var out = []
+  for (var i = 0; i < value.length && out.length < 16; i++) {
+    var e = value[i]
+    if (!e || typeof e !== "object") continue
+    if (typeof e.n !== "string" || !/^[A-Za-z0-9._+-]+$/.test(e.n)) continue
+    if (isExcludedDiskName(e.n) || isPartitionName(e.n)) continue
+    var rd = num(e.rd, null), rs = num(e.rs, null)
+    var wr = num(e.wr, null), ws = num(e.ws, null)
+    var io = num(e.io, null)
+    if (rd === null || rs === null || wr === null || ws === null) continue
+    if (rd < 0 || rs < 0 || wr < 0 || ws < 0) continue
+    out.push({
+      n: e.n,
+      rd: rd,
+      rs: rs,
+      wr: wr,
+      ws: ws,
+      io: io === null || io < 0 ? 0 : io
+    })
   }
   return out
 }
@@ -207,7 +233,8 @@ function parseStreamLine(line) {
     load: load,
     uptimeS: nonNeg(data.up),
     cores: Math.max(1, Math.round(nonNeg(data.cores) || 1)),
-    cpuFreqMhz: num(data.cf, null)
+    cpuFreqMhz: num(data.cf, null),
+    disk: parseStreamDisk(data.disk)
   }
 }
 
@@ -257,6 +284,218 @@ function netRates(prevNet, currNet, dtS) {
     out.push({ name: c.n, rxBps: rxBps, txBps: txBps, rxTotal: c.rx, txTotal: c.tx })
   }
   return out
+}
+
+// ---------------------------------------------------------------- disk
+
+// Virtual / memory-backed names the stream also drops. zram is memory and
+// already lives on the Memory tab.
+function isExcludedDiskName(name) {
+  var n = String(name || "")
+  return /^(loop|ram|zram|fd|nbd|sr)[0-9]/.test(n) || n === "loop" || n === "ram"
+}
+
+// Partition names as the kernel spells them. Whole devices (sda, nvme0n1,
+// mmcblk0, vda, dm-0) return false. Used when /sys/block is unavailable
+// (unit tests) and as a second filter on stream JSON.
+function isPartitionName(name) {
+  var n = String(name || "")
+  if (/^nvme[0-9]+n[0-9]+p[0-9]+$/.test(n)) return true
+  if (/^mmcblk[0-9]+p[0-9]+$/.test(n)) return true
+  if (/^(sd|hd|vd|xvd)[a-z]+[0-9]+$/.test(n)) return true
+  return false
+}
+
+function parentDiskName(name) {
+  var n = String(name || "")
+  if (/^nvme[0-9]+n[0-9]+p[0-9]+$/.test(n)) return n.replace(/p[0-9]+$/, "")
+  if (/^mmcblk[0-9]+p[0-9]+$/.test(n)) return n.replace(/p[0-9]+$/, "")
+  if (/^(sd|hd|vd|xvd)[a-z]+[0-9]+$/.test(n)) return n.replace(/[0-9]+$/, "")
+  return n
+}
+
+// Parse /proc/diskstats. Whole-device filter matches the stream: drop
+// partitions and excluded names. Counters: reads completed, sectors read,
+// writes completed, sectors written, io_ticks (ms).
+function parseDiskstats(text) {
+  var out = []
+  if (typeof text !== "string" || text.length === 0) return out
+  var lines = text.split("\n")
+  for (var i = 0; i < lines.length && out.length < 16; i++) {
+    var line = lines[i].replace(/^\s+/, "")
+    if (line === "") continue
+    var f = line.split(/\s+/)
+    if (f.length < 11) continue
+    var name = f[2]
+    if (!/^[A-Za-z0-9._+-]+$/.test(name)) continue
+    if (isExcludedDiskName(name) || isPartitionName(name)) continue
+    var rd = num(f[3], null), rs = num(f[5], null)
+    var wr = num(f[7], null), ws = num(f[9], null)
+    var io = f.length >= 13 ? num(f[12], 0) : 0
+    if (rd === null || rs === null || wr === null || ws === null) continue
+    if (rd < 0 || rs < 0 || wr < 0 || ws < 0) continue
+    out.push({
+      n: name,
+      rd: rd,
+      rs: rs,
+      wr: wr,
+      ws: ws,
+      io: io === null || io < 0 ? 0 : io
+    })
+  }
+  return out
+}
+
+// Per-device rates from cumulative diskstats. A counter that moved
+// backwards reports 0 for the tick rather than a garbage spike. Sectors
+// are 512-byte units (kernel iostats). utilPct is io_ticks-ms / wall-ms.
+function diskRates(prevDisk, currDisk, dtS) {
+  if (!Array.isArray(currDisk) || !(dtS > 0)) return []
+  var prev = {}
+  if (Array.isArray(prevDisk)) {
+    for (var i = 0; i < prevDisk.length; i++) prev[prevDisk[i].n] = prevDisk[i]
+  }
+  var out = []
+  for (var j = 0; j < currDisk.length; j++) {
+    var c = currDisk[j]
+    var p = prev[c.n]
+    var readBps = 0, writeBps = 0, readIops = 0, writeIops = 0, utilPct = 0
+    if (p) {
+      readBps = Math.max(0, c.rs - p.rs) * 512 / dtS
+      writeBps = Math.max(0, c.ws - p.ws) * 512 / dtS
+      readIops = Math.max(0, c.rd - p.rd) / dtS
+      writeIops = Math.max(0, c.wr - p.wr) / dtS
+      var ioMs = Math.max(0, c.io - p.io)
+      utilPct = clamp(100 * ioMs / (dtS * 1000), 0, 100)
+    }
+    out.push({
+      name: c.n,
+      readBps: readBps,
+      writeBps: writeBps,
+      readIops: readIops,
+      writeIops: writeIops,
+      utilPct: utilPct
+    })
+  }
+  return out
+}
+
+var DF_SKIP_TYPES = {
+  tmpfs: 1, devtmpfs: 1, overlay: 1, squashfs: 1, proc: 1, sysfs: 1,
+  cgroup: 1, cgroup2: 1, devpts: 1, securityfs: 1, pstore: 1, bpf: 1,
+  debugfs: 1, tracefs: 1, fusectl: 1, mqueue: 1, hugetlbfs: 1, configfs: 1,
+  nsfs: 1, binfmt_misc: 1, autofs: 1, efivarfs: 1, ramfs: 1, rpc_pipefs: 1,
+  iso9660: 1
+}
+
+// Parse `df -P -B1 -T`. Virtual filesystems are dropped; remaining rows
+// keep source, type, byte sizes, use percent, and mount target. Hostile
+// names are clipped — they render as PlainText in the panel.
+function parseDf(text) {
+  var out = []
+  if (typeof text !== "string" || text.length === 0) return out
+  var lines = text.split("\n")
+  for (var i = 0; i < lines.length && out.length < 32; i++) {
+    var line = lines[i].replace(/\s+$/g, "")
+    if (line === "" || /^Filesystem\b/.test(line)) continue
+    var m = line.match(/^(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)%\s+(\/\S.*|\/)$/)
+    if (!m) continue
+    var source = clipStr(m[1], 128)
+    var fstype = clipStr(m[2], 32)
+    if (fstype === "" || DF_SKIP_TYPES[fstype]) continue
+    if (/^\/dev\/(loop|zram|fd|sr)/.test(source)) continue
+    var size = num(m[3], null), used = num(m[4], null), avail = num(m[5], null)
+    var pct = num(m[6], null)
+    if (size === null || used === null || avail === null || pct === null) continue
+    if (size < 0 || used < 0 || avail < 0) continue
+    out.push({
+      source: source,
+      fstype: fstype,
+      size: size,
+      used: used,
+      avail: avail,
+      pct: clamp(pct, 0, 1000),
+      target: clipStr(m[7], 128)
+    })
+  }
+  return out
+}
+
+function parseDiskInfoDisks(list) {
+  var out = []
+  if (!Array.isArray(list)) return out
+  for (var i = 0; i < list.length && out.length < 16; i++) {
+    var e = list[i]
+    if (!e || typeof e !== "object") continue
+    if (typeof e.name !== "string" || !/^[A-Za-z0-9._+-]+$/.test(e.name)) continue
+    if (isExcludedDiskName(e.name) || isPartitionName(e.name)) continue
+    var rot = e.rotational
+    var rotational = (rot === true || rot === false) ? rot : null
+    var sizeBytes = num(e.sizeBytes, null)
+    if (sizeBytes !== null && sizeBytes < 0) sizeBytes = null
+    var tempC = num(e.tempC, null)
+    out.push({
+      name: e.name,
+      model: clipStr(e.model, 64),
+      rotational: rotational,
+      sizeBytes: sizeBytes,
+      tempC: tempC
+    })
+  }
+  return out
+}
+
+function parseDiskInfo(env) {
+  if (!env || typeof env !== "object" || env.ok !== true) return null
+  return {
+    disks: parseDiskInfoDisks(env.disks),
+    mounts: parseDf(env.dfPayload)
+  }
+}
+
+// diskDevice setting: "auto" prefers the disk backing `/`, then the
+// largest by sizeBytes, then the first in the rate list. A specific name
+// must exist in `disks` (identity) or `rates` (live counters).
+function pickDisk(disks, mounts, rates, setting) {
+  var wanted = typeof setting === "string" ? setting : "auto"
+  var names = {}
+  var i
+  if (Array.isArray(rates)) {
+    for (i = 0; i < rates.length; i++) if (rates[i] && rates[i].name) names[rates[i].name] = true
+  }
+  if (Array.isArray(disks)) {
+    for (i = 0; i < disks.length; i++) if (disks[i] && disks[i].name) names[disks[i].name] = true
+  }
+  function present(n) { return n && names[n] === true }
+
+  if (wanted !== "auto" && wanted !== "")
+    return present(wanted) ? wanted : null
+
+  if (Array.isArray(mounts)) {
+    for (i = 0; i < mounts.length; i++) {
+      if (!mounts[i] || mounts[i].target !== "/") continue
+      var src = String(mounts[i].source || "")
+      var base = src.replace(/^\/dev\//, "").replace(/^mapper\//, "")
+      var parent = parentDiskName(base)
+      if (present(parent)) return parent
+      if (present(base)) return base
+    }
+  }
+
+  var bestName = ""
+  var bestSize = -1
+  if (Array.isArray(disks)) {
+    for (i = 0; i < disks.length; i++) {
+      var d = disks[i]
+      if (!d || !present(d.name)) continue
+      var sz = num(d.sizeBytes, 0)
+      if (sz > bestSize) { bestSize = sz; bestName = d.name }
+    }
+  }
+  if (bestName) return bestName
+  if (Array.isArray(rates) && rates.length > 0 && rates[0] && rates[0].name)
+    return rates[0].name
+  return null
 }
 
 // vmstat pswpin/pswpout are cumulative pages; report KiB/s assuming 4 KiB
@@ -1056,6 +1295,14 @@ if (typeof module !== "undefined" && module.exports) {
     parseStreamLine: parseStreamLine,
     cpuDelta: cpuDelta,
     netRates: netRates,
+    isExcludedDiskName: isExcludedDiskName,
+    isPartitionName: isPartitionName,
+    parentDiskName: parentDiskName,
+    parseDiskstats: parseDiskstats,
+    diskRates: diskRates,
+    parseDf: parseDf,
+    parseDiskInfo: parseDiskInfo,
+    pickDisk: pickDisk,
     swapRates: swapRates,
     memComposition: memComposition,
     swapUsage: swapUsage,

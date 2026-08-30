@@ -17,6 +17,8 @@ var series = {
   gpu: "#7dcfff",        // cyan
   netRx: "#73daca",      // teal
   netTx: "#e0af68",      // amber
+  diskRead: "#7aa2f7",   // blue
+  diskWrite: "#e0af68",  // amber
   swap: "#f7768e"        // red
 }
 
