@@ -1,6 +1,5 @@
 import QtQuick
 import qs.Commons
-import qs.Ui
 import "../Model.js" as Model
 import "../Theme.js" as Theme
 import "../components" as Components

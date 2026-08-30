@@ -33,41 +33,56 @@ Column {
     return s
   }
 
-  // Returns { icon, name } or null. Exact matches only, results cached.
+  // Returns { icon, name } or null. Exact matches only. Reads the cache;
+  // the cache is filled in one pass by warmCache() whenever rows change, so
+  // delegate bindings stay side-effect free.
   function entryForComm(comm) {
     var key = normalizeKey(comm)
     if (key === "") return null
-    if (root.iconCache[key] !== undefined) return root.iconCache[key]
+    var hit = root.iconCache[key]
+    return hit === undefined ? null : hit
+  }
 
-    var found = null
+  function lookupEntry(key) {
     var entry = DesktopEntries.byId(key)
-    if (!entry) {
-      var values = DesktopEntries.applications.values || []
-      for (var i = 0; i < values.length; i++) {
-        var e = values[i]
-        if (!e) continue
-        if (normalizeKey(e.name) === key
-            || normalizeKey(e.icon) === key
-            || normalizeKey(e.startupClass) === key) {
-          entry = e
-          break
-        }
+    if (entry) return entry
+    var values = DesktopEntries.applications.values || []
+    for (var i = 0; i < values.length; i++) {
+      var e = values[i]
+      if (!e) continue
+      if (normalizeKey(e.name) === key
+          || normalizeKey(e.icon) === key
+          || normalizeKey(e.startupClass) === key)
+        return e
+    }
+    return null
+  }
+
+  function warmCache() {
+    var additions = []
+    for (var i = 0; i < rows.length; i++) {
+      var key = normalizeKey(rows[i] && rows[i].comm)
+      if (key === "" || root.iconCache[key] !== undefined) continue
+      var entry = lookupEntry(key)
+      var found = null
+      if (entry) {
+        var icon = String(entry.icon || "")
+        var source = ""
+        if (icon.charAt(0) === "/") source = Util.fileUrl(icon)
+        else if (icon !== "") source = Quickshell.iconPath(icon, true)
+        if (source === "") source = Quickshell.iconPath("application-x-executable", true)
+        found = { icon: source, name: String(entry.name || "") }
       }
+      additions.push({ key: key, value: found })
     }
-    if (entry) {
-      var icon = String(entry.icon || "")
-      var source = ""
-      if (icon.charAt(0) === "/") source = Util.fileUrl(icon)
-      else if (icon !== "") source = Quickshell.iconPath(icon, true)
-      if (source === "") source = Quickshell.iconPath("application-x-executable", true)
-      found = { icon: source, name: String(entry.name || "") }
-    }
+    if (additions.length === 0) return
     var next = ({})
     for (var k in root.iconCache) next[k] = root.iconCache[k]
-    next[key] = found
+    for (var j = 0; j < additions.length; j++) next[additions[j].key] = additions[j].value
     root.iconCache = next
-    return found
   }
+
+  onRowsChanged: warmCache()
 
   // Header
   Item {
