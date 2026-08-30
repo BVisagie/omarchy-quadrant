@@ -1,5 +1,9 @@
 # Quadrant
 
+<p align="center">
+  <img src="preview.png" alt="Quadrant in the Omarchy bar, with the CPU, GPU, and memory tabs">
+</p>
+
 A unified system monitor for the Omarchy Quattro bar: CPU, GPU, memory, and
 network in one compact bar widget and one tabbed panel — plus a Drives tab.
 The disk bar segment is off by default: it keeps the slot narrower on an
@@ -8,27 +12,24 @@ Each panel tab identifies the hardware it is measuring — CPU model and topolog
 GPU name and driver, installed RAM and swap devices, block devices and
 mounts — then shows live usage.
 
-```
-┌────────────────────────────────┐
-│  󰻠 42%  󰢮 18%   61%  ↑ 1.1K  │   bar slot (segments toggleable)
-│  ▂▂▂▂   ▂▂▂▂   ▂▂▂▂   ↓ 3.6K  │
-└────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/screenshots/bar.png" alt="Quadrant bar slot with CPU, GPU, memory, disk, and network segments" width="680">
+</p>
 
 Clicking a segment opens the panel on that segment's tab; clicking anywhere
 else toggles the panel on the last-used tab.
 
-```
-┌────────────────────────────────────────────┐
-│  CPU   GPU   MEMORY   DRIVES   NETWORK     │
-│                               Show in bar  │
-│  ──────────────────────────────────────    │
-│  Ryzen 9 7950X · 16 cores · 32 threads     │
-│  60s history / rings / process list        │
-│  ASUS … · Linux 7.1.9                      │
-│  ←/→ or 1-N switch tab · R refresh · Esc   │
-└────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/screenshots/cpu.png" alt="CPU tab: Intel i7-12700K with stacked history, hardware identity, and top processes" width="420">
+  <img src="docs/screenshots/gpu.png" alt="GPU tab: AMD Radeon RX 7900 with busy and VRAM rings" width="420">
+</p>
+<p align="center">
+  <img src="docs/screenshots/memory.png" alt="Memory tab: pressure and RAM rings with composition and top processes" width="420">
+  <img src="docs/screenshots/drives.png" alt="Drives tab: NVMe identity, read/write history, and mounts" width="420">
+</p>
+<p align="center">
+  <img src="docs/screenshots/network.png" alt="Network tab: interface rates, down/up history, and per-process traffic" width="420">
+</p>
 
 Built against the documented Quattro plugin contract. Supports **Omarchy 4**
 (the Quattro shell). Requires `bash` ≥ 5, `jq`, `ps` (procps), `ss`
