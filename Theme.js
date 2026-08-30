@@ -25,6 +25,7 @@ var series = {
 // Sizes are px at the shell's base scale; QML wraps them in Style.space().
 var metrics = {
   barMeterThickness: 3,
+  barMeterGap: 3,
   barLabelGap: 3,
   barSegmentGap: 8,
   graphHeight: 96,

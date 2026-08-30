@@ -36,6 +36,10 @@ BarWidget {
     var v = String(setting("barLabels", "glyph")).toLowerCase()
     return (v === "letter" || v === "none") ? v : "glyph"
   }
+  // Bar glyphs are icons, not captions: they size with the shell's body
+  // text so they read at the same weight as neighbouring bar widgets,
+  // while the percentage stays at caption.
+  readonly property int glyphFontSize: Style.font.body
 
   readonly property int visibleSegmentCount: {
     var n = 0
@@ -136,22 +140,38 @@ BarWidget {
     if (barPaletteMode === "vivid") return Theme.series.cpuSteal
     return themePal.urgent
   }
-  // Two caption lines, matching the network stack so every cell shares
-  // both baselines. Network's own height is preferred when it is shown.
-  readonly property int lineBoxHeight: pctSizer.implicitHeight
+  // Caption/glyph line plus a hairline meter. Vertical bars drop the
+  // glyph, so they keep the caption height and do not grow. Network's
+  // own height is preferred when it is shown.
+  readonly property int lineBoxHeight: {
+    if (root.vertical) return pctSizer.implicitHeight
+    var g = cpuGlyphSizer.implicitHeight
+    return g > pctSizer.implicitHeight ? g : pctSizer.implicitHeight
+  }
+  readonly property int meterRowHeight: Style.space(Theme.metrics.barMeterThickness)
+                                        + Style.space(Theme.metrics.barMeterGap)
   readonly property int segmentHeight: {
-    var two = lineBoxHeight * 2
-    if (!root.segmentEnabled("network")) return two
+    var floor = lineBoxHeight + meterRowHeight
+    if (!root.segmentEnabled("network")) return floor
     var h = netCol.implicitHeight
-    return h > two ? h : two
+    return h > floor ? h : floor
   }
   readonly property int metricLabelWidth: {
     if (root.vertical || root.barLabelsMode === "none") return 0
     return Math.max(cpuGlyphSizer.implicitWidth, gpuGlyphSizer.implicitWidth, memGlyphSizer.implicitWidth,
                     (root.segmentEnabled("disk") && root.diskAvailable) ? diskGlyphSizer.implicitWidth : 0)
   }
+  // Only an Intel GPU reporting frequency-derived load ever prefixes "~".
+  // Reserving it machine-wide would pad every cell on hardware that
+  // can never show it.
+  readonly property bool reserveEstimatePrefix: {
+    if (!root.segmentEnabled("gpu") || !root.gpuAvailable) return false
+    return root.gpu && root.gpu.vendor === "intel"
+  }
   readonly property int metricCellWidth: {
     var w = pctSizer.implicitWidth
+    if (root.reserveEstimatePrefix)
+      w += tildeSizer.implicitWidth
     if (root.metricLabelWidth > 0)
       w += Style.space(Theme.metrics.barLabelGap) + root.metricLabelWidth
     if (root.vertical && root.bar)
@@ -666,13 +686,22 @@ BarWidget {
       root.toggle()
     }
 
-    // Shared sizers: cell width is locked to glyph + "~100%" so digits
-    // never resize the slot. Hidden, not Grid children.
+    // Shared sizers: cell width is locked to glyph + "100%" so digits
+    // never resize the slot. The "~" estimate prefix is reserved only
+    // when an Intel GPU can show it. Hidden, not Grid children.
     Text {
       id: pctSizer
       visible: false
       textFormat: Text.PlainText
-      text: "~100%"
+      text: "100%"
+      font.family: button.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+    Text {
+      id: tildeSizer
+      visible: false
+      textFormat: Text.PlainText
+      text: "~"
       font.family: button.fontFamily
       font.pixelSize: Style.font.caption
     }
@@ -682,7 +711,7 @@ BarWidget {
       textFormat: Text.PlainText
       text: Theme.barLabelFor(root.barLabelsMode, "cpu")
       font.family: button.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: root.glyphFontSize
     }
     Text {
       id: gpuGlyphSizer
@@ -690,7 +719,7 @@ BarWidget {
       textFormat: Text.PlainText
       text: Theme.barLabelFor(root.barLabelsMode, "gpu")
       font.family: button.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: root.glyphFontSize
     }
     Text {
       id: memGlyphSizer
@@ -698,7 +727,7 @@ BarWidget {
       textFormat: Text.PlainText
       text: Theme.barLabelFor(root.barLabelsMode, "mem")
       font.family: button.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: root.glyphFontSize
     }
     Text {
       id: diskGlyphSizer
@@ -706,7 +735,7 @@ BarWidget {
       textFormat: Text.PlainText
       text: Theme.barLabelFor(root.barLabelsMode, "disk")
       font.family: button.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: root.glyphFontSize
     }
     Grid {
       id: segGrid
@@ -819,8 +848,8 @@ BarWidget {
     }
   }
 
-  // Two-line metric cell: glyph/letter + right-aligned percentage over a
-  // hairline meter. Width is locked by the shared sizers on `button`.
+  // Metric cell: glyph/letter + right-aligned percentage over a hairline
+  // underline meter. Width is locked by the shared sizers on `button`.
   component MetricCell: Item {
     id: cell
 
@@ -852,7 +881,7 @@ BarWidget {
           text: cell.label
           color: button.foreground
           font.family: button.fontFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: root.glyphFontSize
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
         }
@@ -876,12 +905,12 @@ BarWidget {
 
       Item {
         width: parent.width
-        height: root.lineBoxHeight
+        height: root.meterRowHeight
 
         Components.MeterBar {
           width: parent.width
           height: Style.space(Theme.metrics.barMeterThickness)
-          anchors.verticalCenter: parent.verticalCenter
+          anchors.bottom: parent.bottom
           trackColor: root.meterTrack
           segments: cell.meterSegments
         }

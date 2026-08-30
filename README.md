@@ -99,9 +99,9 @@ or manual deletion under `~/.config/omarchy/plugins/` is required.
 
 ## Usage
 
-- **Bar segments**: CPU, GPU, and memory are two-line cells — a Nerd Font
-  glyph (or `C`/`G`/`M`/`D` with `barLabels letter`) plus a live percentage
-  over a 3 px meter. CPU stacks user+system in the meter; Intel GPU
+- **Bar segments**: CPU, GPU, and memory pair a Nerd Font
+  glyph (or `C`/`G`/`M`/`D` with `barLabels letter`) with a live percentage
+  over a hairline underline meter. CPU stacks user+system in the meter; Intel GPU
   prefixes `~` when the value is a frequency estimate. Network is two-line
   compact rates (`1.0K`, `99K`) in a font-sized stable slot. Each segment
   toggles independently; the slot shrinks to fit. The GPU segment hides
