@@ -746,6 +746,38 @@ test("gpuIdentityEqual ignores object identity and extra fields", () => {
   assert.equal(Model.gpuIdentityEqual(a, rebuilt), true);
 });
 
+test("gpuStreamSignature is stable across same-card topology rebuilds", () => {
+  const raw = { card: "card1", vendor: "amd", path: "/sys/class/drm/card1/device", boot: true };
+  const first = Model.pickGpu(
+    Model.reconcileGpuTopology([raw], null, "auto").discreteGpus, "auto");
+  const rebuilt = Model.pickGpu(
+    Model.reconcileGpuTopology([raw], {
+      gpusByCard: { card1: { name: "Radeon RX 7900 XT" } }
+    }, "auto").discreteGpus, "auto");
+  assert.ok(first);
+  assert.ok(rebuilt);
+  assert.notEqual(first, rebuilt);
+  assert.equal(Model.gpuStreamSignature(first), "amd:/sys/class/drm/card1/device");
+  assert.equal(Model.gpuStreamSignature(rebuilt), Model.gpuStreamSignature(first));
+  assert.equal(Model.gpuStreamPath(rebuilt), Model.gpuStreamPath(first));
+  assert.equal(Model.gpuStreamVendor(rebuilt), "amd");
+});
+
+test("gpuStreamSignature changes when path or vendor changes", () => {
+  const amd = { vendor: "amd", path: "/sys/a" };
+  const amdOther = { vendor: "amd", path: "/sys/b" };
+  const intel = { vendor: "intel", path: "/sys/a" };
+  const nvidia = { vendor: "nvidia", path: "/sys/a" };
+  assert.equal(Model.gpuStreamSignature(amd), "amd:/sys/a");
+  assert.notEqual(Model.gpuStreamSignature(amd), Model.gpuStreamSignature(amdOther));
+  assert.notEqual(Model.gpuStreamSignature(amd), Model.gpuStreamSignature(intel));
+  assert.equal(Model.gpuStreamSignature(nvidia), "");
+  assert.equal(Model.gpuStreamSignature(null), "");
+  assert.equal(Model.gpuStreamSignature({ vendor: "amd", path: "" }), "");
+  assert.equal(Model.gpuStreamPath(nvidia), "");
+  assert.equal(Model.gpuStreamVendor(intel), "intel");
+});
+
 test("normalizeGpuList keeps slot and pci identity", () => {
   const list = Model.normalizeGpuList({
     gpus: [{

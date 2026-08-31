@@ -31,7 +31,8 @@ Item {
 
   function refresh() {
     if (!active) return
-    if (model && model.refreshSysInfo) model.refreshSysInfo()
+    // Hardware identity is owned by the widget: system-info on startup / R.
+    // This cadence only refreshes the process roster.
     if (proc.running) return
     watchdog.restart()
     proc.running = true

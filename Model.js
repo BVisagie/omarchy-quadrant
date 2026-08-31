@@ -1252,6 +1252,28 @@ function gpuIdentityEqual(a, b) {
       && String(a.path || "") === String(b.path || "")
 }
 
+// quadrant-stream only samples AMD/Intel sysfs. NVIDIA, missing cards, and
+// path-less rows produce "" so a name-only topology rebuild does not look
+// like a different sampler target.
+function gpuStreamVendor(gpu) {
+  if (!gpu || typeof gpu !== "object") return ""
+  var vendor = String(gpu.vendor || "")
+  if (vendor !== "amd" && vendor !== "intel") return ""
+  if (String(gpu.path || "") === "") return ""
+  return vendor
+}
+
+function gpuStreamPath(gpu) {
+  if (gpuStreamVendor(gpu) === "") return ""
+  return String(gpu.path || "")
+}
+
+function gpuStreamSignature(gpu) {
+  var vendor = gpuStreamVendor(gpu)
+  if (vendor === "") return ""
+  return vendor + ":" + gpuStreamPath(gpu)
+}
+
 function gpuDevicePinMessage(gpus, setting) {
   var wanted = normalizeDeviceSetting(setting)
   if (wanted === "auto" || wanted === "") return ""
@@ -1653,6 +1675,9 @@ if (typeof module !== "undefined" && module.exports) {
     classifyGpuRole: classifyGpuRole,
     pickIntegratedGpu: pickIntegratedGpu,
     gpuIdentityEqual: gpuIdentityEqual,
+    gpuStreamVendor: gpuStreamVendor,
+    gpuStreamPath: gpuStreamPath,
+    gpuStreamSignature: gpuStreamSignature,
     gpuDevicePinMessage: gpuDevicePinMessage,
     reconcileGpuTopology: reconcileGpuTopology,
     parseLspciMm: parseLspciMm,
