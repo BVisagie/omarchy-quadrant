@@ -1,7 +1,7 @@
 # Quadrant
 
 <p align="center">
-  <img src="preview.png" alt="Quadrant in the Omarchy bar, with the CPU, GPU, and memory tabs">
+  <img src="preview.png" alt="Quadrant bar plus laptop CPU (Intel Arc on the CPU tab) and desktop GPU and memory tabs">
 </p>
 
 A unified system monitor for the Omarchy Quattro bar: CPU, GPU, memory, and
@@ -14,22 +14,22 @@ GPU name and driver, installed RAM and swap devices, block devices and
 mounts — then shows live usage.
 
 <p align="center">
-  <img src="docs/screenshots/bar.png" alt="Quadrant bar slot with CPU, GPU, memory, disk, and network segments" width="680">
+  <img src="docs/screenshots/bar.png" alt="Quadrant bar slot with CPU, GPU, memory, and network segments" width="680">
 </p>
 
 Clicking a segment opens the panel on that segment's tab; clicking anywhere
 else toggles the panel on the last-used tab.
 
 <p align="center">
-  <img src="docs/screenshots/cpu.png" alt="CPU tab: Intel i7-12700K with stacked history, hardware identity, and top processes" width="420">
-  <img src="docs/screenshots/gpu.png" alt="GPU tab: AMD Radeon RX 7900 with busy and VRAM rings" width="420">
+  <img src="docs/screenshots/cpu.png" alt="Laptop CPU tab: Intel Ultra 9 185H with Intel Arc Graphics shown as a freq ring on the CPU tab" width="420">
+  <img src="docs/screenshots/gpu.png" alt="Desktop GPU tab: AMD Radeon RX 7900 with busy and VRAM rings" width="420">
 </p>
 <p align="center">
   <img src="docs/screenshots/memory.png" alt="Memory tab: RAM and pressure rings with composition and top processes" width="420">
-  <img src="docs/screenshots/drives.png" alt="Drives tab: NVMe identity, read/write history, and mounts" width="420">
+  <img src="docs/screenshots/drives.png" alt="Drives tab: dual NVMe picker, read/write history, and mounts" width="420">
 </p>
 <p align="center">
-  <img src="docs/screenshots/network.png" alt="Network tab: interface rates, down/up history, and per-process traffic" width="420">
+  <img src="docs/screenshots/network.png" alt="Network tab: enp8s0 rates, down/up history, and per-process traffic" width="420">
 </p>
 
 Built against the documented Quattro plugin contract. Supports **Omarchy 4**
