@@ -262,28 +262,39 @@ Panel {
 
             // Keep last-good metrics on screen, but never leave stale or failed
             // async data looking live. GPU probe failures are distinct from a
-            // legitimate no-GPU result.
+            // legitimate no-GPU result. A brief stream restart with last-good
+            // data already on screen is not an error — waiting is first-load
+            // only, and uses the muted caption color.
             Text {
               textFormat: Text.PlainText
-              visible: root.hostWidget
-                       && (root.hostWidget.streamLive !== true
-                           || root.hostWidget.gpuDetectionError !== ""
-                           || root.hostWidget.diskInfoError !== "")
+              visible: {
+                if (!root.hostWidget) return false
+                if (root.hostWidget.gpuDetectionError !== "") return true
+                if (root.hostWidget.diskInfoError !== "") return true
+                if (root.hostWidget.streamError !== "") return true
+                return root.hostWidget.streamLive !== true && !root.hostWidget.sample
+              }
               text: {
                 if (!root.hostWidget) return ""
                 var messages = []
-                if (root.hostWidget.streamLive !== true) {
-                  messages.push(root.hostWidget.streamError !== ""
-                    ? root.hostWidget.streamError
-                    : "Waiting for the system sampler…")
-                }
+                if (root.hostWidget.streamError !== "")
+                  messages.push(root.hostWidget.streamError)
+                else if (root.hostWidget.streamLive !== true && !root.hostWidget.sample)
+                  messages.push("Waiting for the system sampler…")
                 if (root.hostWidget.gpuDetectionError !== "")
                   messages.push(root.hostWidget.gpuDetectionError)
                 if (root.hostWidget.diskInfoError !== "")
                   messages.push(root.hostWidget.diskInfoError)
                 return messages.join(" · ")
               }
-              color: Color.urgent
+              color: {
+                if (!root.hostWidget) return Color.urgent
+                if (root.hostWidget.streamError !== ""
+                    || root.hostWidget.gpuDetectionError !== ""
+                    || root.hostWidget.diskInfoError !== "")
+                  return Color.urgent
+                return Qt.darker(root.barForeground, 1.4)
+              }
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.caption
               width: parent.width

@@ -101,6 +101,11 @@ BarWidget {
   property var discreteGpus: []
   property var integratedGpus: []
   property var gpu: null
+  // Primitive stream args so a same-card object rebuild (system-info on R,
+  // or a name fill-in) does not relaunch quadrant-stream.
+  readonly property string streamGpuPath: Model.gpuStreamPath(gpu)
+  readonly property string streamGpuVendor: Model.gpuStreamVendor(gpu)
+  readonly property string streamGpuSignature: Model.gpuStreamSignature(gpu)
   property var integratedGpu: null
   property bool gpuListReady: false
   property bool gpuListFailed: false
@@ -403,15 +408,15 @@ BarWidget {
   }
 
   onBarIntervalMsChanged: restartStream()
-  onGpuChanged: restartStream()
+  onStreamGpuSignatureChanged: restartStream()
 
   Process {
     id: streamProc
     property bool intentionalStop: false
     command: {
       var args = [root.streamScript, String(root.barIntervalMs)]
-      if (root.gpu && (root.gpu.vendor === "amd" || root.gpu.vendor === "intel"))
-        args.push(root.gpu.path, root.gpu.vendor)
+      if (root.streamGpuPath !== "" && root.streamGpuVendor !== "")
+        args.push(root.streamGpuPath, root.streamGpuVendor)
       return args
     }
     running: true
