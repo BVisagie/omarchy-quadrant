@@ -97,8 +97,8 @@ Or remove it from a terminal:
 omarchy plugin remove dev.bvisagie.quadrant
 ```
 
-Omarchy disables Quadrant before removing its git checkout. No sudo command
-or manual deletion under `~/.config/omarchy/plugins/` is required.
+Omarchy disables Quadrant before removing its git checkout. No sudo or pkexec 
+is required, and no manual deletion under `~/.config/omarchy/plugins/` is needed.
 
 ## Usage
 
