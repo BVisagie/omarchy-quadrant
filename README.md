@@ -179,6 +179,8 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   grid on this tab shows per-core load (SMT collapsed). When an
   integrated GPU is present, a **GRAPHICS** block shows its identity and
   live frequency or busy metrics (sampled while the CPU tab is open).
+  Top processes use interval CPU% from `/proc/<pid>/stat` over the panel
+  poll window, not procps lifetime `%CPU`.
 - **Memory**: the RAM ring is **used** `(MemTotal − MemAvailable) /
   MemTotal` — the same quantity as the bar. Composition (Applications /
   Kernel unreclaimable slab / Cache = page cache + **Buffers** +
@@ -219,6 +221,8 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   (or unfolded) device; busy % is `io_ticks` over wall time. Capacity per
   mount comes from `df -P -B1 -T`, skipping virtual filesystems, and the
   Drives tab lists only mounts that resolve onto the selected disk.
+  Bind mounts that share size and used with another mount of the same
+  type collapse to the shortest path (`/` wins).
   Device model and SSD/HDD come from sysfs; NVMe temperature is the
   `nvme` hwmon only — same whitelist rule as CPU temp, never a
   first-readable-sensor fallback. `auto` follows the disk backing `/`
@@ -237,7 +241,9 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   the byte counters are not). UDP, sockets on other interfaces, sockets
   owned by other users, and closed-socket remainders cannot be attributed
   — they appear as an honest **Other traffic** row (keyed on `pid == 0`; a
-  process literally named "Other traffic" can never collide with it). The
+  process literally named "Other traffic" can never collide with it). When
+  the interface is moving but no TCP sockets are attributable, the tab
+  says so instead of showing a lone zero row. The
   tab footer says **Default route via …** when the interface is auto-picked,
   or **Pinned interface …** when `networkInterface` is set.
 - **Temperature**: hwmon whitelist only (`k10temp`, `coretemp`,

@@ -279,6 +279,18 @@ test("parseDf keeps real filesystems and drops virtual ones", () => {
   assert.equal(Model.parseDf("").length, 0);
 });
 
+test("collapseMounts keeps the shortest path of a bind-mount set", () => {
+  const mounts = [
+    { source: "/dev/nvme0n1p2", fstype: "ext4", size: 100, used: 40, avail: 60, pct: 40, target: "/var/log" },
+    { source: "/dev/nvme0n1p2", fstype: "ext4", size: 100, used: 40, avail: 60, pct: 40, target: "/" },
+    { source: "/dev/nvme0n1p2", fstype: "ext4", size: 100, used: 40, avail: 60, pct: 40, target: "/home" },
+    { source: "/dev/nvme0n1p1", fstype: "vfat", size: 2, used: 1, avail: 1, pct: 8, target: "/boot" }
+  ];
+  const collapsed = Model.collapseMounts(mounts);
+  const targets = collapsed.map((m) => m.target).sort();
+  assert.deepEqual(targets, ["/", "/boot"]);
+});
+
 test("parseDiskInfo validates disks and parses the df payload", () => {
   const info = Model.parseDiskInfo(JSON.parse(fixture("disk-info-basic.json")));
   assert.ok(info);
@@ -357,7 +369,7 @@ test("parseDiskInfo folds mapper disks onto the backing NVMe", () => {
   assert.equal(info.backing["dm-0"], "nvme0n1");
   assert.equal(info.backing.cryptroot, "nvme0n1");
   const targets = info.mounts.map((m) => m.target);
-  assert.deepEqual(targets, ["/", "/boot", "/home"]);
+  assert.deepEqual(targets, ["/", "/boot"]);
 });
 
 test("pickDisk remaps mapper pins and quoted names through backing", () => {

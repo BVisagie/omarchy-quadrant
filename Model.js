@@ -611,6 +611,40 @@ function parseDf(text) {
       target: clipStr(m[7], 128)
     })
   }
+  return collapseMounts(out)
+}
+
+// Bind mounts and subvolumes of the same filesystem share size+used.
+// Keep the shortest path ("/" wins) so the Drives tab does not list the
+// same fill four times.
+function collapseMounts(list) {
+  if (!Array.isArray(list) || list.length < 2) return Array.isArray(list) ? list.slice() : []
+  var groups = {}
+  var order = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var m = list[i]
+    if (!m) continue
+    var key = String(m.size) + "\t" + String(m.used) + "\t" + String(m.fstype || "")
+    if (!groups[key]) {
+      groups[key] = []
+      order.push(key)
+    }
+    groups[key].push(m)
+  }
+  var out = []
+  for (i = 0; i < order.length; i++) {
+    var rows = groups[order[i]]
+    var best = rows[0]
+    var j
+    for (j = 1; j < rows.length; j++) {
+      var t = String(rows[j].target || "")
+      var b = String(best.target || "")
+      if (t === "/") best = rows[j]
+      else if (b !== "/" && t.length > 0 && t.length < b.length) best = rows[j]
+    }
+    out.push(best)
+  }
   return out
 }
 
@@ -2171,6 +2205,7 @@ if (typeof module !== "undefined" && module.exports) {
     parseDiskstats: parseDiskstats,
     diskRates: diskRates,
     parseDf: parseDf,
+    collapseMounts: collapseMounts,
     parseDiskInfo: parseDiskInfo,
     parseUdevRam: parseUdevRam,
     formatRamLabel: formatRamLabel,
