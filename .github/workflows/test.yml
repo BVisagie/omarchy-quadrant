@@ -34,9 +34,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck jq iproute2 procps pciutils "${{ matrix.awk }}"
       - name: shellcheck
-        run: shellcheck -x scripts/*
+        run: |
+          for f in scripts/*; do
+            head=$(head -n1 "$f")
+            case $head in
+              *python*) continue ;;
+            esac
+            shellcheck -x "$f"
+          done
       - name: bash syntax
-        run: for f in scripts/*; do bash -n "$f"; done
+        run: |
+          for f in scripts/*; do
+            head=$(head -n1 "$f")
+            case $head in
+              *python*) continue ;;
+            esac
+            bash -n "$f"
+          done
       - name: PlainText grep check (${{ matrix.awk }})
         # Quote the whole command so GitHub Actions YAML stays valid; the
         # block scalar still lets the shell expand the QML globs.

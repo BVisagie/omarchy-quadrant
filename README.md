@@ -164,38 +164,58 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
 ## What it measures (and what it does not)
 
 - **CPU**: user (incl. nice) and system (incl. irq/softirq) are stacked in
-  the graph; `iowait` is its own series; `steal` is labeled separately and
-  never folded into "system". The tab header is the `model name` from
-  `/proc/cpuinfo` with physical cores / threads, L3 cache, scaling
-  governor, and current/max frequency (`scaling_cur_freq` when present,
-  else the cpuinfo snapshot). When an integrated GPU is present, a
-  **GRAPHICS** block on this tab shows its identity and live frequency or
-  busy metrics (sampled while the CPU tab is open).
-- **Memory**: composition splits RAM into Applications / Kernel
-  (unreclaimable slab) / Cache (page cache + **Buffers** + SReclaimable) /
-  Free. The RAM ring is the primary gauge; the pressure ring is PSI memory
-  `some avg10`. PSI is **optional per resource** — when `/proc/pressure/cpu`
-  or `/proc/pressure/memory` is unreadable that half is JSON `null` and the
-  ring shows `--`, not zero. The process column is "% of RAM". The tab
-  header is installed RAM; swap devices
-  from `/proc/swaps` are listed (zram includes the active compression
-  algorithm and disk size).
+  the graph; `iowait` is its own series; `steal` is stacked and labeled
+  when it is non-zero, never folded into "system". The **bar** percentage
+  is non-idle time (user + system + iowait + steal) so a disk-bound
+  machine is not shown as idle; the tooltip names iowait/steal when they
+  are at least 1%. Topology comes from sysfs (online `core_id`, Intel
+  `cpu_core`/`cpu_atom` lists, otherwise capacity/max-frequency clusters):
+  the header is physical cores, threads, and a P/E/LP mix when the chip
+  is hybrid. Package frequency is the mean of every cpufreq policy, not
+  `cpu0`. The tab header is a cleaned `model name` from `/proc/cpuinfo`
+  (trademarks and "N-Core Processor" suffixes stripped) with L3 cache,
+  scaling governor, and current/max frequency. Host DMI (`sys_vendor` +
+  `product_name`) is shown under the header when present. A compact core
+  grid on this tab shows per-core load (SMT collapsed). When an
+  integrated GPU is present, a **GRAPHICS** block shows its identity and
+  live frequency or busy metrics (sampled while the CPU tab is open).
+  Top processes use interval CPU% from `/proc/<pid>/stat` over the panel
+  poll window, not procps lifetime `%CPU`. Wrapper binaries (`electron`,
+  `chrome`) are labeled from exe/cmdline against a fixed map, kernel
+  threads get a short class, and same-name rows are summed.
+- **Memory**: the RAM ring is **used** `(MemTotal − MemAvailable) /
+  MemTotal` — the same quantity as the bar. Composition (Applications /
+  Kernel unreclaimable slab / Cache = page cache + **Buffers** +
+  SReclaimable / Free) is a stacked bar, not a second encoding of that
+  ring. The pressure ring is PSI memory `some avg10`. PSI is **optional
+  per resource** — when `/proc/pressure/cpu` or `/proc/pressure/memory`
+  is unreadable that half is JSON `null` and the ring shows `--`, not
+  zero. The process column is "% of RAM". The tab header is installed
+  RAM plus DIMM identity from unprivileged udev DMI when present
+  (maker, module count and size, type/speed — e.g. Kingston 2×16 GiB ·
+  DDR4 3600 MT/s); swap
+  devices from `/proc/swaps` are listed (zram includes the active
+  compression algorithm and disk size).
 - **GPU**: the GPU tab and bar segment cover **dedicated** cards only.
   AMD reads `amdgpu` sysfs (`gpu_busy_percent`, `mem_busy_percent`,
   per-engine `engine/*/busy_percent`, VRAM info, hwmon temp/power, active
   DPM sclk). NVIDIA runs `nvidia-smi` (timeout-bounded,
   row-capped) **only while the GPU segment or tab is visible** — never in
-  the 1 Hz stream. Discrete Intel uses the same frequency-ratio estimate
-  as the CPU-tab iGPU block. Intel i915 frequency files are read from the
+  the 1 Hz stream. Discrete Intel uses DRM fdinfo engine time (Render/3D)
+  for busy % while the GPU segment or tab is visible, with RC6 residency
+  as fallback; the frequency ratio stays an estimate labeled `freq` / `~`
+  until a DRM sample arrives. Intel i915 frequency files are read from the
   DRM card node as well as the PCI device node (and xe `tile*/gt*/freq0`).
   Integrated Intel (PCI `00:02.x`) and known AMD APUs appear on the CPU
   tab instead; `integratedGpuDevice` overrides that mapping. Multi-GPU
   systems get a dedicated-card selector in the GPU tab; the choice is
-  persisted with `omarchy bar set … gpuDevice`. The tab header is the
-  card's marketing name: NVIDIA's `nvidia-smi` name, or `lspci -D -mm`
-  joined by PCI slot for AMD/Intel, falling back to vendor + PCI ID when
-  pciutils is not installed. Driver and slot come from sysfs `uevent`.
-  Per-process GPU attribution is v2.
+  persisted with `omarchy bar set … gpuDevice`. The tab header is a
+  cleaned marketing name: NVIDIA's `nvidia-smi` name, or the product
+  inside `lspci -D -mm` brackets (so `Navi 31 [Radeon RX 7900 XTX]` reads
+  as `Radeon RX 7900 XTX`), falling back to vendor + PCI ID when pciutils
+  is not installed. Driver and slot stay in the subtitle. A power-gated
+  core clock of 0 MHz is shown as **IDLE**. Per-process GPU attribution
+  is v2.
 - **Disk**: `/proc/diskstats` for whole block devices (`/sys/block/<name>`),
   excluding `loop*`, `ram*`, `zram*` (zram is on the Memory tab), `fd*`,
   `nbd*`, and `sr*`. Device-mapper (`dm-*`) and md RAID (`mdN`) with a
@@ -205,6 +225,8 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   (or unfolded) device; busy % is `io_ticks` over wall time. Capacity per
   mount comes from `df -P -B1 -T`, skipping virtual filesystems, and the
   Drives tab lists only mounts that resolve onto the selected disk.
+  Bind mounts that share size and used with another mount of the same
+  type collapse to the shortest path (`/` wins).
   Device model and SSD/HDD come from sysfs; NVMe temperature is the
   `nvme` hwmon only — same whitelist rule as CPU temp, never a
   first-readable-sensor fallback. `auto` follows the disk backing `/`
@@ -223,7 +245,9 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   the byte counters are not). UDP, sockets on other interfaces, sockets
   owned by other users, and closed-socket remainders cannot be attributed
   — they appear as an honest **Other traffic** row (keyed on `pid == 0`; a
-  process literally named "Other traffic" can never collide with it). The
+  process literally named "Other traffic" can never collide with it). When
+  the interface is moving but no TCP sockets are attributable, the tab
+  says so instead of showing a lone zero row. The
   tab footer says **Default route via …** when the interface is auto-picked,
   or **Pinned interface …** when `networkInterface` is set.
 - **Temperature**: hwmon whitelist only (`k10temp`, `coretemp`,

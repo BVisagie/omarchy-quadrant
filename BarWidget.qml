@@ -83,6 +83,7 @@ BarWidget {
   property double streamStartedAtMs: 0
   property string streamError: ""
   property var cpuPct: null
+  property var coreUsage: ({})
   property var memComp: null
   property var swapRate: ({ inKBs: 0, outKBs: 0 })
   property var ifaceRates: null
@@ -113,6 +114,9 @@ BarWidget {
   property bool gpuTopologyReady: false
   property var nvidiaGpu: null
   property string nvidiaError: ""
+  property var discreteGpuLive: null
+  property var discreteDrmPrev: null
+  property var igpuDrmPrev: null
   property string gpuDetectionError: ""
   property string gpuDeviceWarning: ""
   property var integratedGpuLive: null
@@ -127,11 +131,11 @@ BarWidget {
     String(Color.accent),
     String(root.bar ? root.bar.urgent : Color.urgent)
   )
-  readonly property bool cpuHot: cpuPct !== null && cpuPct.busy >= 90
+  readonly property bool cpuHot: cpuPct !== null && cpuPct.nonIdle >= 90
   readonly property bool memHot: memComp !== null && memComp.usedPct >= 90
   readonly property bool gpuHot: gpuDisplay !== null && gpuDisplay.pct >= 90
   readonly property bool diskHot: diskRates !== null && diskRates.utilPct >= 90
-  readonly property string cpuValueText: cpuPct ? Model.formatPct(cpuPct.busy) : "--"
+  readonly property string cpuValueText: cpuPct ? Model.formatPct(cpuPct.nonIdle) : "--"
   readonly property string memValueText: memComp ? Model.formatPct(memComp.usedPct) : "--"
   readonly property string gpuValueText: {
     if (!gpuDisplay) return "--"
@@ -246,6 +250,15 @@ BarWidget {
     var v = root.integratedGpu.vendor
     return v === "amd" || v === "intel"
   }
+  readonly property bool drmSampleable: {
+    if (!gpu || !gpu.path) return false
+    if (gpu.vendor === "intel") return true
+    if (gpu.vendor === "amd") {
+      var g = sample && sample.gpu
+      return !g || g.busy === null || g.busy === undefined
+    }
+    return false
+  }
 
   readonly property string effectiveInterface: {
     if (networkInterface !== "auto" && networkInterface !== "") return networkInterface
@@ -270,14 +283,18 @@ BarWidget {
       if (nvidiaGpu && nvidiaGpu.utilPct !== null) return ({ pct: nvidiaGpu.utilPct, estimated: false })
       return null
     }
+    var extra = discreteGpuLive
+    if (extra && extra.busy !== null && extra.busy !== undefined)
+      return ({ pct: extra.busy, estimated: extra.busySource !== "drm" && extra.busySource !== "sysfs" })
     var g = sample ? sample.gpu : null
-    if (!g) return null
+    if (!g) return extra && extra.freqEstimate !== null && extra.freqEstimate !== undefined
+      ? ({ pct: extra.freqEstimate, estimated: true }) : null
+    if (g.busy !== null && g.busy !== undefined) return ({ pct: g.busy, estimated: false })
     if (g.kind === "intel") {
       if (g.freqCurMhz !== null && g.freqMaxMhz !== null && g.freqMaxMhz > 0)
         return ({ pct: Model.clamp(100 * g.freqCurMhz / g.freqMaxMhz, 0, 100), estimated: true })
       return null
     }
-    if (g.busy !== null) return ({ pct: g.busy, estimated: false })
     return null
   }
 
@@ -285,7 +302,7 @@ BarWidget {
     if (!streamLive) return "Quadrant: sampler offline"
     var parts = []
     if (segmentEnabled("cpu") && cpuPct)
-      parts.push("CPU " + Model.formatPct(cpuPct.busy))
+      parts.push(Model.cpuBarTooltip(cpuPct))
     if (segmentEnabled("gpu") && discreteGpuAvailable && gpuDisplay)
       parts.push("GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (freq)" : ""))
     if (segmentEnabled("memory") && memComp)
@@ -361,6 +378,13 @@ BarWidget {
     if (!s) return
     var dt = prevSample ? s.ts - prevSample.ts : 0
     cpuPct = Model.cpuDelta(prevSample ? prevSample.cpu : null, s.cpu)
+    coreUsage = {}
+    if (prevSample && prevSample.cpuCores && s.cpuCores) {
+      var coreDeltas = Model.cpuCoreDeltas(prevSample.cpuCores, s.cpuCores)
+      var usage = {}
+      for (var c = 0; c < coreDeltas.length; c++) usage[coreDeltas[c].id] = coreDeltas[c].busy
+      coreUsage = usage
+    }
     memComp = Model.memComposition(s.mem)
     swapRate = Model.swapRates(prevSample ? prevSample.vm : null, s.vm, dt)
     var rates = Model.netRates(prevSample ? prevSample.net : null, s.net, dt)
@@ -370,7 +394,7 @@ BarWidget {
     }
     if (cpuPct)
       cpuHistory = Model.pushTimedWindow(
-        cpuHistory, { u: cpuPct.user, s: cpuPct.system, io: cpuPct.iowait },
+        cpuHistory, { u: cpuPct.user, s: cpuPct.system, io: cpuPct.iowait, st: cpuPct.steal },
         s.ts, 60, historyLimit)
     if (ifaceRates)
       netHistory = Model.pushTimedWindow(
@@ -764,6 +788,17 @@ BarWidget {
     }
   }
 
+  function applyDrmOverlay(data, which, live) {
+    var prev = which === "igpu" ? root.igpuDrmPrev : root.discreteDrmPrev
+    var snap = Model.parseDrmSnapshot(data && data.drm)
+    var busy = Model.drmBusyPercent(prev, snap)
+    if (snap) {
+      if (which === "igpu") root.igpuDrmPrev = snap
+      else root.discreteDrmPrev = snap
+    }
+    return Model.mergeGpuLive(live, busy, snap)
+  }
+
   function applyIgpu(text) {
     var data = Model.safeJson(text)
     if (!data || data.ok !== true) {
@@ -774,7 +809,7 @@ BarWidget {
     if (data.vendor === "intel") live = Model.normalizeIntelGpu(Model.parseKeyValues(data.payload))
     else if (data.vendor === "amd") live = Model.normalizeAmdGpu(Model.parseKeyValues(data.payload))
     if (live) {
-      root.integratedGpuLive = live
+      root.integratedGpuLive = root.applyDrmOverlay(data, "igpu", live)
       root.integratedGpuError = ""
       return
     }
@@ -823,6 +858,59 @@ BarWidget {
         igpuProc.signal(9)
         root.integratedGpuError = "gpu-stats timed out"
       }
+    }
+  }
+
+  function applyDiscreteGpu(text) {
+    var data = Model.safeJson(text)
+    if (!data || data.ok !== true) {
+      root.discreteGpuLive = null
+      return
+    }
+    var live = null
+    if (data.vendor === "intel") live = Model.normalizeIntelGpu(Model.parseKeyValues(data.payload))
+    else if (data.vendor === "amd") live = Model.normalizeAmdGpu(Model.parseKeyValues(data.payload))
+    if (!live) live = { kind: data.vendor || "" }
+    root.discreteGpuLive = root.applyDrmOverlay(data, "discrete", live)
+  }
+
+  function pollDiscreteGpu() {
+    if (!root.drmSampleable) return
+    if (discreteGpuProc.running) return
+    discreteGpuWatchdog.restart()
+    discreteGpuProc.running = true
+  }
+
+  Timer {
+    id: discreteGpuTimer
+    interval: root.panelIntervalMs
+    repeat: true
+    running: root.drmSampleable && (root.segmentEnabled("gpu") || root.panelGpuOpen)
+    onRunningChanged: if (running) root.pollDiscreteGpu()
+    onTriggered: root.pollDiscreteGpu()
+  }
+
+  Process {
+    id: discreteGpuProc
+    command: {
+      if (!root.drmSampleable) return [root.gpuStatsScript, "sample", "intel", "/sys/class/drm"]
+      return [root.gpuStatsScript, "sample", root.gpu.vendor, root.gpu.path]
+    }
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyDiscreteGpu(text)
+    }
+    onExited: function(exitCode, exitStatus) {
+      discreteGpuWatchdog.stop()
+    }
+  }
+
+  Timer {
+    id: discreteGpuWatchdog
+    interval: 6000
+    repeat: false
+    onTriggered: {
+      if (discreteGpuProc.running) discreteGpuProc.signal(9)
     }
   }
 

@@ -49,6 +49,8 @@ Item {
     if (c.physCores) parts.push(c.physCores + " cores")
     if (c.threads && c.threads !== c.physCores) parts.push(c.threads + " threads")
     else if (c.threads && !c.physCores) parts.push(c.threads + " threads")
+    var mix = Model.formatCpuClassMix(c.classes)
+    if (mix) parts.push(mix)
     if (c.cacheKb) parts.push(Model.formatCache(c.cacheKb) + " L3")
     return parts.join(" · ")
   }
@@ -75,17 +77,19 @@ Item {
       errorText = "process sampler failed: " + ((env && env.error) ? String(env.error) : "bad output")
       return
     }
-    var parsed = Model.parsePs(env.payload, panel ? panel.processCount : 5)
+    var limit = panel ? panel.processCount : 5
+    var parsed = Model.parseProcRows(env.payload, 32)
+    var collapsed = Model.nameAndCollapse(parsed, limit)
     var mapped = []
-    for (var i = 0; i < parsed.length; i++) {
+    for (var i = 0; i < collapsed.length; i++) {
       mapped.push({
-        pid: parsed[i].pid,
-        comm: parsed[i].comm,
-        valueText: Model.formatPct(parsed[i].value, 1),
-        sortKey: parsed[i].value
+        pid: collapsed[i].pid,
+        comm: collapsed[i].comm,
+        valueText: Model.formatPct(collapsed[i].value, 1),
+        sortKey: collapsed[i].value
       })
     }
-    rows = Model.mergeRoster(rows, mapped, panel ? panel.processCount : 5)
+    rows = Model.mergeRoster(rows, mapped, limit)
     errorText = ""
   }
 
@@ -131,11 +135,25 @@ Item {
     Components.HardwareHero {
       width: parent.width
       visible: root.sysCpu && root.sysCpu.modelName !== ""
-      title: root.sysCpu ? root.sysCpu.modelName : ""
+      title: root.sysCpu ? Model.cleanCpuName(root.sysCpu.modelName) : ""
       meta: root.cpuMeta
       detail: root.cpuDetail
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      visible: {
+        if (!root.model || !root.model.sysInfo || !root.model.sysInfo.host) return false
+        return Model.hostLine(root.model.sysInfo.host) !== ""
+      }
+      text: root.model && root.model.sysInfo ? Model.hostLine(root.model.sysInfo.host) : ""
+      color: root.panel ? Qt.darker(root.panel.barForeground, 1.4) : "#cacccc"
+      font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      font.pixelSize: Style.font.caption
+      width: parent.width
+      elide: Text.ElideRight
     }
 
     Components.HistoryGraph {
@@ -148,7 +166,8 @@ Item {
       series: [
         { label: "user", color: Theme.series.cpuUser, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.u }) },
         { label: "system", color: Theme.series.cpuSystem, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.s }) },
-        { label: "iowait", color: Theme.series.cpuIowait, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.io }) }
+        { label: "iowait", color: Theme.series.cpuIowait, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.io }) },
+        { label: "steal", color: Theme.series.cpuSteal, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.st }) }
       ]
     }
 
@@ -166,6 +185,7 @@ Item {
 
         delegate: Row {
           required property var modelData
+          visible: modelData.label !== "steal" || (modelData.pct !== null && modelData.pct > 0)
           spacing: Style.space(4)
 
           Rectangle {
@@ -188,11 +208,14 @@ Item {
       }
     }
 
-    Components.StatRow {
+    Components.CoreGrid {
       width: parent.width
-      label: "Vendor"
-      visible: root.sysCpu && root.sysCpu.vendorId !== ""
-      value: root.sysCpu ? Model.cpuVendorLabel(root.sysCpu.vendorId) : "--"
+      layout: Model.coreGridLayout(
+        root.sysCpu && root.sysCpu.topo ? root.sysCpu.topo : [],
+        root.model && root.model.coreUsage ? root.model.coreUsage : {}
+      )
+      accent: Color.accent
+      urgent: Color.urgent
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
@@ -237,14 +260,6 @@ Item {
       width: parent.width
       label: "Uptime"
       value: root.sample ? Model.formatUptime(root.sample.uptimeS) : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-    }
-
-    Components.StatRow {
-      width: parent.width
-      label: "Cores"
-      value: root.sample ? String(root.sample.cores) : "--"
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }

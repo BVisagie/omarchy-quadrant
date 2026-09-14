@@ -176,9 +176,38 @@ emit_file() {
   PAYLOAD+="$key=$v"$'\n'
 }
 
+# Optional DRM fdinfo snapshot. Model.js computes busy from consecutive
+# samples; a missing helper is drm:null, never a fake 0%.
+sample_drm() {
+  local slot=$1 py helper out
+  DRM_JSON="null"
+  [[ -n $slot && $slot =~ ^[0-9a-fA-F:.]+$ ]] || return 0
+  py=$(resolve_bin python3) || return 0
+  helper=$SCRIPT_DIR/gpu-drm
+  [[ -r $helper ]] || return 0
+  out=$("$py" "$helper" --slot "$slot" 2>/dev/null) || return 0
+  [[ $out == \{* ]] || return 0
+  DRM_JSON=$out
+}
+
+emit_sample() {
+  local vendor=$1
+  "$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$PAYLOAD" --arg vendor "$vendor" \
+    --argjson drm "${DRM_JSON:-null}" \
+    '{ok:true, ts:($ts|tonumber), vendor:$vendor, payload:$payload,
+      drm: (if ($drm | type) == "object" and $drm.ok then $drm else null end)}'
+}
+
 cmd_sample_amd() {
   local dev=$1
   PAYLOAD=""
+  DRM_JSON="null"
+  local slot=""
+  if slot=$(uevent_field "$dev/uevent" PCI_SLOT_NAME); then
+    [[ $slot =~ ^[0-9a-fA-F:.]+$ ]] || slot=""
+  else
+    slot=""
+  fi
   emit_file gpu_busy_percent "$dev/gpu_busy_percent"
   emit_file mem_busy_percent "$dev/mem_busy_percent"
   emit_file mem_info_vram_used "$dev/mem_info_vram_used"
@@ -217,14 +246,25 @@ cmd_sample_amd() {
     eng_count=$(( eng_count + 1 ))
     (( eng_count >= 32 )) && break
   done
-  [[ -n $PAYLOAD ]] || fail "no readable amd metrics under $dev"
-  "$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$PAYLOAD" \
-    '{ok:true, ts:($ts|tonumber), vendor:"amd", payload:$payload}'
+  sample_drm "$slot"
+  if [[ -z $PAYLOAD ]]; then
+    if ! printf '%s' "$DRM_JSON" | "$JQ" -e '.ok == true' >/dev/null 2>&1; then
+      fail "no readable amd metrics under $dev"
+    fi
+  fi
+  emit_sample amd
 }
 
 cmd_sample_intel() {
   local dev=$1 cur_f max_f
   PAYLOAD=""
+  DRM_JSON="null"
+  local slot=""
+  if slot=$(uevent_field "$dev/uevent" PCI_SLOT_NAME); then
+    [[ $slot =~ ^[0-9a-fA-F:.]+$ ]] || slot=""
+  else
+    slot=""
+  fi
   if cur_f=$(intel_freq_cur_path "$dev"); then emit_file gt_cur_freq_mhz "$cur_f"; fi
   if max_f=$(intel_freq_max_path "$dev"); then emit_file gt_max_freq_mhz "$max_f"; fi
   local h
@@ -234,8 +274,8 @@ cmd_sample_intel() {
     break
   done
   [[ -n $PAYLOAD ]] || fail "no readable intel metrics under $dev"
-  "$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$PAYLOAD" \
-    '{ok:true, ts:($ts|tonumber), vendor:"intel", payload:$payload}'
+  sample_drm "$slot"
+  emit_sample intel
 }
 
 cmd_sample_nvidia() {

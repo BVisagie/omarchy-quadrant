@@ -39,27 +39,13 @@ Item {
   }
 
   readonly property string memTitle: {
-    if (comp) return Model.formatKiB(comp.totalK) + " installed"
+    if (comp) return Model.formatKiB(comp.totalK) + " usable"
     return "Memory"
   }
 
   readonly property string memMeta: {
     var m = sysMem
-    if (m && m.zram && m.zram.length > 0) {
-      var z = m.zram[0]
-      var bits = [z.dev]
-      if (z.alg) bits.push(z.alg)
-      if (z.diskBytes) bits.push(Model.formatBytes(z.diskBytes))
-      return bits.join(" · ")
-    }
-    if (m && m.swaps && m.swaps.length > 0) {
-      var s = m.swaps[0]
-      var parts = [s.kind]
-      if (s.file) parts.push(s.file)
-      if (s.sizeKb) parts.push(Model.formatKiB(s.sizeKb))
-      return parts.join(" · ")
-    }
-    if (swap && swap.totalK <= 0) return "no swap"
+    if (m && m.ram && m.ram.label) return m.ram.label
     return ""
   }
 
@@ -112,18 +98,20 @@ Item {
       return
     }
     var totalK = root.sample ? root.sample.mem.tot : 0
-    var parsed = Model.parsePs(env.payload, panel ? panel.processCount : 5)
+    var limit = panel ? panel.processCount : 5
+    var parsed = Model.parseProcRows(env.payload, 32)
+    var collapsed = Model.nameAndCollapse(parsed, limit)
     var mapped = []
-    for (var i = 0; i < parsed.length; i++) {
-      var pct = totalK > 0 ? 100 * parsed[i].value / totalK : null
+    for (var i = 0; i < collapsed.length; i++) {
+      var pct = totalK > 0 ? 100 * collapsed[i].value / totalK : null
       mapped.push({
-        pid: parsed[i].pid,
-        comm: parsed[i].comm,
+        pid: collapsed[i].pid,
+        comm: collapsed[i].comm,
         valueText: pct === null ? "--" : Model.formatPct(pct, 1),
-        sortKey: parsed[i].value
+        sortKey: collapsed[i].value
       })
     }
-    rows = Model.mergeRoster(rows, mapped, panel ? panel.processCount : 5)
+    rows = Model.mergeRoster(rows, mapped, limit)
     errorText = ""
   }
 
@@ -216,10 +204,12 @@ Item {
           size: Style.space(Theme.metrics.largeRingSize)
           thickness: Style.space(Theme.metrics.largeRingThickness)
           readonly property var c: root.comp
-          segments: root.compositionSegments
+          fraction: c && c.usedPct !== null && c.usedPct !== undefined
+                    ? Model.clamp(c.usedPct / 100, 0, 1) : 0
+          color: Theme.series.memApps
           trackColor: root.memTrack
           centerText: c ? Model.formatPct(c.usedPct) : "--"
-          subText: "RAM"
+          subText: "used"
           foreground: root.panel ? root.panel.barForeground : "#cacccc"
           fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
         }
@@ -250,6 +240,22 @@ Item {
         y: memoryOverview.legendBeside
            ? Math.max(0, (memoryOverview.height - implicitHeight) / 2)
            : memoryRings.height + Style.space(8)
+
+        Components.CompositionBar {
+          width: parent.width
+          segments: root.compositionSegments
+          trackColor: root.memTrack
+        }
+
+        Text {
+          textFormat: Text.PlainText
+          text: "Cache can be reclaimed. Used cannot."
+          color: root.panel ? Qt.darker(root.panel.barForeground, 1.5) : "#cacccc"
+          font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.caption
+          width: parent.width
+          wrapMode: Text.WordWrap
+        }
 
         Repeater {
           model: [
@@ -300,16 +306,6 @@ Item {
 
     PanelSeparator {
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
-    }
-
-    Components.StatRow {
-      width: parent.width
-      label: "Used"
-      value: root.comp
-             ? Model.formatKiB(root.comp.usedK) + " of " + Model.formatKiB(root.comp.totalK)
-             : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
     Components.StatRow {

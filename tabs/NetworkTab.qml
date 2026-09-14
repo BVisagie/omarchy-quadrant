@@ -228,6 +228,27 @@ Item {
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
+    Text {
+      textFormat: Text.PlainText
+      visible: {
+        if (!root.ifaceRates) return false
+        if (root.ifaceRates.rxBps + root.ifaceRates.txBps < 64) return false
+        var rows = root.rows || []
+        var i, live = 0, other = 0
+        for (i = 0; i < rows.length; i++) {
+          if (rows[i].pid === 0) other += Number(rows[i].sortKey) || 0
+          else if ((Number(rows[i].sortKey) || 0) > 1) live++
+        }
+        return live === 0 && other < 64
+      }
+      text: "Rates include UDP and other users; per-process TCP is empty this interval."
+      color: root.panel ? Qt.darker(root.panel.barForeground, 1.5) : "#cacccc"
+      font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      font.pixelSize: Style.font.caption
+      width: parent.width
+      wrapMode: Text.WordWrap
+    }
+
     // The interface choice is documented where the user sees the numbers.
     Text {
       textFormat: Text.PlainText

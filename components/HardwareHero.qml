@@ -50,6 +50,8 @@ Item {
         width: detailBadge.visible
                ? Math.max(0, parent.width - detailBadge.width - parent.spacing)
                : parent.width
+        wrapMode: Text.Wrap
+        maximumLineCount: 2
         elide: Text.ElideRight
         anchors.verticalCenter: parent.verticalCenter
       }

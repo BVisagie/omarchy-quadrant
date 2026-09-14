@@ -82,6 +82,89 @@ test("cpuDelta computes bucketed percentages", () => {
   assert.equal(Math.round(d.iowait), Math.round(100 * 10 / 820));
   assert.equal(Math.round(d.steal), Math.round(100 * 10 / 820));
   assert.equal(Math.round(d.busy), Math.round(100 * 100 / 820));
+  assert.equal(Math.round(d.nonIdle), Math.round(100 * 120 / 820));
+});
+
+test("cpuBarTooltip mentions iowait when it is material", () => {
+  const d = Model.cpuDelta(
+    { user: 0, nice: 0, system: 0, idle: 0, iowait: 0, irq: 0, softirq: 0, steal: 0 },
+    { user: 10, nice: 0, system: 0, idle: 10, iowait: 80, irq: 0, softirq: 0, steal: 0 }
+  );
+  assert.ok(d);
+  assert.equal(Math.round(d.busy), 10);
+  assert.equal(Math.round(d.nonIdle), 90);
+  assert.match(Model.cpuBarTooltip(d), /iowait/);
+  assert.equal(Model.cpuBarTooltip(null), "CPU --");
+});
+
+test("cpuCoreDeltas maps per-logical non-idle percent", () => {
+  const prev = [
+    { user: 0, nice: 0, system: 0, idle: 0, iowait: 0, irq: 0, softirq: 0, steal: 0 },
+    { user: 0, nice: 0, system: 0, idle: 0, iowait: 0, irq: 0, softirq: 0, steal: 0 }
+  ];
+  const curr = [
+    { user: 50, nice: 0, system: 0, idle: 50, iowait: 0, irq: 0, softirq: 0, steal: 0 },
+    { user: 0, nice: 0, system: 0, idle: 100, iowait: 0, irq: 0, softirq: 0, steal: 0 }
+  ];
+  const rows = Model.cpuCoreDeltas(prev, curr);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].id, 0);
+  assert.equal(Math.round(rows[0].busy), 50);
+  assert.equal(Math.round(rows[1].busy), 0);
+});
+
+test("classifyCpuTopology keeps Intel hybrid labels and counts physical cores", () => {
+  const topo = [
+    { id: 0, core: 0, cls: "performance", maxKhz: 5100000, cap: 0, l3: "0-19" },
+    { id: 1, core: 0, cls: "performance", maxKhz: 5100000, cap: 0, l3: "0-19" },
+    { id: 8, core: 16, cls: "performance", maxKhz: 5100000, cap: 0, l3: "0-19" },
+    { id: 16, core: 36, cls: "efficiency", maxKhz: 3800000, cap: 0, l3: "0-19" },
+    { id: 17, core: 37, cls: "lowpower", maxKhz: 2200000, cap: 0, l3: "16-19" }
+  ];
+  const info = Model.parseSystemCpu({
+    modelName: "Intel(R) Core(TM) Ultra 9 185H",
+    vendorId: "GenuineIntel",
+    physCores: 99,
+    threads: 3,
+    topo: topo
+  });
+  assert.equal(info.physCores, 4);
+  assert.equal(info.threads, 5);
+  assert.equal(info.classes.performance, 2);
+  assert.equal(info.classes.efficiency, 1);
+  assert.equal(info.classes.lowpower, 1);
+  assert.equal(Model.formatCpuClassMix(info.classes), "2P · 1E · 1LP");
+});
+
+test("classifyCpuTopology splits unlabeled chips by max frequency", () => {
+  const topo = [
+    { id: 0, core: 0, cls: "", maxKhz: 5500000, cap: 0 },
+    { id: 1, core: 1, cls: "", maxKhz: 5500000, cap: 0 },
+    { id: 2, core: 2, cls: "", maxKhz: 3300000, cap: 0 },
+    { id: 3, core: 3, cls: "", maxKhz: 3300000, cap: 0 }
+  ];
+  const classified = Model.classifyCpuTopology(topo);
+  assert.equal(classified[0].cls, "performance");
+  assert.equal(classified[2].cls, "efficiency");
+  const layout = Model.coreGridLayout(topo, { 0: 80, 1: 10, 2: 40, 3: 5 });
+  assert.equal(layout.mode, "hybrid");
+  assert.equal(layout.rows.length, 2);
+  assert.equal(layout.rows[0].kind, "performance");
+  assert.equal(layout.rows[0].cells.length, 2);
+});
+
+test("coreGridLayout collapses SMT siblings onto one cell", () => {
+  const topo = [
+    { id: 0, core: 0, cls: "performance", maxKhz: 5000000, cap: 0 },
+    { id: 1, core: 0, cls: "performance", maxKhz: 5000000, cap: 0 },
+    { id: 2, core: 1, cls: "performance", maxKhz: 5000000, cap: 0 },
+    { id: 3, core: 1, cls: "performance", maxKhz: 5000000, cap: 0 }
+  ];
+  const layout = Model.coreGridLayout(topo, { 0: 10, 1: 70, 2: 5, 3: 5 });
+  assert.equal(layout.mode, "uniform");
+  assert.equal(layout.rows[0].cells.length, 2);
+  assert.equal(layout.rows[0].cells[0].usage, 70);
+  assert.deepEqual(layout.rows[0].cells[0].logicals, [0, 1]);
 });
 
 test("cpuDelta returns null when counters do not advance", () => {
@@ -196,6 +279,18 @@ test("parseDf keeps real filesystems and drops virtual ones", () => {
   assert.equal(Model.parseDf("").length, 0);
 });
 
+test("collapseMounts keeps the shortest path of a bind-mount set", () => {
+  const mounts = [
+    { source: "/dev/nvme0n1p2", fstype: "ext4", size: 100, used: 40, avail: 60, pct: 40, target: "/var/log" },
+    { source: "/dev/nvme0n1p2", fstype: "ext4", size: 100, used: 40, avail: 60, pct: 40, target: "/" },
+    { source: "/dev/nvme0n1p2", fstype: "ext4", size: 100, used: 40, avail: 60, pct: 40, target: "/home" },
+    { source: "/dev/nvme0n1p1", fstype: "vfat", size: 2, used: 1, avail: 1, pct: 8, target: "/boot" }
+  ];
+  const collapsed = Model.collapseMounts(mounts);
+  const targets = collapsed.map((m) => m.target).sort();
+  assert.deepEqual(targets, ["/", "/boot"]);
+});
+
 test("parseDiskInfo validates disks and parses the df payload", () => {
   const info = Model.parseDiskInfo(JSON.parse(fixture("disk-info-basic.json")));
   assert.ok(info);
@@ -274,7 +369,7 @@ test("parseDiskInfo folds mapper disks onto the backing NVMe", () => {
   assert.equal(info.backing["dm-0"], "nvme0n1");
   assert.equal(info.backing.cryptroot, "nvme0n1");
   const targets = info.mounts.map((m) => m.target);
-  assert.deepEqual(targets, ["/", "/boot", "/home"]);
+  assert.deepEqual(targets, ["/", "/boot"]);
 });
 
 test("pickDisk remaps mapper pins and quoted names through backing", () => {
@@ -382,6 +477,33 @@ test("parsePs honors the row cap", () => {
   assert.equal(Model.parsePs(fixture("ps-cpu.txt"), 2).length, 2);
   assert.equal(Model.parsePs("", 5).length, 0);
   assert.equal(Model.parsePs(null, 5).length, 0);
+});
+
+test("displayName maps wrappers and kernel threads", () => {
+  assert.equal(Model.displayName("electron", "brave", "/usr/lib/brave-bin/brave --type=gpu"), "Brave");
+  assert.equal(Model.displayName("electron", "codium", "/usr/share/codium/codium"), "Codium");
+  assert.equal(Model.displayName("chrome", "chrome", "/opt/google/chrome/chrome --type=renderer"), "Chrome");
+  assert.equal(Model.displayName("electron", "electron", "/usr/lib/electron/electron"), "electron");
+  assert.equal(Model.displayName("kworker/3:5-events", "", ""), "kworker events");
+  assert.equal(Model.displayName("kworker/u88:1-kec", "", ""), "kworker");
+  assert.equal(Model.displayName("kworker/0:1-btrfs-endio", "", ""), "kworker btrfs");
+  assert.equal(Model.displayName("kswapd0", "", ""), "kswapd");
+  assert.equal(Model.displayName("quickshell", "quickshell", ""), "quickshell");
+  assert.equal(Model.displayName("", "", ""), "");
+});
+
+test("nameAndCollapse sums same-app rows and keeps the lowest pid", () => {
+  const rows = Model.parseProcRows(JSON.stringify([
+    { pid: 200, value: 11.1, comm: "electron", exe: "brave", cmd: "/usr/lib/brave/brave" },
+    { pid: 100, value: 7.4, comm: "electron", exe: "brave", cmd: "/usr/lib/brave/brave --type=renderer" },
+    { pid: 50, value: 3.0, comm: "quickshell", exe: "quickshell", cmd: "" }
+  ]));
+  const collapsed = Model.nameAndCollapse(rows, 5);
+  assert.equal(collapsed.length, 2);
+  assert.equal(collapsed[0].comm, "Brave");
+  assert.equal(Math.round(collapsed[0].value * 10) / 10, 18.5);
+  assert.equal(collapsed[0].pid, 100);
+  assert.equal(collapsed[1].comm, "quickshell");
 });
 
 // -------------------------------------------------------------------- ss
@@ -593,6 +715,56 @@ test("normalizeAmdGpu tolerates missing files", () => {
   assert.deepEqual(g.engines, []);
 });
 
+test("drmBusyPercent prefers render/gfx/compute engine time", () => {
+  const prev = Model.parseDrmSnapshot({
+    ok: true, tsNs: 1e9, slot: "0000:00:02.0",
+    engines: [
+      { client: "1", name: "render", ns: 0 },
+      { client: "1", name: "video", ns: 0 }
+    ],
+    rc6: [], memDedicated: 0, memShared: 0
+  });
+  const curr = Model.parseDrmSnapshot({
+    ok: true, tsNs: 2e9, slot: "0000:00:02.0",
+    engines: [
+      { client: "1", name: "render", ns: 4e8 },
+      { client: "1", name: "video", ns: 9e8 }
+    ],
+    rc6: [], memDedicated: 0, memShared: 1
+  });
+  // 0.4s of render in a 1s window = 40%, video ignored
+  assert.equal(Math.round(Model.drmBusyPercent(prev, curr)), 40);
+  assert.equal(Model.drmMemoryKind(curr), "shared");
+});
+
+test("drmBusyPercent falls back to RC6 when engines are missing", () => {
+  const prev = Model.parseDrmSnapshot({
+    ok: true, tsNs: 1e9, engines: [],
+    rc6: [{ id: "gt0", ms: 0 }], memDedicated: 0, memShared: 0
+  });
+  const curr = Model.parseDrmSnapshot({
+    ok: true, tsNs: 2e9, engines: [],
+    rc6: [{ id: "gt0", ms: 250 }], memDedicated: 0, memShared: 0
+  });
+  // 250ms idle in 1000ms → 75% busy
+  assert.equal(Math.round(Model.drmBusyPercent(prev, curr)), 75);
+  assert.equal(Model.drmBusyPercent(prev, null), null);
+});
+
+test("mergeGpuLive overlays DRM busy without clobbering AMD sysfs busy", () => {
+  const amd = Model.mergeGpuLive({ kind: "amd", busy: 12, vramTotal: 8 }, 40, {
+    memDedicated: 1, memShared: 2
+  });
+  assert.equal(amd.busy, 12);
+  assert.equal(amd.busySource, "sysfs");
+  const intel = Model.mergeGpuLive({ kind: "intel", busy: null, freqEstimate: 50 }, 22, {
+    memDedicated: 0, memShared: 4096
+  });
+  assert.equal(intel.busy, 22);
+  assert.equal(intel.busySource, "drm");
+  assert.equal(intel.memKind, "shared");
+});
+
 test("normalizeIntelGpu reports a labeled frequency estimate, never busy", () => {
   const g = Model.normalizeIntelGpu(Model.parseKeyValues(fixture("intel-sysfs.txt")));
   assert.equal(g.busy, null);
@@ -797,9 +969,9 @@ test("normalizeGpuList keeps slot and pci identity", () => {
 
 test("formatRate and formatBytes", () => {
   assert.equal(Model.formatRate(512), "512 B/s");
-  assert.equal(Model.formatRate(1126), "1.1 KB/s");
-  assert.equal(Model.formatRate(3686), "3.6 KB/s");
-  assert.equal(Model.formatRate(5 * 1024 * 1024), "5 MB/s");
+  assert.equal(Model.formatRate(1126), "1.1 KiB/s");
+  assert.equal(Model.formatRate(3686), "3.6 KiB/s");
+  assert.equal(Model.formatRate(5 * 1024 * 1024), "5 MiB/s");
   assert.equal(Model.formatRate(null), "--");
   assert.equal(Model.formatBytes(2048), "2 KiB");
   assert.equal(Model.formatKiB(1024), "1 MiB");
@@ -820,9 +992,61 @@ test("formatPct, formatTemp, formatUptime", () => {
 test("formatMhz, formatWatts, formatLoad", () => {
   assert.equal(Model.formatMhz(1800), "1800 MHz");
   assert.equal(Model.formatMhz(null), "--");
+  assert.equal(Model.formatGpuClock(1800), "1800 MHz");
+  assert.equal(Model.formatGpuClock(0), "IDLE");
+  assert.equal(Model.formatGpuClock(null), "--");
   assert.equal(Model.formatWatts(85), "85 W");
   assert.equal(Model.formatWatts(8.24), "8.2 W");
   assert.equal(Model.formatLoad(0.5), "0.50");
+  assert.equal(Model.nvidiaMiBToBytes(1024), 1024 * 1024 * 1024);
+  assert.equal(Model.nvidiaMiBToBytes(null), null);
+});
+
+test("cleanCpuName strips trademarks and clock suffixes", () => {
+  assert.equal(Model.cleanCpuName("Intel(R) Core(TM) Ultra 9 185H"), "Intel Core Ultra 9 185H");
+  assert.equal(Model.cleanCpuName("AMD Ryzen 9 7950X 16-Core Processor"), "AMD Ryzen 9 7950X");
+  assert.equal(Model.cleanCpuName("Intel(R) Xeon(R) Processor"), "Intel Xeon");
+  assert.equal(Model.cleanCpuName("AMD Ryzen 7 8845HS w/ Radeon 780M Graphics"), "AMD Ryzen 7 8845HS w/ Radeon 780M Graphics");
+  assert.equal(Model.cleanCpuName(""), "");
+});
+
+test("cleanGpuName prefers the marketing name inside brackets", () => {
+  assert.equal(Model.cleanGpuName("Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M]"), "Radeon RX 7900 XT");
+  assert.equal(Model.cleanGpuName("Navi 31 [Radeon RX 7900 XTX]"), "Radeon RX 7900 XTX");
+  assert.equal(Model.cleanGpuName("AD102 [GeForce RTX 4090]"), "GeForce RTX 4090");
+  assert.equal(Model.cleanGpuName("Raptor Lake-P [Iris Xe Graphics]"), "Iris Xe Graphics");
+  assert.equal(Model.cleanGpuName("Meteor Lake-P [Intel Arc Graphics]"), "Intel Arc Graphics");
+  assert.equal(Model.cleanGpuName("NVIDIA GeForce RTX 4070"), "NVIDIA GeForce RTX 4070");
+  assert.equal(Model.cleanGpuName("Intel Corporation Ice Lake-LP GT2 [Iris Plus Graphics G1]"), "Iris Plus Graphics G1");
+  assert.equal(Model.cleanGpuName(""), "");
+});
+
+test("parseUdevRam reads configured DIMM type and speed, skipping empty slots", () => {
+  const ram = Model.parseUdevRam(fixture("udev-dmi.txt"));
+  assert.equal(ram.type, "DDR4");
+  assert.equal(ram.speedMTs, 3200);
+  assert.equal(ram.maker, "Kingston");
+  assert.equal(ram.kit, "2\u00d716 GiB");
+  assert.equal(ram.modules.length, 2);
+  assert.equal(ram.label, "Kingston 2\u00d716 GiB \u00b7 DDR4 3200 MT/s");
+  assert.equal(Model.parseUdevRam("").label, "");
+  assert.equal(Model.formatRamLabel("LPDDR5", 9600), "LPDDR5 9600 MT/s");
+  assert.equal(Model.formatRamKit([
+    { bytes: 8 * 1024 * 1024 * 1024 },
+    { bytes: 16 * 1024 * 1024 * 1024 }
+  ]), "1\u00d716 GiB + 1\u00d78 GiB");
+});
+
+test("hostLine joins DMI without repeating the vendor", () => {
+  assert.equal(Model.hostLine({ sysVendor: "Framework", productName: "Laptop 16 (AMD Ryzen 7040 Series)" }),
+    "Framework Laptop 16 (AMD Ryzen 7040 Series)");
+  assert.equal(Model.hostLine({ sysVendor: "Framework", productName: "Framework Laptop 13" }),
+    "Framework Laptop 13");
+  assert.equal(Model.hostLine({ sysVendor: "Dell Inc.", productName: "" }), "Dell Inc.");
+  assert.equal(Model.hostLine({ sysVendor: "ASUS", productName: "System Product Name" }), "ASUS");
+  assert.equal(Model.hostLine({ sysVendor: "To Be Filled By O.E.M.", productName: "To Be Filled By O.E.M." }), "");
+  assert.equal(Model.hostLine({ sysVendor: "", productName: "" }), "");
+  assert.equal(Model.hostLine(null), "");
 });
 
 test("pushCapped bounds history", () => {

@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""One-shot DRM fdinfo + RC6 snapshot for Quadrant.
+
+Prints a single JSON object. Scripts ship counters; Model.js computes
+busy percent from consecutive snapshots. Optional --slot filters to one
+PCI device (0000:00:02.0). Failures are ok:false, never a fake 0.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+
+
+PREFERRED = ("render", "gfx", "compute")
+
+
+def proc_root() -> str:
+    return os.environ.get("QUADRANT_PROC_PATH", "/proc")
+
+
+def sys_root() -> str:
+    return os.environ.get("QUADRANT_SYS_PATH", "/sys")
+
+
+def parse_size(value: str) -> int | None:
+    text = value.strip().lower().replace(",", "")
+    if not text:
+        return None
+    parts = text.split()
+    try:
+        n = float(parts[0])
+    except ValueError:
+        digits = "".join(c for c in text if c.isdigit())
+        return int(digits) if digits else None
+    unit = parts[1] if len(parts) > 1 else ""
+    mul = 1
+    if unit in ("kib", "ki", "k"):
+        mul = 1024
+    elif unit in ("mib", "mi", "m"):
+        mul = 1024 * 1024
+    elif unit in ("gib", "gi", "g"):
+        mul = 1024 * 1024 * 1024
+    elif unit in ("b", "bytes", ""):
+        mul = 1
+    return int(n * mul)
+
+
+def parse_fdinfo(text: str) -> dict | None:
+    slot = ""
+    client = ""
+    engines: list[dict] = []
+    dedicated = 0
+    shared = 0
+    saw_drm = False
+    for raw in text.splitlines():
+        if ":" not in raw:
+            continue
+        key, val = raw.split(":", 1)
+        key = key.strip()
+        val = val.strip()
+        if key == "drm-pdev":
+            slot = val
+            saw_drm = True
+        elif key == "drm-client-id":
+            client = val
+            saw_drm = True
+        elif key.startswith("drm-engine-capacity-"):
+            continue
+        elif key.startswith("drm-engine-"):
+            name = key[len("drm-engine-") :]
+            digits = "".join(c for c in val if c.isdigit())
+            if name and digits:
+                engines.append({"name": name, "ns": int(digits), "cycles": None, "total": None, "capacity": 1})
+                saw_drm = True
+        elif key.startswith("drm-cycles-"):
+            name = key[len("drm-cycles-") :]
+            digits = "".join(c for c in val if c.isdigit())
+            if name and digits:
+                engines.append({"name": name, "ns": None, "cycles": int(digits), "total": None, "capacity": 1})
+                saw_drm = True
+        elif key.startswith("drm-total-cycles-"):
+            name = key[len("drm-total-cycles-") :]
+            digits = "".join(c for c in val if c.isdigit())
+            if name and digits:
+                for eng in engines:
+                    if eng["name"] == name and eng["cycles"] is not None:
+                        eng["total"] = int(digits)
+        elif key.startswith("drm-engine-capacity-"):
+            pass
+        elif key in ("drm-resident-vram", "drm-memory-vram", "drm-resident-local"):
+            n = parse_size(val)
+            if n:
+                dedicated += n
+                saw_drm = True
+        elif key in ("drm-resident-gtt", "drm-memory-gtt", "drm-resident-system"):
+            n = parse_size(val)
+            if n:
+                shared += n
+                saw_drm = True
+    if not saw_drm:
+        return None
+    return {
+        "slot": slot,
+        "client": client,
+        "engines": engines,
+        "dedicated": dedicated,
+        "shared": shared,
+    }
+
+
+def snap_fdinfo(want_slot: str) -> dict:
+    engines: list[dict] = []
+    clients: set[str] = set()
+    dedicated = 0
+    shared = 0
+    proc = proc_root()
+    try:
+        pids = os.listdir(proc)
+    except OSError:
+        return {"engines": [], "dedicated": 0, "shared": 0}
+    for pid in pids:
+        if not pid.isdigit():
+            continue
+        fd_dir = os.path.join(proc, pid, "fd")
+        info_dir = os.path.join(proc, pid, "fdinfo")
+        try:
+            fds = os.listdir(fd_dir)
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                tgt = os.readlink(os.path.join(fd_dir, fd))
+            except OSError:
+                continue
+            if "/dri/" not in tgt and not tgt.startswith("/dev/dri"):
+                continue
+            try:
+                with open(os.path.join(info_dir, fd), "r", errors="ignore") as fh:
+                    parsed = parse_fdinfo(fh.read())
+            except OSError:
+                continue
+            if not parsed:
+                continue
+            slot = parsed["slot"]
+            if want_slot and slot and slot != want_slot:
+                continue
+            key = "%s:%s:%s" % (pid, parsed["client"] or fd, slot)
+            if key in clients:
+                continue
+            clients.add(key)
+            dedicated += parsed["dedicated"]
+            shared += parsed["shared"]
+            for eng in parsed["engines"]:
+                row = dict(eng)
+                row["client"] = key
+                engines.append(row)
+            if len(engines) >= 256:
+                return {"engines": engines, "dedicated": dedicated, "shared": shared}
+    return {"engines": engines, "dedicated": dedicated, "shared": shared}
+
+
+def snap_rc6() -> list[dict]:
+    out: list[dict] = []
+    sysfs = sys_root()
+    roots = [
+        os.path.join(sysfs, "class", "drm"),
+    ]
+    seen: set[str] = set()
+    for root in roots:
+        try:
+            cards = os.listdir(root)
+        except OSError:
+            continue
+        for card in cards:
+            if not card.startswith("card") or "-" in card:
+                continue
+            for rel in (
+                os.path.join(card, "gt", "gt0", "rc6_residency_ms"),
+                os.path.join(card, "gt", "gt1", "rc6_residency_ms"),
+                os.path.join(card, "gt", "rc6_residency_ms"),
+                os.path.join(card, "device", "drm", card, "gt", "gt0", "rc6_residency_ms"),
+            ):
+                path = os.path.join(root, rel)
+                if path in seen or not os.path.isfile(path):
+                    continue
+                enable = path.replace("rc6_residency_ms", "rc6_enable")
+                try:
+                    if os.path.isfile(enable):
+                        if int(open(enable, "r", encoding="utf-8").read().strip() or "1") == 0:
+                            continue
+                    ms = int(open(path, "r", encoding="utf-8").read().strip())
+                except (OSError, ValueError):
+                    continue
+                seen.add(path)
+                out.append({"id": path, "ms": ms})
+    return out
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--slot", default="")
+    args, _ = parser.parse_known_args()
+    slot = args.slot.strip()
+    if slot and not all(c.isalnum() or c in ":." for c in slot):
+        json.dump({"ok": False, "error": "bad slot"}, sys.stdout, separators=(",", ":"))
+        print()
+        return 1
+    snap = snap_fdinfo(slot)
+    payload = {
+        "ok": True,
+        "tsNs": time.monotonic_ns(),
+        "slot": slot,
+        "engines": snap["engines"][:256],
+        "rc6": snap_rc6(),
+        "memDedicated": snap["dedicated"],
+        "memShared": snap["shared"],
+    }
+    json.dump(payload, sys.stdout, separators=(",", ":"))
+    print()
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:  # noqa: BLE001 — helper must never crash the widget
+        json.dump({"ok": False, "error": str(exc)[:120]}, sys.stdout, separators=(",", ":"))
+        print()
+        raise SystemExit(1)

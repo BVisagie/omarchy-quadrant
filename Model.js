@@ -169,7 +169,8 @@ function visibleBarCells(effectiveList, discreteGpuAvailable, diskAvailable) {
 //   "t": 52.0 | null,                             // CPU package temp, deg C
 //   "load": [l1, l5, l15],
 //   "up": 12345.6, "cores": 16,
-//   "cf": 4200 | null                             // CPU scaling_cur_freq, MHz
+//   "cf": 4200 | null,                            // mean scaling_cur_freq, MHz
+//   "cc": [ [user, nice, system, idle, iowait, irq, softirq, steal], ... ]
 // }
 
 function parseCpuArray(value) {
@@ -346,6 +347,7 @@ function parseStreamLine(line) {
     uptimeS: nonNeg(data.up),
     cores: Math.max(1, Math.round(nonNeg(data.cores) || 1)),
     cpuFreqMhz: num(data.cf, null),
+    cpuCores: parseCpuCoreArray(data.cc),
     disk: parseStreamDisk(data.disk)
   }
 }
@@ -371,8 +373,47 @@ function cpuDelta(prev, curr) {
   if (total <= 0) return null
   var out = {}
   for (var j in d) out[j] = 100 * d[j] / total
+  // busy = compute time (user+system). nonIdle is the bar glance:
+  // anything that is not idle, including iowait and steal.
   out.busy = out.user + out.system
+  out.nonIdle = out.user + out.system + out.iowait + out.steal
   return out
+}
+
+function parseCpuCoreArray(value) {
+  if (!Array.isArray(value)) return []
+  var out = []
+  for (var i = 0; i < value.length && out.length < 128; i++) {
+    var c = parseCpuArray(value[i])
+    if (!c) continue
+    out.push(c)
+  }
+  return out
+}
+
+function cpuCoreDeltas(prevCores, currCores) {
+  var prev = Array.isArray(prevCores) ? prevCores : []
+  var curr = Array.isArray(currCores) ? currCores : []
+  var out = []
+  var n = curr.length < prev.length ? curr.length : prev.length
+  for (var i = 0; i < n; i++) {
+    var d = cpuDelta(prev[i], curr[i])
+    out.push({
+      id: i,
+      busy: d ? d.nonIdle : 0
+    })
+  }
+  return out
+}
+
+function cpuBarTooltip(d) {
+  if (!d) return "CPU --"
+  var text = "CPU " + formatPct(d.nonIdle)
+  var bits = []
+  if (d.iowait >= 1) bits.push(formatPct(d.iowait) + " iowait")
+  if (d.steal >= 1) bits.push(formatPct(d.steal) + " steal")
+  if (bits.length) text += " (" + bits.join(" · ") + ")"
+  return text
 }
 
 // Per-interface byte rates from cumulative counters. Interfaces are joined by
@@ -569,6 +610,40 @@ function parseDf(text) {
       pct: clamp(pct, 0, 1000),
       target: clipStr(m[7], 128)
     })
+  }
+  return collapseMounts(out)
+}
+
+// Bind mounts and subvolumes of the same filesystem share size+used.
+// Keep the shortest path ("/" wins) so the Drives tab does not list the
+// same fill four times.
+function collapseMounts(list) {
+  if (!Array.isArray(list) || list.length < 2) return Array.isArray(list) ? list.slice() : []
+  var groups = {}
+  var order = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var m = list[i]
+    if (!m) continue
+    var key = String(m.size) + "\t" + String(m.used) + "\t" + String(m.fstype || "")
+    if (!groups[key]) {
+      groups[key] = []
+      order.push(key)
+    }
+    groups[key].push(m)
+  }
+  var out = []
+  for (i = 0; i < order.length; i++) {
+    var rows = groups[order[i]]
+    var best = rows[0]
+    var j
+    for (j = 1; j < rows.length; j++) {
+      var t = String(rows[j].target || "")
+      var b = String(best.target || "")
+      if (t === "/") best = rows[j]
+      else if (b !== "/" && t.length > 0 && t.length < b.length) best = rows[j]
+    }
+    out.push(best)
   }
   return out
 }
@@ -795,6 +870,172 @@ function parsePs(text, maxRows) {
     if (comm.length > 128) comm = comm.slice(0, 128)
     out.push({ pid: pid, value: value, comm: comm })
   }
+  return out
+}
+
+// Friendly names for the top-N roster. Wrapper binaries (electron, chrome)
+// take a label from exe basename or cmdline tokens against a fixed map —
+// never a free-form substring of argv. Kernel threads get a short class.
+var WRAPPER_COMMS = {
+  electron: 1, chrome: 1, chromium: 1, "chromium-browser": 1,
+  firefox: 1, "firefox-bin": 1
+}
+
+var APP_LABELS = [
+  ["brave-browser", "Brave"],
+  ["brave-bin", "Brave"],
+  ["brave", "Brave"],
+  ["google-chrome", "Chrome"],
+  ["microsoft-edge", "Edge"],
+  ["msedge", "Edge"],
+  ["vivaldi-bin", "Vivaldi"],
+  ["vivaldi", "Vivaldi"],
+  ["signal-desktop", "Signal"],
+  ["telegram-desktop", "Telegram"],
+  ["code-oss", "Code"],
+  ["vscodium", "Codium"],
+  ["codium", "Codium"],
+  ["obsidian", "Obsidian"],
+  ["1password", "1Password"],
+  ["discord", "Discord"],
+  ["spotify", "Spotify"],
+  ["slack", "Slack"],
+  ["steam", "Steam"],
+  ["cursor", "Cursor"],
+  ["ghostty", "Ghostty"],
+  ["chromium", "Chromium"],
+  ["chrome", "Chrome"],
+  ["firefox", "Firefox"],
+  ["code", "Code"]
+]
+
+var KWORKER_TASK = {
+  events: "kworker events",
+  events_unbound: "kworker events",
+  events_power_efficient: "kworker events",
+  "mm_percpu_wq": "kworker mm",
+  netns: "kworker netns",
+  kcryptd: "kcryptd"
+}
+
+function basenameToken(path) {
+  var s = collapseSpaces(path)
+  if (!s) return ""
+  var slash = s.lastIndexOf("/")
+  if (slash >= 0) s = s.slice(slash + 1)
+  return s.replace(/\s+/g, "")
+}
+
+function hintTokens(exe, cmd) {
+  var s = (basenameToken(exe) + " " + String(cmd || "")).toLowerCase()
+  return s.split(/[^a-z0-9._+-]+/)
+}
+
+function labelFromHints(exe, cmd) {
+  var tokens = hintTokens(exe, cmd)
+  var seen = {}
+  var t
+  for (t = 0; t < tokens.length; t++) {
+    if (tokens[t]) seen[tokens[t]] = true
+  }
+  var i
+  for (i = 0; i < APP_LABELS.length; i++) {
+    if (seen[APP_LABELS[i][0]]) return APP_LABELS[i][1]
+  }
+  return ""
+}
+
+function kworkerLabel(comm) {
+  var m = String(comm || "").match(/^kworker\/[^-\s]*-(.+)$/i)
+  if (!m) return "kworker"
+  var task = m[1].toLowerCase()
+  if (KWORKER_TASK[task]) return KWORKER_TASK[task]
+  if (task.indexOf("events") === 0) return "kworker events"
+  if (task.indexOf("btrfs") === 0) return "kworker btrfs"
+  if (task.indexOf("flush") === 0) return "kworker flush"
+  return "kworker"
+}
+
+function displayName(comm, exe, cmd) {
+  var raw = clipStr(collapseSpaces(comm), 64)
+  if (!raw) return ""
+  if (/^kworker\//i.test(raw)) return kworkerLabel(raw)
+  if (/^kswapd/i.test(raw)) return "kswapd"
+  if (/^ksoftirqd/i.test(raw)) return "ksoftirqd"
+  if (/^kcompactd/i.test(raw)) return "kcompactd"
+  if (/^khugepaged$/i.test(raw)) return "khugepaged"
+  if (/^migration\//i.test(raw)) return "migration"
+  if (/^watchdog\//i.test(raw)) return "watchdog"
+  var key = raw.toLowerCase()
+  if (WRAPPER_COMMS[key]) {
+    var hinted = labelFromHints(exe, cmd)
+    if (hinted) return hinted
+    var exeBase = basenameToken(exe)
+    if (exeBase && exeBase.toLowerCase() !== key) return clipStr(exeBase, 64)
+  }
+  var direct = labelFromHints(raw, "")
+  if (direct && !WRAPPER_COMMS[key]) {
+    // comm itself is a known app id
+    if (raw.toLowerCase() === direct.toLowerCase()) return direct
+  }
+  return raw
+}
+
+function parseProcRows(text, maxRows) {
+  var cap = (maxRows === undefined) ? 32 : Math.max(1, Math.round(num(maxRows, 32)))
+  if (typeof text === "string") {
+    var trimmed = text.replace(/^\s+/, "")
+    if (trimmed.charAt(0) === "[") {
+      var parsed = safeJson(trimmed)
+      var out = []
+      if (Array.isArray(parsed)) {
+        var i
+        for (i = 0; i < parsed.length && out.length < cap; i++) {
+          var e = parsed[i]
+          if (!e || typeof e !== "object") continue
+          var pid = num(e.pid, null)
+          var value = num(e.value, null)
+          if (pid === null || value === null) continue
+          out.push({
+            pid: Math.round(pid),
+            value: value,
+            comm: clipStr(e.comm, 128),
+            exe: clipStr(e.exe, 64),
+            cmd: clipStr(e.cmd, 160)
+          })
+        }
+      }
+      return out
+    }
+  }
+  return parsePs(text, cap)
+}
+
+function nameAndCollapse(rows, maxRows) {
+  var limit = Math.max(1, Math.round(num(maxRows, 5)))
+  var list = Array.isArray(rows) ? rows : []
+  var groups = {}
+  var order = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var r = list[i]
+    if (!r) continue
+    var name = displayName(r.comm, r.exe, r.cmd)
+    if (!name) continue
+    var key = name.toLowerCase()
+    if (!groups[key]) {
+      groups[key] = { pid: r.pid, comm: name, value: 0, n: 0 }
+      order.push(key)
+    }
+    var g = groups[key]
+    g.value += num(r.value, 0) || 0
+    g.n += 1
+    if (r.pid < g.pid) g.pid = r.pid
+  }
+  var out = []
+  for (i = 0; i < order.length; i++) out.push(groups[order[i]])
+  out.sort(function (a, b) { return b.value - a.value || a.pid - b.pid })
+  if (out.length > limit) out.length = limit
   return out
 }
 
@@ -1128,9 +1369,9 @@ function normalizeAmdGpu(kv) {
   }
 }
 
-// Intel exposes no busy percent without CAP_PERFMON, which we refuse to
-// require. The frequency ratio is an estimate and is labeled "freq" in the
-// UI, never "busy".
+// Intel sysfs still has no busy percent without CAP_PERFMON. Frequency
+// ratio is an estimate labeled "freq" until DRM fdinfo supplies a measured
+// busy overlay (mergeGpuLive).
 function normalizeIntelGpu(kv) {
   if (!kv || typeof kv !== "object") return null
   var cur = num(kv.gt_cur_freq_mhz, null)
@@ -1146,6 +1387,152 @@ function normalizeIntelGpu(kv) {
     freqMaxMhz: max,
     tempC: milliToWhole(kv.temp_package_mc)
   }
+}
+
+function drmEnginePreferred(name) {
+  var n = String(name || "").toLowerCase()
+  return n.indexOf("render") >= 0 || n === "gfx" || n.indexOf("compute") >= 0
+}
+
+function parseDrmSnapshot(data) {
+  if (!data || typeof data !== "object" || data.ok === false) return null
+  var tsNs = num(data.tsNs, null)
+  if (tsNs === null || tsNs < 0) return null
+  var engines = []
+  var list = Array.isArray(data.engines) ? data.engines : []
+  var i
+  for (i = 0; i < list.length && engines.length < 256; i++) {
+    var e = list[i]
+    if (!e || typeof e !== "object") continue
+    var name = clipStr(e.name, 32)
+    if (!name) continue
+    engines.push({
+      client: clipStr(e.client, 64),
+      name: name,
+      ns: num(e.ns, null),
+      cycles: num(e.cycles, null),
+      total: num(e.total, null),
+      capacity: num(e.capacity, 1) || 1
+    })
+  }
+  var rc6 = []
+  var rc = Array.isArray(data.rc6) ? data.rc6 : []
+  for (i = 0; i < rc.length && rc6.length < 8; i++) {
+    if (!rc[i] || typeof rc[i] !== "object") continue
+    var ms = num(rc[i].ms, null)
+    if (ms === null || ms < 0) continue
+    rc6.push({ id: clipStr(rc[i].id, 128), ms: ms })
+  }
+  return {
+    tsNs: tsNs,
+    slot: clipStr(data.slot, 32),
+    engines: engines,
+    rc6: rc6,
+    memDedicated: Math.max(0, num(data.memDedicated, 0) || 0),
+    memShared: Math.max(0, num(data.memShared, 0) || 0)
+  }
+}
+
+function drmBusyFromEngines(prev, curr, dtNs) {
+  var before = {}
+  var i
+  for (i = 0; i < prev.engines.length; i++) {
+    var p = prev.engines[i]
+    before[p.client + "\t" + p.name] = p
+  }
+  var totals = {}
+  var saw = false
+  for (i = 0; i < curr.engines.length; i++) {
+    var c = curr.engines[i]
+    saw = true
+    var prevE = before[c.client + "\t" + c.name]
+    var delta = 0
+    if (c.ns !== null) {
+      var prevNs = prevE && prevE.ns !== null ? prevE.ns : c.ns
+      delta = c.ns - prevNs
+      if (delta > 0) totals[c.name] = (totals[c.name] || 0) + delta
+    } else if (c.cycles !== null && c.total !== null && prevE && prevE.cycles !== null && prevE.total !== null) {
+      var dBusy = c.cycles - prevE.cycles
+      var dTotal = c.total - prevE.total
+      if (dBusy > 0 && dTotal > 0) {
+        var cap = c.capacity > 0 ? c.capacity : 1
+        totals[c.name] = (totals[c.name] || 0) + (dBusy / dTotal) * cap * dtNs
+      }
+    }
+  }
+  if (!saw) return null
+  var names = Object.keys(totals)
+  if (names.length === 0) return 0
+  var preferred = []
+  var all = []
+  for (i = 0; i < names.length; i++) {
+    all.push(totals[names[i]])
+    if (drmEnginePreferred(names[i])) preferred.push(totals[names[i]])
+  }
+  var chosen = preferred.length ? Math.max.apply(null, preferred) : Math.max.apply(null, all)
+  return clamp(100 * chosen / dtNs, 0, 100)
+}
+
+function drmBusyFromRc6(prev, curr, dtNs) {
+  var dtMs = dtNs / 1e6
+  if (!(dtMs > 0)) return null
+  var before = {}
+  var i
+  for (i = 0; i < prev.rc6.length; i++) before[prev.rc6[i].id] = prev.rc6[i].ms
+  var best = null
+  for (i = 0; i < curr.rc6.length; i++) {
+    var start = before[curr.rc6[i].id]
+    if (start === undefined) continue
+    var idle = (curr.rc6[i].ms - start) * 100 / dtMs
+    var busy = clamp(100 - idle, 0, 100)
+    best = best === null ? busy : Math.max(best, busy)
+  }
+  return best
+}
+
+function drmBusyPercent(prev, curr) {
+  if (!prev || !curr) return null
+  var dtNs = curr.tsNs - prev.tsNs
+  if (!(dtNs >= 4e8 && dtNs <= 1e10)) return null
+  var fromEngines = drmBusyFromEngines(prev, curr, dtNs)
+  if (fromEngines !== null) return fromEngines
+  return drmBusyFromRc6(prev, curr, dtNs)
+}
+
+function drmMemoryKind(snap) {
+  if (!snap) return "unknown"
+  if (snap.memDedicated > 0) return "vram"
+  if (snap.memShared > 0) return "shared"
+  return "unknown"
+}
+
+function mergeGpuLive(base, drmBusy, drmSnap) {
+  var out = {}
+  var k
+  if (base && typeof base === "object") {
+    for (k in base) {
+      if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k]
+    }
+  }
+  if (out.busy !== null && out.busy !== undefined) {
+    if (!out.busySource) out.busySource = "sysfs"
+  } else if (drmBusy !== null && drmBusy !== undefined) {
+    out.busy = drmBusy
+    out.busySource = "drm"
+  }
+  if (drmSnap) {
+    if (out.vramTotal) {
+      if (!out.memKind) out.memKind = "vram"
+    } else if (drmSnap.memDedicated > 0) {
+      out.vramUsed = drmSnap.memDedicated
+      out.memKind = "vram"
+    } else if (drmSnap.memShared > 0) {
+      out.vramUsed = drmSnap.memShared
+      out.memKind = "shared"
+    }
+    if (drmSnap.memShared > 0) out.sharedUsed = drmSnap.memShared
+  }
+  return out
 }
 
 function clipPciClass(value) {
@@ -1376,23 +1763,215 @@ function parseLspciMm(text) {
   return out
 }
 
+function parseCpuTopoEntry(e) {
+  if (!e || typeof e !== "object") return null
+  var id = num(e.id, null)
+  if (id === null || id < 0 || id > 4095) return null
+  var core = num(e.core, id)
+  if (core === null || core < 0) core = id
+  var cls = String(e.cls || "")
+  if (cls !== "performance" && cls !== "efficiency" && cls !== "lowpower") cls = ""
+  var maxKhz = num(e.maxKhz, 0)
+  if (maxKhz === null || maxKhz < 0) maxKhz = 0
+  var cap = num(e.cap, 0)
+  if (cap === null || cap < 0) cap = 0
+  var l3 = clipStr(e.l3, 64)
+  return {
+    id: Math.round(id),
+    core: Math.round(core),
+    cls: cls,
+    maxKhz: maxKhz,
+    cap: cap,
+    l3: l3
+  }
+}
+
+function parseCpuTopo(list) {
+  var out = []
+  if (!Array.isArray(list)) return out
+  for (var i = 0; i < list.length && out.length < 128; i++) {
+    var e = parseCpuTopoEntry(list[i])
+    if (e) out.push(e)
+  }
+  out.sort(function (a, b) { return a.id - b.id })
+  return out
+}
+
+function classifyUnlabeledCpus(topo) {
+  var unlabeled = []
+  var i
+  for (i = 0; i < topo.length; i++) {
+    if (!topo[i].cls) unlabeled.push(topo[i])
+  }
+  if (unlabeled.length === 0) return
+  var useCap = false
+  for (i = 0; i < unlabeled.length; i++) {
+    if (unlabeled[i].cap > 0) { useCap = true; break }
+  }
+  var keys = []
+  for (i = 0; i < unlabeled.length; i++) {
+    var key = useCap ? unlabeled[i].cap : unlabeled[i].maxKhz
+    keys.push(key)
+  }
+  keys.sort(function (a, b) { return a - b })
+  var unique = []
+  for (i = 0; i < keys.length; i++) {
+    if (i === 0 || keys[i] !== keys[i - 1]) unique.push(keys[i])
+  }
+  if (unique.length === 0) {
+    for (i = 0; i < unlabeled.length; i++) unlabeled[i].cls = "performance"
+    return
+  }
+  var groups = []
+  var current = [unique[0]]
+  for (i = 1; i < unique.length; i++) {
+    if (unique[i] > unique[i - 1] * 112 / 100) {
+      groups.push(current)
+      current = [unique[i]]
+    } else {
+      current.push(unique[i])
+    }
+  }
+  groups.push(current)
+  function groupIndex(key) {
+    var g
+    for (g = 0; g < groups.length; g++) {
+      var j
+      for (j = 0; j < groups[g].length; j++) {
+        if (groups[g][j] === key) return g
+      }
+    }
+    return groups.length - 1
+  }
+  var last = groups.length - 1
+  var three = groups.length >= 3
+  for (i = 0; i < unlabeled.length; i++) {
+    var k = useCap ? unlabeled[i].cap : unlabeled[i].maxKhz
+    var gi = groupIndex(k)
+    if (groups.length === 1 || gi === last) unlabeled[i].cls = "performance"
+    else if (three && gi === 0) unlabeled[i].cls = "lowpower"
+    else unlabeled[i].cls = "efficiency"
+  }
+}
+
+function classifyCpuTopology(topo) {
+  var values = parseCpuTopo(topo)
+  classifyUnlabeledCpus(values)
+  for (var i = 0; i < values.length; i++) {
+    if (!values[i].cls) values[i].cls = "performance"
+  }
+  return values
+}
+
+function cpuClassCounts(topo) {
+  var phys = {}
+  var i
+  for (i = 0; i < topo.length; i++) {
+    var key = String(topo[i].core) + ":" + topo[i].cls
+    if (!phys[key]) phys[key] = topo[i].cls
+  }
+  var counts = { performance: 0, efficiency: 0, lowpower: 0 }
+  for (var k in phys) {
+    if (!Object.prototype.hasOwnProperty.call(phys, k)) continue
+    counts[phys[k]]++
+  }
+  return counts
+}
+
+function formatCpuClassMix(counts) {
+  if (!counts) return ""
+  var bits = []
+  if (counts.performance) bits.push(counts.performance + "P")
+  if (counts.efficiency) bits.push(counts.efficiency + "E")
+  if (counts.lowpower) bits.push(counts.lowpower + "LP")
+  if (bits.length < 2) return ""
+  return bits.join(" · ")
+}
+
+function coreGridLayout(topo, usageById) {
+  var classified = classifyCpuTopology(topo)
+  var usage = usageById && typeof usageById === "object" ? usageById : {}
+  var byCore = {}
+  var coreOrder = []
+  var i
+  for (i = 0; i < classified.length; i++) {
+    var e = classified[i]
+    var key = String(e.core)
+    if (!byCore[key]) {
+      byCore[key] = { core: e.core, cls: e.cls, logicals: [], usage: 0 }
+      coreOrder.push(key)
+    }
+    byCore[key].logicals.push(e.id)
+    var u = num(usage[e.id], 0)
+    if (u > byCore[key].usage) byCore[key].usage = u
+    if (e.cls === "performance") byCore[key].cls = "performance"
+  }
+
+  var kinds = ["performance", "efficiency", "lowpower"]
+  var present = {}
+  for (i = 0; i < coreOrder.length; i++) present[byCore[coreOrder[i]].cls] = true
+  var kindCount = 0
+  for (i = 0; i < kinds.length; i++) if (present[kinds[i]]) kindCount++
+
+  function cellsOf(kind) {
+    var cells = []
+    for (var c = 0; c < coreOrder.length; c++) {
+      var cell = byCore[coreOrder[c]]
+      if (kind && cell.cls !== kind) continue
+      cells.push({
+        core: cell.core,
+        cls: cell.cls,
+        logicals: cell.logicals.slice(),
+        usage: cell.usage
+      })
+    }
+    return cells
+  }
+
+  if (kindCount <= 1) {
+    return { mode: "uniform", rows: [{ kind: "same", cells: cellsOf(null) }] }
+  }
+  var rows = []
+  for (i = 0; i < kinds.length; i++) {
+    var cells = cellsOf(kinds[i])
+    if (cells.length) rows.push({ kind: kinds[i], cells: cells })
+  }
+  return { mode: "hybrid", rows: rows }
+}
+
 function parseSystemCpu(c) {
   var empty = {
     modelName: "", vendorId: "", physCores: null, threads: null,
-    cacheKb: null, mhzNow: null, governor: "", maxMhz: null
+    cacheKb: null, mhzNow: null, governor: "", maxMhz: null,
+    topo: [], classes: { performance: 0, efficiency: 0, lowpower: 0 }
   }
   if (!c || typeof c !== "object") return empty
   var gov = clipStr(c.governor, 32)
   if (gov && !/^[A-Za-z0-9._+-]+$/.test(gov)) gov = ""
+  var topo = classifyCpuTopology(c.topo)
+  var physCores = (function () { var n = num(c.physCores, null); return n !== null && n > 0 ? Math.round(n) : null })()
+  var threads = (function () { var n = num(c.threads, null); return n !== null && n > 0 ? Math.round(n) : null })()
+  if (topo.length > 0) {
+    var seen = {}
+    var phys = 0
+    for (var i = 0; i < topo.length; i++) {
+      var ck = String(topo[i].core)
+      if (!seen[ck]) { seen[ck] = true; phys++ }
+    }
+    physCores = phys
+    threads = topo.length
+  }
   return {
     modelName: clipStr(c.modelName, 128),
     vendorId: clipStr(c.vendorId, 32),
-    physCores: (function () { var n = num(c.physCores, null); return n !== null && n > 0 ? Math.round(n) : null })(),
-    threads: (function () { var n = num(c.threads, null); return n !== null && n > 0 ? Math.round(n) : null })(),
+    physCores: physCores,
+    threads: threads,
     cacheKb: (function () { var n = num(c.cacheKb, null); return n !== null && n >= 0 ? n : null })(),
     mhzNow: (function () { var n = num(c.mhzNow, null); return n !== null && n >= 0 ? n : null })(),
     governor: gov,
-    maxMhz: (function () { var n = num(c.maxMhz, null); return n !== null && n >= 0 ? n : null })()
+    maxMhz: (function () { var n = num(c.maxMhz, null); return n !== null && n >= 0 ? n : null })(),
+    topo: topo,
+    classes: cpuClassCounts(topo)
   }
 }
 
@@ -1419,10 +1998,178 @@ function parseSystemGpus(list, lspciBySlot) {
   return out
 }
 
+var JUNK_RAM_TYPES = {
+  unknown: 1, other: 1, none: 1, no: 1, not: 1, empty: 1, uninstalled: 1,
+  "n/a": 1, n: 1, na: 1, ram: 1, dimm: 1, "<out of spec>": 1
+}
+
+var JUNK_RAM_MAKERS = {
+  unknown: 1, none: 1, "n/a": 1, n: 1, na: 1, "not specified": 1,
+  "to be filled by o.e.m.": 1, oem: 1, "oem manufacturer": 1,
+  manufacturer00: 1, manufacturer0: 1, defaultstring: 1, "default string": 1,
+  "no dimm": 1, empty: 1, null: 1
+}
+
+function ramTypeRanked(type) {
+  var t = String(type || "")
+  return /^(LP)?DDR|GDDR|HBM/i.test(t)
+}
+
+function cleanRamMaker(value) {
+  var t = collapseSpaces(value)
+  if (!t) return ""
+  if (JUNK_RAM_MAKERS[t.toLowerCase()]) return ""
+  if (/^manufacturer\d+$/i.test(t)) return ""
+  return clipStr(t, 48)
+}
+
+function dimmGiB(bytes) {
+  var n = num(bytes, 0)
+  if (!(n > 0)) return 0
+  var g = n / (1024 * 1024 * 1024)
+  var r = Math.round(g)
+  if (r > 0 && Math.abs(g - r) / r < 0.02) return r
+  return Math.round(g * 10) / 10
+}
+
+function formatRamKit(modules) {
+  var list = Array.isArray(modules) ? modules : []
+  if (list.length === 0) return ""
+  var groups = []
+  var order = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var g = dimmGiB(list[i].bytes)
+    if (!(g > 0)) continue
+    var key = String(g)
+    if (!groups[key]) {
+      groups[key] = 0
+      order.push(g)
+    }
+    groups[key]++
+  }
+  if (order.length === 0) return ""
+  order.sort(function (a, b) { return b - a })
+  var bits = []
+  for (i = 0; i < order.length; i++) {
+    var size = order[i]
+    var count = groups[String(size)]
+    var sizeText = (size % 1 === 0) ? String(size) : size.toFixed(1)
+    if (count === 1 && order.length === 1) bits.push(sizeText + " GiB")
+    else bits.push(count + "\u00d7" + sizeText + " GiB")
+  }
+  return bits.join(" + ")
+}
+
+function formatRamMaker(modules) {
+  var list = Array.isArray(modules) ? modules : []
+  var seen = {}
+  var names = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var m = cleanRamMaker(list[i].maker)
+    if (!m) continue
+    var key = m.toLowerCase()
+    if (seen[key]) continue
+    seen[key] = true
+    names.push(m)
+    if (names.length >= 2) break
+  }
+  if (names.length === 1) return names[0]
+  if (names.length === 2) return names[0] + " + " + names[1]
+  return ""
+}
+
+function parseUdevRam(text) {
+  var empty = { type: "", speedMTs: null, label: "", maker: "", kit: "", modules: [] }
+  if (typeof text !== "string" || text.length === 0) return empty
+  var devices = {}
+  var lines = text.split("\n")
+  var i
+  for (i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    if (line.indexOf("E:") === 0) line = line.slice(2)
+    var m = line.match(/^MEMORY_DEVICE_(\d+)_(.+?)=(.*)$/)
+    if (!m) continue
+    var id = m[1]
+    if (!devices[id]) devices[id] = {}
+    devices[id][m[2]] = m[3]
+  }
+  var types = []
+  var configured = []
+  var rated = []
+  var modules = []
+  for (var did in devices) {
+    if (!Object.prototype.hasOwnProperty.call(devices, did)) continue
+    var d = devices[did]
+    if (d.PRESENT === "0") continue
+    var size = num(d.SIZE, 0)
+    if (!(size > 0)) continue
+    var typ = collapseSpaces(d.TYPE)
+    if (typ && !JUNK_RAM_TYPES[typ.toLowerCase()]) types.push(typ)
+    var conf = num(d.CONFIGURED_SPEED_MTS, 0)
+    var gts = num(d.CONFIGURED_SPEED_GTS, 0)
+    if (conf > 0) configured.push(conf)
+    else if (gts > 0) configured.push(Math.round(gts * 1000))
+    var spd = num(d.SPEED_MTS, 0)
+    var sgts = num(d.SPEED_GTS, 0)
+    if (spd > 0) rated.push(spd)
+    else if (sgts > 0) rated.push(Math.round(sgts * 1000))
+    if (modules.length < 8) {
+      modules.push({
+        bytes: size,
+        maker: cleanRamMaker(d.MANUFACTURER),
+        part: clipStr(collapseSpaces(d.PART_NUMBER), 48)
+      })
+    }
+  }
+  var type = ""
+  for (i = 0; i < types.length; i++) {
+    if (ramTypeRanked(types[i])) { type = types[i]; break }
+  }
+  if (!type && types.length) type = types[0]
+  var speed = null
+  function minOf(list) {
+    if (!list.length) return null
+    var m = list[0]
+    for (var j = 1; j < list.length; j++) if (list[j] < m) m = list[j]
+    return m
+  }
+  speed = minOf(configured)
+  if (speed === null) speed = minOf(rated)
+  var maker = formatRamMaker(modules)
+  var kit = formatRamKit(modules)
+  var spec = formatRamLabel(type, speed)
+  var bits = []
+  if (maker && kit) bits.push(maker + " " + kit)
+  else if (kit) bits.push(kit)
+  else if (maker) bits.push(maker)
+  if (spec) bits.push(spec)
+  return {
+    type: type,
+    speedMTs: speed,
+    maker: maker,
+    kit: kit,
+    modules: modules,
+    label: bits.join(" · ")
+  }
+}
+
+function formatRamLabel(type, speedMTs) {
+  var t = collapseSpaces(type)
+  var n = num(speedMTs, null)
+  if (t && n !== null && n > 0) return t + " " + Math.round(n) + " MT/s"
+  if (t) return t
+  if (n !== null && n > 0) return Math.round(n) + " MT/s"
+  return ""
+}
+
 function parseSystemMem(mem) {
   var swaps = []
   var zram = []
-  if (!mem || typeof mem !== "object") return { swaps: swaps, zram: zram }
+  var ram = { type: "", speedMTs: null, label: "", maker: "", kit: "", modules: [] }
+  if (!mem || typeof mem !== "object") return { swaps: swaps, zram: zram, ram: ram }
+  ram = parseUdevRam(mem.udevPayload)
   var i
   if (Array.isArray(mem.swaps)) {
     for (i = 0; i < mem.swaps.length && swaps.length < 16; i++) {
@@ -1450,7 +2197,7 @@ function parseSystemMem(mem) {
       zram.push({ dev: dev, alg: alg, diskBytes: diskBytes })
     }
   }
-  return { swaps: swaps, zram: zram }
+  return { swaps: swaps, zram: zram, ram: ram }
 }
 
 function parseSystemHost(host) {
@@ -1495,6 +2242,66 @@ function gpuVendorLabel(vendor) {
   return vendor ? String(vendor) : "--"
 }
 
+function collapseSpaces(value) {
+  return String(value || "").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "")
+}
+
+// Display names for HardwareHero. Raw firmware / PCI-DB strings stay in
+// the parsed identity objects so tests can still see the unfiltered text.
+function cleanCpuName(raw) {
+  var name = collapseSpaces(raw)
+  if (!name) return ""
+  name = name.replace(/\(R\)|\(TM\)|\(tm\)|\(r\)/g, "")
+  name = name.replace(/\s*CPU\s*@\s*[\d.]+\s*GHz/i, "")
+  name = name.replace(/\s*\d+-Core Processor.*/i, "")
+  name = name.replace(/\s+Processor\s*$/i, "")
+  name = collapseSpaces(name.replace(/[ ,]+$/g, ""))
+  return name || collapseSpaces(raw)
+}
+
+function cleanGpuName(raw) {
+  var name = collapseSpaces(raw)
+  if (!name) return ""
+  name = name.replace(/\s*\([^)]*rev[^)]*\)/i, "")
+  name = name.replace(/\s*\((Ice Lake|Comet Lake|Tiger Lake|Alder Lake|Raptor Lake|Meteor Lake|Arrow Lake|Lunar Lake|Panther Lake|Coffee Lake|Haswell|Skylake|Kaby Lake|Whiskey Lake|Amber Lake)[^)]*\)/i, "")
+  name = name.replace(/^Advanced Micro Devices, Inc\.?\s*/i, "")
+  name = name.replace(/^(AMD\/ATI|ATI)\s*/i, "AMD ")
+  name = name.replace(/^Intel Corporation\s*/i, "Intel ")
+  name = name.replace(/^NVIDIA Corporation\s*/i, "NVIDIA ")
+  name = name.replace(/\s+Corporation\b/g, "")
+  name = collapseSpaces(name)
+  var branded = name.match(/^[^[\]]+\[([^[\]]+)\]\s*$/)
+  if (branded) {
+    var inside = collapseSpaces(branded[1].split("/")[0])
+    if (inside) name = inside
+  }
+  return name || collapseSpaces(raw)
+}
+
+// sys_vendor + product_name, without repeating the vendor when the
+// product already starts with it ("Framework Laptop 16").
+function junkDmi(value) {
+  var t = collapseSpaces(value).toLowerCase()
+  if (!t) return true
+  return t === "system product name" || t === "system manufacturer"
+    || t === "to be filled by o.e.m." || t === "to be filled by oem"
+    || t === "default string" || t === "not specified" || t === "none"
+    || t === "n/a" || t === "na" || t === "oem"
+}
+
+function hostLine(host) {
+  if (!host || typeof host !== "object") return ""
+  var vendor = collapseSpaces(host.sysVendor)
+  var product = collapseSpaces(host.productName)
+  if (junkDmi(vendor)) vendor = ""
+  if (junkDmi(product)) product = ""
+  if (vendor && product) {
+    if (product.toLowerCase().indexOf(vendor.toLowerCase()) === 0) return product
+    return vendor + " " + product
+  }
+  return product || vendor
+}
+
 function formatCache(kb) {
   var n = num(kb, null)
   if (n === null || n < 0) return "--"
@@ -1519,7 +2326,7 @@ function formatBytes(n) {
 }
 
 function formatRate(bps) {
-  return formatUnit(bps, ["B", "KB", "MB", "GB"], "/s")
+  return formatUnit(bps, ["B", "KiB", "MiB", "GiB"], "/s")
 }
 
 // Bounded bar format, max ~4 significant glyphs: 999B, 1.0K, 9.9K, 99K,
@@ -1568,6 +2375,21 @@ function formatTemp(c) {
 function formatMhz(v) {
   var n = num(v, null)
   return n === null ? "--" : Math.round(n) + " MHz"
+}
+
+// GPU DPM can park the clock at 0. Call that IDLE rather than "0 MHz".
+// CPU frequency still uses formatMhz — a parked core is not idle silicon.
+function formatGpuClock(v) {
+  var n = num(v, null)
+  if (n === null) return "--"
+  if (n <= 0) return "IDLE"
+  return formatMhz(n)
+}
+
+function nvidiaMiBToBytes(mib) {
+  var n = num(mib, null)
+  if (n === null || n < 0) return null
+  return n * 1024 * 1024
 }
 
 function formatWatts(v) {
@@ -1640,7 +2462,10 @@ if (typeof module !== "undefined" && module.exports) {
     effectiveSegments: effectiveSegments,
     visibleBarCells: visibleBarCells,
     parseStreamLine: parseStreamLine,
+    parseCpuCoreArray: parseCpuCoreArray,
     cpuDelta: cpuDelta,
+    cpuCoreDeltas: cpuCoreDeltas,
+    cpuBarTooltip: cpuBarTooltip,
     netRates: netRates,
     isExcludedDiskName: isExcludedDiskName,
     isPartitionName: isPartitionName,
@@ -1651,13 +2476,21 @@ if (typeof module !== "undefined" && module.exports) {
     parseDiskstats: parseDiskstats,
     diskRates: diskRates,
     parseDf: parseDf,
+    collapseMounts: collapseMounts,
     parseDiskInfo: parseDiskInfo,
+    parseUdevRam: parseUdevRam,
+    formatRamLabel: formatRamLabel,
+    formatRamKit: formatRamKit,
+    formatRamMaker: formatRamMaker,
     pickDisk: pickDisk,
     swapRates: swapRates,
     memComposition: memComposition,
     swapUsage: swapUsage,
     pickInterface: pickInterface,
     parsePs: parsePs,
+    displayName: displayName,
+    parseProcRows: parseProcRows,
+    nameAndCollapse: nameAndCollapse,
     parseSs: parseSs,
     sumSocketsByPid: sumSocketsByPid,
     socketsOnIface: socketsOnIface,
@@ -1667,6 +2500,10 @@ if (typeof module !== "undefined" && module.exports) {
     parseKeyValues: parseKeyValues,
     normalizeAmdGpu: normalizeAmdGpu,
     normalizeIntelGpu: normalizeIntelGpu,
+    parseDrmSnapshot: parseDrmSnapshot,
+    drmBusyPercent: drmBusyPercent,
+    drmMemoryKind: drmMemoryKind,
+    mergeGpuLive: mergeGpuLive,
     normalizeGpuList: normalizeGpuList,
     pickGpu: pickGpu,
     normalizeIntegratedGpuDevice: normalizeIntegratedGpuDevice,
@@ -1681,9 +2518,19 @@ if (typeof module !== "undefined" && module.exports) {
     gpuDevicePinMessage: gpuDevicePinMessage,
     reconcileGpuTopology: reconcileGpuTopology,
     parseLspciMm: parseLspciMm,
+    parseSystemCpu: parseSystemCpu,
     parseSystemInfo: parseSystemInfo,
+    parseCpuTopo: parseCpuTopo,
+    classifyCpuTopology: classifyCpuTopology,
+    cpuClassCounts: cpuClassCounts,
+    formatCpuClassMix: formatCpuClassMix,
+    coreGridLayout: coreGridLayout,
     cpuVendorLabel: cpuVendorLabel,
     gpuVendorLabel: gpuVendorLabel,
+    collapseSpaces: collapseSpaces,
+    cleanCpuName: cleanCpuName,
+    cleanGpuName: cleanGpuName,
+    hostLine: hostLine,
     formatCache: formatCache,
     formatBytes: formatBytes,
     formatRate: formatRate,
@@ -1692,6 +2539,8 @@ if (typeof module !== "undefined" && module.exports) {
     formatPct: formatPct,
     formatTemp: formatTemp,
     formatMhz: formatMhz,
+    formatGpuClock: formatGpuClock,
+    nvidiaMiBToBytes: nvidiaMiBToBytes,
     formatWatts: formatWatts,
     formatLoad: formatLoad,
     formatUptime: formatUptime,
