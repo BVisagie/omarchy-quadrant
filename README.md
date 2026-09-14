@@ -1,8 +1,9 @@
 # Quadrant
 
 <p align="center">
-  <img src="preview.png" alt="Quadrant bar plus laptop CPU (Intel Arc on the CPU tab) and desktop GPU and memory tabs">
+  <img src="preview.png" alt="Quadrant on three Omarchy themes: dark laptop CPU with Intel Arc, green desktop GPU, and a light Memory tab">
 </p>
+<p align="center"><em>Same plugin, three themes — Quadrant follows the active Omarchy palette.</em></p>
 
 A unified system monitor for the Omarchy Quattro bar: CPU, GPU, memory, and
 network in one compact bar widget and one tabbed panel — plus a Drives tab.
