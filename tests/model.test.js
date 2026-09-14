@@ -932,6 +932,15 @@ test("cleanGpuName prefers the marketing name inside brackets", () => {
   assert.equal(Model.cleanGpuName(""), "");
 });
 
+test("parseUdevRam reads configured DIMM type and speed, skipping empty slots", () => {
+  const ram = Model.parseUdevRam(fixture("udev-dmi.txt"));
+  assert.equal(ram.type, "DDR4");
+  assert.equal(ram.speedMTs, 3200);
+  assert.equal(ram.label, "DDR4 3200 MT/s");
+  assert.equal(Model.parseUdevRam("").label, "");
+  assert.equal(Model.formatRamLabel("LPDDR5", 9600), "LPDDR5 9600 MT/s");
+});
+
 test("hostLine joins DMI without repeating the vendor", () => {
   assert.equal(Model.hostLine({ sysVendor: "Framework", productName: "Laptop 16 (AMD Ryzen 7040 Series)" }),
     "Framework Laptop 16 (AMD Ryzen 7040 Series)");

@@ -179,15 +179,17 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   grid on this tab shows per-core load (SMT collapsed). When an
   integrated GPU is present, a **GRAPHICS** block shows its identity and
   live frequency or busy metrics (sampled while the CPU tab is open).
-- **Memory**: composition splits RAM into Applications / Kernel
-  (unreclaimable slab) / Cache (page cache + **Buffers** + SReclaimable) /
-  Free. The RAM ring is the primary gauge; the pressure ring is PSI memory
-  `some avg10`. PSI is **optional per resource** — when `/proc/pressure/cpu`
-  or `/proc/pressure/memory` is unreadable that half is JSON `null` and the
-  ring shows `--`, not zero. The process column is "% of RAM". The tab
-  header is installed RAM; swap devices
-  from `/proc/swaps` are listed (zram includes the active compression
-  algorithm and disk size).
+- **Memory**: the RAM ring is **used** `(MemTotal − MemAvailable) /
+  MemTotal` — the same quantity as the bar. Composition (Applications /
+  Kernel unreclaimable slab / Cache = page cache + **Buffers** +
+  SReclaimable / Free) is a stacked bar, not a second encoding of that
+  ring. The pressure ring is PSI memory `some avg10`. PSI is **optional
+  per resource** — when `/proc/pressure/cpu` or `/proc/pressure/memory`
+  is unreadable that half is JSON `null` and the ring shows `--`, not
+  zero. The process column is "% of RAM". The tab header is installed
+  RAM plus DIMM type/speed from unprivileged udev DMI when present; swap
+  devices from `/proc/swaps` are listed (zram includes the active
+  compression algorithm and disk size).
 - **GPU**: the GPU tab and bar segment cover **dedicated** cards only.
   AMD reads `amdgpu` sysfs (`gpu_busy_percent`, `mem_busy_percent`,
   per-engine `engine/*/busy_percent`, VRAM info, hwmon temp/power, active

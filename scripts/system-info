@@ -444,6 +444,15 @@ else
         diskBytes: ($ARGS.positional[$i + 2] | tonumber) }]' "${zram_fields[@]}")
 fi
 
+# Unprivileged DIMM type/speed from udev DMI. Never sudo dmidecode.
+udevPayload=""
+if [[ -r /run/udev/data/+dmi:id ]]; then
+  udevPayload=$(< /run/udev/data/+dmi:id) || udevPayload=""
+  if (( ${#udevPayload} > 65536 )); then
+    udevPayload=${udevPayload:0:65536}
+  fi
+fi
+
 # --- Host ------------------------------------------------------------------
 
 kernel="" sysVendor="" productName=""
@@ -465,6 +474,7 @@ read_line_file /sys/class/dmi/id/product_name productName
   --arg lspciPayload "$lspciPayload" \
   --argjson swaps "$swap_json" \
   --argjson zram "$zram_json" \
+  --arg udevPayload "$udevPayload" \
   --arg kernel "$kernel" \
   --arg sysVendor "$sysVendor" \
   --arg productName "$productName" \
@@ -483,7 +493,7 @@ read_line_file /sys/class/dmi/id/product_name productName
     },
     gpus: $gpus,
     lspciPayload: $lspciPayload,
-    mem: { swaps: $swaps, zram: $zram },
+    mem: { swaps: $swaps, zram: $zram, udevPayload: $udevPayload },
     host: {
       kernel: (if $kernel == "" then null else $kernel end),
       sysVendor: (if $sysVendor == "" then null else $sysVendor end),

@@ -44,23 +44,25 @@ Item {
   }
 
   readonly property string memMeta: {
+    var bits = []
     var m = sysMem
+    if (m && m.ram && m.ram.label) bits.push(m.ram.label)
     if (m && m.zram && m.zram.length > 0) {
       var z = m.zram[0]
-      var bits = [z.dev]
-      if (z.alg) bits.push(z.alg)
-      if (z.diskBytes) bits.push(Model.formatBytes(z.diskBytes))
-      return bits.join(" · ")
-    }
-    if (m && m.swaps && m.swaps.length > 0) {
+      var zbits = [z.dev]
+      if (z.alg) zbits.push(z.alg)
+      if (z.diskBytes) zbits.push(Model.formatBytes(z.diskBytes))
+      bits.push(zbits.join(" · "))
+    } else if (m && m.swaps && m.swaps.length > 0) {
       var s = m.swaps[0]
       var parts = [s.kind]
       if (s.file) parts.push(s.file)
       if (s.sizeKb) parts.push(Model.formatKiB(s.sizeKb))
-      return parts.join(" · ")
+      bits.push(parts.join(" · "))
+    } else if (swap && swap.totalK <= 0) {
+      bits.push("no swap")
     }
-    if (swap && swap.totalK <= 0) return "no swap"
-    return ""
+    return bits.join(" · ")
   }
 
   readonly property color memTrack: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
@@ -216,10 +218,12 @@ Item {
           size: Style.space(Theme.metrics.largeRingSize)
           thickness: Style.space(Theme.metrics.largeRingThickness)
           readonly property var c: root.comp
-          segments: root.compositionSegments
+          fraction: c && c.usedPct !== null && c.usedPct !== undefined
+                    ? Model.clamp(c.usedPct / 100, 0, 1) : 0
+          color: Theme.series.memApps
           trackColor: root.memTrack
           centerText: c ? Model.formatPct(c.usedPct) : "--"
-          subText: "RAM"
+          subText: "used"
           foreground: root.panel ? root.panel.barForeground : "#cacccc"
           fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
         }
@@ -250,6 +254,22 @@ Item {
         y: memoryOverview.legendBeside
            ? Math.max(0, (memoryOverview.height - implicitHeight) / 2)
            : memoryRings.height + Style.space(8)
+
+        Components.CompositionBar {
+          width: parent.width
+          segments: root.compositionSegments
+          trackColor: root.memTrack
+        }
+
+        Text {
+          textFormat: Text.PlainText
+          text: "Used is not-available. Cache is reclaimable."
+          color: root.panel ? Qt.darker(root.panel.barForeground, 1.5) : "#cacccc"
+          font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.caption
+          width: parent.width
+          wrapMode: Text.WordWrap
+        }
 
         Repeater {
           model: [

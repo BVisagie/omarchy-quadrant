@@ -1652,10 +1652,84 @@ function parseSystemGpus(list, lspciBySlot) {
   return out
 }
 
+var JUNK_RAM_TYPES = {
+  unknown: 1, other: 1, none: 1, no: 1, not: 1, empty: 1, uninstalled: 1,
+  "n/a": 1, n: 1, na: 1, ram: 1, dimm: 1, "<out of spec>": 1
+}
+
+function ramTypeRanked(type) {
+  var t = String(type || "")
+  return /^(LP)?DDR|GDDR|HBM/i.test(t)
+}
+
+function parseUdevRam(text) {
+  var empty = { type: "", speedMTs: null, label: "" }
+  if (typeof text !== "string" || text.length === 0) return empty
+  var devices = {}
+  var lines = text.split("\n")
+  var i
+  for (i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    if (line.indexOf("E:") === 0) line = line.slice(2)
+    var m = line.match(/^MEMORY_DEVICE_(\d+)_(.+?)=(.*)$/)
+    if (!m) continue
+    var id = m[1]
+    if (!devices[id]) devices[id] = {}
+    devices[id][m[2]] = m[3]
+  }
+  var types = []
+  var configured = []
+  var rated = []
+  for (var id in devices) {
+    if (!Object.prototype.hasOwnProperty.call(devices, id)) continue
+    var d = devices[id]
+    if (d.PRESENT === "0") continue
+    var size = num(d.SIZE, 0)
+    if (!(size > 0)) continue
+    var typ = collapseSpaces(d.TYPE)
+    if (typ && !JUNK_RAM_TYPES[typ.toLowerCase()]) types.push(typ)
+    var conf = num(d.CONFIGURED_SPEED_MTS, 0)
+    var gts = num(d.CONFIGURED_SPEED_GTS, 0)
+    if (conf > 0) configured.push(conf)
+    else if (gts > 0) configured.push(Math.round(gts * 1000))
+    var spd = num(d.SPEED_MTS, 0)
+    var sgts = num(d.SPEED_GTS, 0)
+    if (spd > 0) rated.push(spd)
+    else if (sgts > 0) rated.push(Math.round(sgts * 1000))
+  }
+  var type = ""
+  for (i = 0; i < types.length; i++) {
+    if (ramTypeRanked(types[i])) { type = types[i]; break }
+  }
+  if (!type && types.length) type = types[0]
+  var speed = null
+  function minOf(list) {
+    if (!list.length) return null
+    var m = list[0]
+    for (var j = 1; j < list.length; j++) if (list[j] < m) m = list[j]
+    return m
+  }
+  speed = minOf(configured)
+  if (speed === null) speed = minOf(rated)
+  var label = formatRamLabel(type, speed)
+  return { type: type, speedMTs: speed, label: label }
+}
+
+function formatRamLabel(type, speedMTs) {
+  var t = collapseSpaces(type)
+  var n = num(speedMTs, null)
+  if (t && n !== null && n > 0) return t + " " + Math.round(n) + " MT/s"
+  if (t) return t
+  if (n !== null && n > 0) return Math.round(n) + " MT/s"
+  return ""
+}
+
 function parseSystemMem(mem) {
   var swaps = []
   var zram = []
-  if (!mem || typeof mem !== "object") return { swaps: swaps, zram: zram }
+  var ram = { type: "", speedMTs: null, label: "" }
+  if (!mem || typeof mem !== "object") return { swaps: swaps, zram: zram, ram: ram }
+  ram = parseUdevRam(mem.udevPayload)
   var i
   if (Array.isArray(mem.swaps)) {
     for (i = 0; i < mem.swaps.length && swaps.length < 16; i++) {
@@ -1683,7 +1757,7 @@ function parseSystemMem(mem) {
       zram.push({ dev: dev, alg: alg, diskBytes: diskBytes })
     }
   }
-  return { swaps: swaps, zram: zram }
+  return { swaps: swaps, zram: zram, ram: ram }
 }
 
 function parseSystemHost(host) {
@@ -1952,6 +2026,8 @@ if (typeof module !== "undefined" && module.exports) {
     diskRates: diskRates,
     parseDf: parseDf,
     parseDiskInfo: parseDiskInfo,
+    parseUdevRam: parseUdevRam,
+    formatRamLabel: formatRamLabel,
     pickDisk: pickDisk,
     swapRates: swapRates,
     memComposition: memComposition,
