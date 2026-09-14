@@ -83,6 +83,7 @@ BarWidget {
   property double streamStartedAtMs: 0
   property string streamError: ""
   property var cpuPct: null
+  property var coreUsage: ({})
   property var memComp: null
   property var swapRate: ({ inKBs: 0, outKBs: 0 })
   property var ifaceRates: null
@@ -127,11 +128,11 @@ BarWidget {
     String(Color.accent),
     String(root.bar ? root.bar.urgent : Color.urgent)
   )
-  readonly property bool cpuHot: cpuPct !== null && cpuPct.busy >= 90
+  readonly property bool cpuHot: cpuPct !== null && cpuPct.nonIdle >= 90
   readonly property bool memHot: memComp !== null && memComp.usedPct >= 90
   readonly property bool gpuHot: gpuDisplay !== null && gpuDisplay.pct >= 90
   readonly property bool diskHot: diskRates !== null && diskRates.utilPct >= 90
-  readonly property string cpuValueText: cpuPct ? Model.formatPct(cpuPct.busy) : "--"
+  readonly property string cpuValueText: cpuPct ? Model.formatPct(cpuPct.nonIdle) : "--"
   readonly property string memValueText: memComp ? Model.formatPct(memComp.usedPct) : "--"
   readonly property string gpuValueText: {
     if (!gpuDisplay) return "--"
@@ -285,7 +286,7 @@ BarWidget {
     if (!streamLive) return "Quadrant: sampler offline"
     var parts = []
     if (segmentEnabled("cpu") && cpuPct)
-      parts.push("CPU " + Model.formatPct(cpuPct.busy))
+      parts.push(Model.cpuBarTooltip(cpuPct))
     if (segmentEnabled("gpu") && discreteGpuAvailable && gpuDisplay)
       parts.push("GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (freq)" : ""))
     if (segmentEnabled("memory") && memComp)
@@ -361,6 +362,13 @@ BarWidget {
     if (!s) return
     var dt = prevSample ? s.ts - prevSample.ts : 0
     cpuPct = Model.cpuDelta(prevSample ? prevSample.cpu : null, s.cpu)
+    coreUsage = {}
+    if (prevSample && prevSample.cpuCores && s.cpuCores) {
+      var coreDeltas = Model.cpuCoreDeltas(prevSample.cpuCores, s.cpuCores)
+      var usage = {}
+      for (var c = 0; c < coreDeltas.length; c++) usage[coreDeltas[c].id] = coreDeltas[c].busy
+      coreUsage = usage
+    }
     memComp = Model.memComposition(s.mem)
     swapRate = Model.swapRates(prevSample ? prevSample.vm : null, s.vm, dt)
     var rates = Model.netRates(prevSample ? prevSample.net : null, s.net, dt)

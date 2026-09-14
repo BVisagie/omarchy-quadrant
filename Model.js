@@ -169,7 +169,8 @@ function visibleBarCells(effectiveList, discreteGpuAvailable, diskAvailable) {
 //   "t": 52.0 | null,                             // CPU package temp, deg C
 //   "load": [l1, l5, l15],
 //   "up": 12345.6, "cores": 16,
-//   "cf": 4200 | null                             // CPU scaling_cur_freq, MHz
+//   "cf": 4200 | null,                            // mean scaling_cur_freq, MHz
+//   "cc": [ [user, nice, system, idle, iowait, irq, softirq, steal], ... ]
 // }
 
 function parseCpuArray(value) {
@@ -346,6 +347,7 @@ function parseStreamLine(line) {
     uptimeS: nonNeg(data.up),
     cores: Math.max(1, Math.round(nonNeg(data.cores) || 1)),
     cpuFreqMhz: num(data.cf, null),
+    cpuCores: parseCpuCoreArray(data.cc),
     disk: parseStreamDisk(data.disk)
   }
 }
@@ -371,8 +373,47 @@ function cpuDelta(prev, curr) {
   if (total <= 0) return null
   var out = {}
   for (var j in d) out[j] = 100 * d[j] / total
+  // busy = compute time (user+system). nonIdle is the bar glance:
+  // anything that is not idle, including iowait and steal.
   out.busy = out.user + out.system
+  out.nonIdle = out.user + out.system + out.iowait + out.steal
   return out
+}
+
+function parseCpuCoreArray(value) {
+  if (!Array.isArray(value)) return []
+  var out = []
+  for (var i = 0; i < value.length && out.length < 128; i++) {
+    var c = parseCpuArray(value[i])
+    if (!c) continue
+    out.push(c)
+  }
+  return out
+}
+
+function cpuCoreDeltas(prevCores, currCores) {
+  var prev = Array.isArray(prevCores) ? prevCores : []
+  var curr = Array.isArray(currCores) ? currCores : []
+  var out = []
+  var n = curr.length < prev.length ? curr.length : prev.length
+  for (var i = 0; i < n; i++) {
+    var d = cpuDelta(prev[i], curr[i])
+    out.push({
+      id: i,
+      busy: d ? d.nonIdle : 0
+    })
+  }
+  return out
+}
+
+function cpuBarTooltip(d) {
+  if (!d) return "CPU --"
+  var text = "CPU " + formatPct(d.nonIdle)
+  var bits = []
+  if (d.iowait >= 1) bits.push(formatPct(d.iowait) + " iowait")
+  if (d.steal >= 1) bits.push(formatPct(d.steal) + " steal")
+  if (bits.length) text += " (" + bits.join(" · ") + ")"
+  return text
 }
 
 // Per-interface byte rates from cumulative counters. Interfaces are joined by
@@ -1376,23 +1417,215 @@ function parseLspciMm(text) {
   return out
 }
 
+function parseCpuTopoEntry(e) {
+  if (!e || typeof e !== "object") return null
+  var id = num(e.id, null)
+  if (id === null || id < 0 || id > 4095) return null
+  var core = num(e.core, id)
+  if (core === null || core < 0) core = id
+  var cls = String(e.cls || "")
+  if (cls !== "performance" && cls !== "efficiency" && cls !== "lowpower") cls = ""
+  var maxKhz = num(e.maxKhz, 0)
+  if (maxKhz === null || maxKhz < 0) maxKhz = 0
+  var cap = num(e.cap, 0)
+  if (cap === null || cap < 0) cap = 0
+  var l3 = clipStr(e.l3, 64)
+  return {
+    id: Math.round(id),
+    core: Math.round(core),
+    cls: cls,
+    maxKhz: maxKhz,
+    cap: cap,
+    l3: l3
+  }
+}
+
+function parseCpuTopo(list) {
+  var out = []
+  if (!Array.isArray(list)) return out
+  for (var i = 0; i < list.length && out.length < 128; i++) {
+    var e = parseCpuTopoEntry(list[i])
+    if (e) out.push(e)
+  }
+  out.sort(function (a, b) { return a.id - b.id })
+  return out
+}
+
+function classifyUnlabeledCpus(topo) {
+  var unlabeled = []
+  var i
+  for (i = 0; i < topo.length; i++) {
+    if (!topo[i].cls) unlabeled.push(topo[i])
+  }
+  if (unlabeled.length === 0) return
+  var useCap = false
+  for (i = 0; i < unlabeled.length; i++) {
+    if (unlabeled[i].cap > 0) { useCap = true; break }
+  }
+  var keys = []
+  for (i = 0; i < unlabeled.length; i++) {
+    var key = useCap ? unlabeled[i].cap : unlabeled[i].maxKhz
+    keys.push(key)
+  }
+  keys.sort(function (a, b) { return a - b })
+  var unique = []
+  for (i = 0; i < keys.length; i++) {
+    if (i === 0 || keys[i] !== keys[i - 1]) unique.push(keys[i])
+  }
+  if (unique.length === 0) {
+    for (i = 0; i < unlabeled.length; i++) unlabeled[i].cls = "performance"
+    return
+  }
+  var groups = []
+  var current = [unique[0]]
+  for (i = 1; i < unique.length; i++) {
+    if (unique[i] > unique[i - 1] * 112 / 100) {
+      groups.push(current)
+      current = [unique[i]]
+    } else {
+      current.push(unique[i])
+    }
+  }
+  groups.push(current)
+  function groupIndex(key) {
+    var g
+    for (g = 0; g < groups.length; g++) {
+      var j
+      for (j = 0; j < groups[g].length; j++) {
+        if (groups[g][j] === key) return g
+      }
+    }
+    return groups.length - 1
+  }
+  var last = groups.length - 1
+  var three = groups.length >= 3
+  for (i = 0; i < unlabeled.length; i++) {
+    var k = useCap ? unlabeled[i].cap : unlabeled[i].maxKhz
+    var gi = groupIndex(k)
+    if (groups.length === 1 || gi === last) unlabeled[i].cls = "performance"
+    else if (three && gi === 0) unlabeled[i].cls = "lowpower"
+    else unlabeled[i].cls = "efficiency"
+  }
+}
+
+function classifyCpuTopology(topo) {
+  var values = parseCpuTopo(topo)
+  classifyUnlabeledCpus(values)
+  for (var i = 0; i < values.length; i++) {
+    if (!values[i].cls) values[i].cls = "performance"
+  }
+  return values
+}
+
+function cpuClassCounts(topo) {
+  var phys = {}
+  var i
+  for (i = 0; i < topo.length; i++) {
+    var key = String(topo[i].core) + ":" + topo[i].cls
+    if (!phys[key]) phys[key] = topo[i].cls
+  }
+  var counts = { performance: 0, efficiency: 0, lowpower: 0 }
+  for (var k in phys) {
+    if (!Object.prototype.hasOwnProperty.call(phys, k)) continue
+    counts[phys[k]]++
+  }
+  return counts
+}
+
+function formatCpuClassMix(counts) {
+  if (!counts) return ""
+  var bits = []
+  if (counts.performance) bits.push(counts.performance + "P")
+  if (counts.efficiency) bits.push(counts.efficiency + "E")
+  if (counts.lowpower) bits.push(counts.lowpower + "LP")
+  if (bits.length < 2) return ""
+  return bits.join(" · ")
+}
+
+function coreGridLayout(topo, usageById) {
+  var classified = classifyCpuTopology(topo)
+  var usage = usageById && typeof usageById === "object" ? usageById : {}
+  var byCore = {}
+  var coreOrder = []
+  var i
+  for (i = 0; i < classified.length; i++) {
+    var e = classified[i]
+    var key = String(e.core)
+    if (!byCore[key]) {
+      byCore[key] = { core: e.core, cls: e.cls, logicals: [], usage: 0 }
+      coreOrder.push(key)
+    }
+    byCore[key].logicals.push(e.id)
+    var u = num(usage[e.id], 0)
+    if (u > byCore[key].usage) byCore[key].usage = u
+    if (e.cls === "performance") byCore[key].cls = "performance"
+  }
+
+  var kinds = ["performance", "efficiency", "lowpower"]
+  var present = {}
+  for (i = 0; i < coreOrder.length; i++) present[byCore[coreOrder[i]].cls] = true
+  var kindCount = 0
+  for (i = 0; i < kinds.length; i++) if (present[kinds[i]]) kindCount++
+
+  function cellsOf(kind) {
+    var cells = []
+    for (var c = 0; c < coreOrder.length; c++) {
+      var cell = byCore[coreOrder[c]]
+      if (kind && cell.cls !== kind) continue
+      cells.push({
+        core: cell.core,
+        cls: cell.cls,
+        logicals: cell.logicals.slice(),
+        usage: cell.usage
+      })
+    }
+    return cells
+  }
+
+  if (kindCount <= 1) {
+    return { mode: "uniform", rows: [{ kind: "same", cells: cellsOf(null) }] }
+  }
+  var rows = []
+  for (i = 0; i < kinds.length; i++) {
+    var cells = cellsOf(kinds[i])
+    if (cells.length) rows.push({ kind: kinds[i], cells: cells })
+  }
+  return { mode: "hybrid", rows: rows }
+}
+
 function parseSystemCpu(c) {
   var empty = {
     modelName: "", vendorId: "", physCores: null, threads: null,
-    cacheKb: null, mhzNow: null, governor: "", maxMhz: null
+    cacheKb: null, mhzNow: null, governor: "", maxMhz: null,
+    topo: [], classes: { performance: 0, efficiency: 0, lowpower: 0 }
   }
   if (!c || typeof c !== "object") return empty
   var gov = clipStr(c.governor, 32)
   if (gov && !/^[A-Za-z0-9._+-]+$/.test(gov)) gov = ""
+  var topo = classifyCpuTopology(c.topo)
+  var physCores = (function () { var n = num(c.physCores, null); return n !== null && n > 0 ? Math.round(n) : null })()
+  var threads = (function () { var n = num(c.threads, null); return n !== null && n > 0 ? Math.round(n) : null })()
+  if (topo.length > 0) {
+    var seen = {}
+    var phys = 0
+    for (var i = 0; i < topo.length; i++) {
+      var ck = String(topo[i].core)
+      if (!seen[ck]) { seen[ck] = true; phys++ }
+    }
+    physCores = phys
+    threads = topo.length
+  }
   return {
     modelName: clipStr(c.modelName, 128),
     vendorId: clipStr(c.vendorId, 32),
-    physCores: (function () { var n = num(c.physCores, null); return n !== null && n > 0 ? Math.round(n) : null })(),
-    threads: (function () { var n = num(c.threads, null); return n !== null && n > 0 ? Math.round(n) : null })(),
+    physCores: physCores,
+    threads: threads,
     cacheKb: (function () { var n = num(c.cacheKb, null); return n !== null && n >= 0 ? n : null })(),
     mhzNow: (function () { var n = num(c.mhzNow, null); return n !== null && n >= 0 ? n : null })(),
     governor: gov,
-    maxMhz: (function () { var n = num(c.maxMhz, null); return n !== null && n >= 0 ? n : null })()
+    maxMhz: (function () { var n = num(c.maxMhz, null); return n !== null && n >= 0 ? n : null })(),
+    topo: topo,
+    classes: cpuClassCounts(topo)
   }
 }
 
@@ -1704,7 +1937,10 @@ if (typeof module !== "undefined" && module.exports) {
     effectiveSegments: effectiveSegments,
     visibleBarCells: visibleBarCells,
     parseStreamLine: parseStreamLine,
+    parseCpuCoreArray: parseCpuCoreArray,
     cpuDelta: cpuDelta,
+    cpuCoreDeltas: cpuCoreDeltas,
+    cpuBarTooltip: cpuBarTooltip,
     netRates: netRates,
     isExcludedDiskName: isExcludedDiskName,
     isPartitionName: isPartitionName,
@@ -1745,7 +1981,13 @@ if (typeof module !== "undefined" && module.exports) {
     gpuDevicePinMessage: gpuDevicePinMessage,
     reconcileGpuTopology: reconcileGpuTopology,
     parseLspciMm: parseLspciMm,
+    parseSystemCpu: parseSystemCpu,
     parseSystemInfo: parseSystemInfo,
+    parseCpuTopo: parseCpuTopo,
+    classifyCpuTopology: classifyCpuTopology,
+    cpuClassCounts: cpuClassCounts,
+    formatCpuClassMix: formatCpuClassMix,
+    coreGridLayout: coreGridLayout,
     cpuVendorLabel: cpuVendorLabel,
     gpuVendorLabel: gpuVendorLabel,
     collapseSpaces: collapseSpaces,

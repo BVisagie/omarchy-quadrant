@@ -154,6 +154,152 @@ if [[ -n $max_khz ]]; then
   maxMhz=$(( max_khz / 1000 ))
 fi
 
+# Package max is the highest policy, not cpu0 (often an E-core on hybrid).
+for pol in /sys/devices/system/cpu/cpufreq/policy[0-9]*; do
+  pk=""
+  read_int_file "$pol/cpuinfo_max_freq" pk
+  if [[ -n $pk ]]; then
+    pk_mhz=$(( pk / 1000 ))
+    if [[ -z $maxMhz || $pk_mhz -gt $maxMhz ]]; then maxMhz=$pk_mhz; fi
+  fi
+done
+
+# Unified L3 size from sysfs when present — cpuinfo "cache size" is not
+# reliably the package last-level cache.
+for idx in /sys/devices/system/cpu/cpu0/cache/index*; do
+  [[ -r $idx/level && -r $idx/type && -r $idx/size ]] || continue
+  IFS= read -r lv < "$idx/level" || continue
+  [[ $lv == 3 ]] || continue
+  IFS= read -r typ < "$idx/type" || continue
+  [[ $typ == Unified ]] || continue
+  IFS= read -r sz < "$idx/size" || continue
+  sz=${sz//[[:space:]]/}
+  if [[ $sz =~ ^([0-9]+)K$ ]]; then
+    cacheKb=${BASH_REMATCH[1]}
+  elif [[ $sz =~ ^([0-9]+)M$ ]]; then
+    cacheKb=$(( BASH_REMATCH[1] * 1024 ))
+  fi
+  break
+done
+
+expand_cpu_list() {
+  local spec=$1 tok a b i
+  local -n _ids=$2
+  _ids=()
+  [[ -n $spec ]] || return 0
+  local -a toks=()
+  IFS=',' read -r -a toks <<< "$spec"
+  for tok in "${toks[@]}"; do
+    tok=${tok//[[:space:]]/}
+    if [[ $tok =~ ^([0-9]+)-([0-9]+)$ ]]; then
+      a=${BASH_REMATCH[1]}; b=${BASH_REMATCH[2]}
+      if (( b >= a && b - a < 256 )); then
+        for (( i=a; i<=b; i++ )); do _ids+=("$i"); done
+      fi
+    elif [[ $tok =~ ^[0-9]+$ ]]; then
+      _ids+=("$tok")
+    fi
+  done
+}
+
+id_in_list() {
+  local want=$1 x
+  shift
+  for x in "$@"; do
+    [[ $x == "$want" ]] && return 0
+  done
+  return 1
+}
+
+cache_shared() {
+  local cpu_path=$1 level=$2 idx lv typ shared
+  for idx in "$cpu_path"/cache/index*; do
+    [[ -r $idx/level && -r $idx/type ]] || continue
+    IFS= read -r lv < "$idx/level" || continue
+    [[ $lv == "$level" ]] || continue
+    IFS= read -r typ < "$idx/type" || continue
+    [[ $typ == Unified ]] || continue
+    shared=""
+    read_line_file "$idx/shared_cpu_list" shared
+    printf '%s' "$shared"
+    return 0
+  done
+  printf ''
+}
+
+core_cpus_spec="" atom_cpus_spec=""
+read_line_file /sys/devices/cpu_core/cpus core_cpus_spec
+read_line_file /sys/devices/cpu_atom/cpus atom_cpus_spec
+p_ids=() atom_ids=()
+expand_cpu_list "$core_cpus_spec" p_ids
+expand_cpu_list "$atom_cpus_spec" atom_ids
+intel_hybrid=0
+(( ${#p_ids[@]} + ${#atom_ids[@]} > 0 )) && intel_hybrid=1
+
+p_l3=()
+if (( intel_hybrid )); then
+  for id in "${p_ids[@]}"; do
+    sh=$(cache_shared "/sys/devices/system/cpu/cpu$id" 3)
+    [[ -n $sh ]] && p_l3+=("$sh")
+  done
+fi
+
+topo_fields=()
+topo_count=0
+for cpu_dir in /sys/devices/system/cpu/cpu[0-9]*; do
+  [[ -d $cpu_dir/topology ]] || continue
+  id=${cpu_dir##*/cpu}
+  [[ $id =~ ^[0-9]+$ ]] || continue
+  if [[ -r $cpu_dir/online ]]; then
+    on=""
+    IFS= read -r on < "$cpu_dir/online" || on=1
+    [[ $on == 1 ]] || continue
+  fi
+  core=""
+  read_int_file "$cpu_dir/topology/core_id" core
+  [[ -n $core ]] || core=$id
+  l3=$(cache_shared "$cpu_dir" 3)
+  maxk=""
+  read_int_file "$cpu_dir/cpufreq/cpuinfo_max_freq" maxk
+  cap=""
+  read_int_file "$cpu_dir/cpu_capacity" cap
+  cls=""
+  if (( intel_hybrid )); then
+    if id_in_list "$id" "${p_ids[@]}"; then
+      cls=performance
+    elif id_in_list "$id" "${atom_ids[@]}"; then
+      cls=efficiency
+      if [[ -z $l3 ]]; then
+        cls=lowpower
+      else
+        share_p=0
+        for s in "${p_l3[@]}"; do
+          if [[ $s == "$l3" ]]; then share_p=1; break; fi
+        done
+        (( share_p == 0 )) && cls=lowpower
+      fi
+    fi
+  fi
+  topo_fields+=("$id" "$core" "$cls" "${maxk:-0}" "${cap:-0}" "$l3")
+  topo_count=$(( topo_count + 1 ))
+  (( topo_count >= 128 )) && break
+done
+
+if (( ${#topo_fields[@]} == 0 )); then
+  topo_json='[]'
+else
+  topo_json=$("$JQ" -cn --args '
+    [range(0; ($ARGS.positional | length); 6) as $i |
+      { id: ($ARGS.positional[$i] | tonumber),
+        core: ($ARGS.positional[$i + 1] | tonumber),
+        cls: $ARGS.positional[$i + 2],
+        maxKhz: ($ARGS.positional[$i + 3] | tonumber),
+        cap: ($ARGS.positional[$i + 4] | tonumber),
+        l3: $ARGS.positional[$i + 5] }]' "${topo_fields[@]}")
+  threads=$topo_count
+  physCores=$("$JQ" -cn --argjson t "$topo_json" '[$t[].core] | unique | length')
+fi
+
 # --- GPUs ------------------------------------------------------------------
 
 gpu_fields=()
@@ -314,6 +460,7 @@ read_line_file /sys/class/dmi/id/product_name productName
   --arg mhzNow "$mhzNow" \
   --arg governor "$governor" \
   --arg maxMhz "$maxMhz" \
+  --argjson topo "$topo_json" \
   --argjson gpus "$gpu_json" \
   --arg lspciPayload "$lspciPayload" \
   --argjson swaps "$swap_json" \
@@ -331,7 +478,8 @@ read_line_file /sys/class/dmi/id/product_name productName
       cacheKb: (if $cacheKb == "" then null else ($cacheKb|tonumber) end),
       mhzNow: (if $mhzNow == "" then null else ($mhzNow|tonumber) end),
       governor: (if $governor == "" then null else $governor end),
-      maxMhz: (if $maxMhz == "" then null else ($maxMhz|tonumber) end)
+      maxMhz: (if $maxMhz == "" then null else ($maxMhz|tonumber) end),
+      topo: $topo
     },
     gpus: $gpus,
     lspciPayload: $lspciPayload,

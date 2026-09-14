@@ -49,6 +49,8 @@ Item {
     if (c.physCores) parts.push(c.physCores + " cores")
     if (c.threads && c.threads !== c.physCores) parts.push(c.threads + " threads")
     else if (c.threads && !c.physCores) parts.push(c.threads + " threads")
+    var mix = Model.formatCpuClassMix(c.classes)
+    if (mix) parts.push(mix)
     if (c.cacheKb) parts.push(Model.formatCache(c.cacheKb) + " L3")
     return parts.join(" · ")
   }
@@ -202,6 +204,18 @@ Item {
           }
         }
       }
+    }
+
+    Components.CoreGrid {
+      width: parent.width
+      layout: Model.coreGridLayout(
+        root.sysCpu && root.sysCpu.topo ? root.sysCpu.topo : [],
+        root.model && root.model.coreUsage ? root.model.coreUsage : {}
+      )
+      accent: Color.accent
+      urgent: Color.urgent
+      foreground: root.panel ? root.panel.barForeground : "#cacccc"
+      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
     Components.StatRow {

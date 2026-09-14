@@ -165,15 +165,20 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
 
 - **CPU**: user (incl. nice) and system (incl. irq/softirq) are stacked in
   the graph; `iowait` is its own series; `steal` is stacked and labeled
-  when it is non-zero, never folded into "system". The tab header is a
-  cleaned `model name` from `/proc/cpuinfo` (trademarks and "N-Core
-  Processor" suffixes stripped) with physical cores / threads, L3 cache,
-  scaling governor, and current/max frequency (`scaling_cur_freq` when
-  present, else the cpuinfo snapshot). Host DMI (`sys_vendor` +
-  `product_name`) is shown under the header when present. When an
-  integrated GPU is present, a **GRAPHICS** block on this tab shows its
-  identity and live frequency or busy metrics (sampled while the CPU tab
-  is open).
+  when it is non-zero, never folded into "system". The **bar** percentage
+  is non-idle time (user + system + iowait + steal) so a disk-bound
+  machine is not shown as idle; the tooltip names iowait/steal when they
+  are at least 1%. Topology comes from sysfs (online `core_id`, Intel
+  `cpu_core`/`cpu_atom` lists, otherwise capacity/max-frequency clusters):
+  the header is physical cores, threads, and a P/E/LP mix when the chip
+  is hybrid. Package frequency is the mean of every cpufreq policy, not
+  `cpu0`. The tab header is a cleaned `model name` from `/proc/cpuinfo`
+  (trademarks and "N-Core Processor" suffixes stripped) with L3 cache,
+  scaling governor, and current/max frequency. Host DMI (`sys_vendor` +
+  `product_name`) is shown under the header when present. A compact core
+  grid on this tab shows per-core load (SMT collapsed). When an
+  integrated GPU is present, a **GRAPHICS** block shows its identity and
+  live frequency or busy metrics (sampled while the CPU tab is open).
 - **Memory**: composition splits RAM into Applications / Kernel
   (unreclaimable slab) / Cache (page cache + **Buffers** + SReclaimable) /
   Free. The RAM ring is the primary gauge; the pressure ring is PSI memory

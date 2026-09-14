@@ -82,6 +82,89 @@ test("cpuDelta computes bucketed percentages", () => {
   assert.equal(Math.round(d.iowait), Math.round(100 * 10 / 820));
   assert.equal(Math.round(d.steal), Math.round(100 * 10 / 820));
   assert.equal(Math.round(d.busy), Math.round(100 * 100 / 820));
+  assert.equal(Math.round(d.nonIdle), Math.round(100 * 120 / 820));
+});
+
+test("cpuBarTooltip mentions iowait when it is material", () => {
+  const d = Model.cpuDelta(
+    { user: 0, nice: 0, system: 0, idle: 0, iowait: 0, irq: 0, softirq: 0, steal: 0 },
+    { user: 10, nice: 0, system: 0, idle: 10, iowait: 80, irq: 0, softirq: 0, steal: 0 }
+  );
+  assert.ok(d);
+  assert.equal(Math.round(d.busy), 10);
+  assert.equal(Math.round(d.nonIdle), 90);
+  assert.match(Model.cpuBarTooltip(d), /iowait/);
+  assert.equal(Model.cpuBarTooltip(null), "CPU --");
+});
+
+test("cpuCoreDeltas maps per-logical non-idle percent", () => {
+  const prev = [
+    { user: 0, nice: 0, system: 0, idle: 0, iowait: 0, irq: 0, softirq: 0, steal: 0 },
+    { user: 0, nice: 0, system: 0, idle: 0, iowait: 0, irq: 0, softirq: 0, steal: 0 }
+  ];
+  const curr = [
+    { user: 50, nice: 0, system: 0, idle: 50, iowait: 0, irq: 0, softirq: 0, steal: 0 },
+    { user: 0, nice: 0, system: 0, idle: 100, iowait: 0, irq: 0, softirq: 0, steal: 0 }
+  ];
+  const rows = Model.cpuCoreDeltas(prev, curr);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].id, 0);
+  assert.equal(Math.round(rows[0].busy), 50);
+  assert.equal(Math.round(rows[1].busy), 0);
+});
+
+test("classifyCpuTopology keeps Intel hybrid labels and counts physical cores", () => {
+  const topo = [
+    { id: 0, core: 0, cls: "performance", maxKhz: 5100000, cap: 0, l3: "0-19" },
+    { id: 1, core: 0, cls: "performance", maxKhz: 5100000, cap: 0, l3: "0-19" },
+    { id: 8, core: 16, cls: "performance", maxKhz: 5100000, cap: 0, l3: "0-19" },
+    { id: 16, core: 36, cls: "efficiency", maxKhz: 3800000, cap: 0, l3: "0-19" },
+    { id: 17, core: 37, cls: "lowpower", maxKhz: 2200000, cap: 0, l3: "16-19" }
+  ];
+  const info = Model.parseSystemCpu({
+    modelName: "Intel(R) Core(TM) Ultra 9 185H",
+    vendorId: "GenuineIntel",
+    physCores: 99,
+    threads: 3,
+    topo: topo
+  });
+  assert.equal(info.physCores, 4);
+  assert.equal(info.threads, 5);
+  assert.equal(info.classes.performance, 2);
+  assert.equal(info.classes.efficiency, 1);
+  assert.equal(info.classes.lowpower, 1);
+  assert.equal(Model.formatCpuClassMix(info.classes), "2P · 1E · 1LP");
+});
+
+test("classifyCpuTopology splits unlabeled chips by max frequency", () => {
+  const topo = [
+    { id: 0, core: 0, cls: "", maxKhz: 5500000, cap: 0 },
+    { id: 1, core: 1, cls: "", maxKhz: 5500000, cap: 0 },
+    { id: 2, core: 2, cls: "", maxKhz: 3300000, cap: 0 },
+    { id: 3, core: 3, cls: "", maxKhz: 3300000, cap: 0 }
+  ];
+  const classified = Model.classifyCpuTopology(topo);
+  assert.equal(classified[0].cls, "performance");
+  assert.equal(classified[2].cls, "efficiency");
+  const layout = Model.coreGridLayout(topo, { 0: 80, 1: 10, 2: 40, 3: 5 });
+  assert.equal(layout.mode, "hybrid");
+  assert.equal(layout.rows.length, 2);
+  assert.equal(layout.rows[0].kind, "performance");
+  assert.equal(layout.rows[0].cells.length, 2);
+});
+
+test("coreGridLayout collapses SMT siblings onto one cell", () => {
+  const topo = [
+    { id: 0, core: 0, cls: "performance", maxKhz: 5000000, cap: 0 },
+    { id: 1, core: 0, cls: "performance", maxKhz: 5000000, cap: 0 },
+    { id: 2, core: 1, cls: "performance", maxKhz: 5000000, cap: 0 },
+    { id: 3, core: 1, cls: "performance", maxKhz: 5000000, cap: 0 }
+  ];
+  const layout = Model.coreGridLayout(topo, { 0: 10, 1: 70, 2: 5, 3: 5 });
+  assert.equal(layout.mode, "uniform");
+  assert.equal(layout.rows[0].cells.length, 2);
+  assert.equal(layout.rows[0].cells[0].usage, 70);
+  assert.deepEqual(layout.rows[0].cells[0].logicals, [0, 1]);
 });
 
 test("cpuDelta returns null when counters do not advance", () => {

@@ -133,10 +133,16 @@ psi_cpu_ok=0 psi_mem_ok=0
 [[ -r /proc/pressure/cpu ]] && psi_cpu_ok=1
 [[ -r /proc/pressure/memory ]] && psi_mem_ok=1
 
-# CPU frequency: optional sysfs. VMs often omit cpufreq entirely.
-cpu_freq_f=""
-[[ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq ]] \
-  && cpu_freq_f=/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq
+# CPU frequency: mean of every cpufreq policy. cpu0 alone is often an
+# E-core or LP-E parked far below the package clock on hybrid Intel.
+declare -a CPU_FREQ_PATHS=()
+for p in /sys/devices/system/cpu/cpufreq/policy[0-9]*; do
+  [[ -r $p/scaling_cur_freq ]] || continue
+  CPU_FREQ_PATHS+=("$p/scaling_cur_freq")
+done
+if (( ${#CPU_FREQ_PATHS[@]} == 0 )) && [[ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq ]]; then
+  CPU_FREQ_PATHS+=(/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq)
+fi
 
 # GPU startup probes.
 gpu_busy_f="" gpu_vram_used_f="" gpu_vram_total_f=""
@@ -180,14 +186,31 @@ fi
 
 read_stat() {
   # $1: name of result array — user nice system idle iowait irq softirq steal cores
-  local tag _rest
+  # Also rewrites CORE_JSON as a JSON array of per-logical 8-tuples.
+  local tag u n s id iw irq si st _rest
   # shellcheck disable=SC2178
   local -n out=$1
   local cores=0
+  CORE_JSON=""
   {
     read -r tag "out[0]" "out[1]" "out[2]" "out[3]" "out[4]" "out[5]" "out[6]" "out[7]" _rest
-    while read -r tag _rest; do
-      case $tag in cpu[0-9]*) cores=$(( cores + 1 )) ;; esac
+    while read -r tag u n s id iw irq si st _rest; do
+      case $tag in
+        cpu[0-9]*)
+          [[ $u =~ ^[0-9]+$ ]] || u=0
+          [[ $n =~ ^[0-9]+$ ]] || n=0
+          [[ $s =~ ^[0-9]+$ ]] || s=0
+          [[ $id =~ ^[0-9]+$ ]] || id=0
+          [[ $iw =~ ^[0-9]+$ ]] || iw=0
+          [[ $irq =~ ^[0-9]+$ ]] || irq=0
+          [[ $si =~ ^[0-9]+$ ]] || si=0
+          [[ $st =~ ^[0-9]+$ ]] || st=0
+          [[ -n $CORE_JSON ]] && CORE_JSON+=","
+          CORE_JSON+="[$u,$n,$s,$id,$iw,$irq,$si,$st]"
+          cores=$(( cores + 1 ))
+          (( cores >= 128 )) && break
+          ;;
+      esac
     done
   } < /proc/stat
   out[8]=$cores
@@ -361,6 +384,7 @@ read_gpu() {
 
 emit() {
   local -a cpu=() mem=() vm=()
+  CORE_JSON=""
   read_stat cpu
   read_meminfo mem
   read_vmstat vm
@@ -406,10 +430,18 @@ emit() {
   fi
 
   local cf_json="null"
-  if [[ -n $cpu_freq_f ]]; then
-    local cfv=""
-    read_int_file "$cpu_freq_f" cfv
-    if [[ -n $cfv ]]; then cf_json=$(( cfv / 1000 )); fi
+  if (( ${#CPU_FREQ_PATHS[@]} > 0 )); then
+    local cfv="" csum=0 ccount=0
+    local p
+    for p in "${CPU_FREQ_PATHS[@]}"; do
+      cfv=""
+      read_int_file "$p" cfv
+      if [[ -n $cfv ]]; then
+        csum=$(( csum + cfv ))
+        ccount=$(( ccount + 1 ))
+      fi
+    done
+    if (( ccount > 0 )); then cf_json=$(( csum / ccount / 1000 )); fi
   fi
 
   local l1=0 l5=0 l15=0 up=0 _rest
@@ -420,7 +452,7 @@ emit() {
   [[ $l15 =~ ^[0-9.]+$ ]] || l15=0
   [[ $up =~ ^[0-9.]+$ ]] || up=0
 
-  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"disk":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s,"cf":%s}\n' \
+  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"disk":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s,"cf":%s,"cc":[%s]}\n' \
     "$EPOCHREALTIME" \
     "${cpu[0]}" "${cpu[1]}" "${cpu[2]}" "${cpu[3]}" \
     "${cpu[4]}" "${cpu[5]}" "${cpu[6]}" "${cpu[7]}" \
@@ -430,7 +462,7 @@ emit() {
     "${vm[0]}" "${vm[1]}" \
     "$NET_JSON" "$DISK_JSON" "$R4_JSON" "$R6_JSON" \
     "$GPU_JSON" "$temp_json" \
-    "$l1" "$l5" "$l15" "$up" "${cpu[8]}" "$cf_json"
+    "$l1" "$l5" "$l15" "$up" "${cpu[8]}" "$cf_json" "$CORE_JSON"
 }
 
 while :; do
