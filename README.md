@@ -9,9 +9,9 @@ network in one compact bar widget and one tabbed panel — plus a Drives tab.
 The disk bar segment is off by default when a dedicated GPU is present; on
 iGPU-only machines it fills the GPU slot instead. Per-process disk
 attribution is not available.
-Each panel tab identifies the hardware it is measuring — CPU model and topology,
-GPU name and driver, installed RAM and swap devices, block devices and
-mounts — then shows live usage.
+Each panel tab identifies the hardware it is measuring — CPU model and
+topology, GPU marketing name and driver, usable RAM and DIMM kit, block
+devices and mounts — then shows live usage.
 
 <p align="center">
   <img src="docs/screenshots/bar.png" alt="Quadrant bar slot with CPU, GPU, memory, and network segments" width="680">
@@ -21,11 +21,11 @@ Clicking a segment opens the panel on that segment's tab; clicking anywhere
 else toggles the panel on the last-used tab.
 
 <p align="center">
-  <img src="docs/screenshots/cpu.png" alt="Laptop CPU tab: Intel Ultra 9 185H with Intel Arc Graphics shown as a freq ring on the CPU tab" width="420">
-  <img src="docs/screenshots/gpu.png" alt="Desktop GPU tab: AMD Radeon RX 7900 with busy and VRAM rings" width="420">
+  <img src="docs/screenshots/cpu.png" alt="Laptop CPU tab: Intel Core Ultra 9 185H with P/E/LP core grid and Intel Arc Graphics busy ring" width="420">
+  <img src="docs/screenshots/gpu.png" alt="Desktop GPU tab: Radeon RX 7900 XT with busy and VRAM rings" width="420">
 </p>
 <p align="center">
-  <img src="docs/screenshots/memory.png" alt="Memory tab: RAM and pressure rings with composition and top processes" width="420">
+  <img src="docs/screenshots/memory.png" alt="Memory tab: 31 GiB usable, Kingston 2×16 GiB DDR4, used ring and composition bar" width="420">
   <img src="docs/screenshots/drives.png" alt="Drives tab: dual NVMe picker, read/write history, and mounts" width="420">
 </p>
 <p align="center">
@@ -33,7 +33,7 @@ else toggles the panel on the last-used tab.
 </p>
 
 Built against the documented Quattro plugin contract. Supports **Omarchy 4**
-(the Quattro shell). Requires `bash` ≥ 5, `jq`, `ps` (procps), `ss`
+(the Quattro shell). Requires `bash` ≥ 5, `jq`, `python3`, `ss`
 (iproute2), `df` (coreutils), and `awk` (mawk or gawk); `nvidia-smi` only if you have an
 NVIDIA card; `lspci` (pciutils) is optional and used to name AMD/Intel
 GPUs.
@@ -190,12 +190,11 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   ring. The pressure ring is PSI memory `some avg10`. PSI is **optional
   per resource** — when `/proc/pressure/cpu` or `/proc/pressure/memory`
   is unreadable that half is JSON `null` and the ring shows `--`, not
-  zero. The process column is "% of RAM". The tab header is installed
-  RAM plus DIMM identity from unprivileged udev DMI when present
-  (maker, module count and size, type/speed — e.g. Kingston 2×16 GiB ·
-  DDR4 3600 MT/s); swap
-  devices from `/proc/swaps` are listed (zram includes the active
-  compression algorithm and disk size).
+  zero. The process column is "% of RAM". The tab header is **usable**
+  RAM (`MemTotal`) plus DIMM identity from unprivileged udev DMI when
+  present (maker, module count and size, type/speed — e.g. Kingston
+  2×16 GiB · DDR4 3600 MT/s); swap devices from `/proc/swaps` are listed
+  (zram includes the active compression algorithm and disk size).
 - **GPU**: the GPU tab and bar segment cover **dedicated** cards only.
   AMD reads `amdgpu` sysfs (`gpu_busy_percent`, `mem_busy_percent`,
   per-engine `engine/*/busy_percent`, VRAM info, hwmon temp/power, active
@@ -213,9 +212,9 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   cleaned marketing name: NVIDIA's `nvidia-smi` name, or the product
   inside `lspci -D -mm` brackets (so `Navi 31 [Radeon RX 7900 XTX]` reads
   as `Radeon RX 7900 XTX`), falling back to vendor + PCI ID when pciutils
-  is not installed. Driver and slot stay in the subtitle. A power-gated
-  core clock of 0 MHz is shown as **IDLE**. Per-process GPU attribution
-  is v2.
+  is not installed. Vendor, card, and driver stay in the subtitle. A
+  power-gated core clock of 0 MHz is shown as **IDLE**. Per-process GPU
+  attribution is v2.
 - **Disk**: `/proc/diskstats` for whole block devices (`/sys/block/<name>`),
   excluding `loop*`, `ram*`, `zram*` (zram is on the Memory tab), `fd*`,
   `nbd*`, and `sr*`. Device-mapper (`dm-*`) and md RAID (`mdN`) with a
@@ -265,8 +264,10 @@ permissions** — the same model as every Quattro plugin. Concretely:
   used as the sampler's tick clock, removed on exit). Process actions
   (terminate from the panel) are deferred to v2 behind an
   `allowProcessActions` setting that defaults off.
-- **No secrets in process data.** Process lists read `ps -o comm=` — never
-  `args`, never `/proc/*/cmdline`, never `environ`.
+- **No secrets in process data.** Process lists read `/proc/<pid>/comm`
+  and interval `/proc/<pid>/stat` ticks. `/proc/<pid>/cmdline` is read
+  only as a clipped token list against a fixed app map (so `electron`
+  can be labeled Brave); it is never rendered. `environ` is never read.
 - **Injection-safe rendering.** Every `Text` element bound to script output
   or process names sets `textFormat: Text.PlainText` (Qt's default
   AutoText can interpret HTML-like strings, including inline images). CI
@@ -279,17 +280,18 @@ permissions** — the same model as every Quattro plugin. Concretely:
   field, so a forged process name cannot borrow another pid. `lspci -mm`
   is parsed in Model.js (fixture-tested), never concatenated in bash.
 - **Exact-match icons.** Desktop-entry matching for process icons/names is
-  exact-match only (normalized id, Name, Icon, `StartupWMClass`); the raw
-  `comm` is always shown beside any friendly name.
+  exact-match only (normalized id, Name, Icon, `StartupWMClass`). When an
+  entry matches, its Name is shown; otherwise the resolved comm.
 - **Failures are visible.** A helper that exits non-zero or times out
   surfaces an error in the panel — never an empty list presented as "no
   activity". QML distinguishes `[]` + exit 0 from failure.
 - **Hardened scripts.** `set -euo pipefail`, helpers resolved from
   `/usr/bin/<name>` first then `command -v`, quoted expansions, POSIX awk
   only (CI runs the suite under mawk **and** gawk).
-- **Binaries invoked**: `bash`, `jq`, `ps`, `ss`, `ip`, `df`, `timeout`, `mktemp`,
-  `mkfifo`, `nvidia-smi` (NVIDIA only, on demand), `lspci` (optional, one
-  shot at startup / on R). No root, no setcap, no setuid, no daemons.
+- **Binaries invoked**: `bash`, `jq`, `python3`, `ss`, `ip`, `df`,
+  `timeout`, `mktemp`, `mkfifo`, `nvidia-smi` (NVIDIA only, on demand),
+  `lspci` (optional, one shot at startup / on R). No root, no setcap, no
+  setuid, no daemons.
 
 ### Data layer
 
@@ -314,7 +316,7 @@ before it is opened.
 ```sh
 node --test tests/model.test.js          # pure-logic tests
 bash tests/intel-freq-paths.sh           # Intel sysfs path lookup
-shellcheck -x scripts/*                  # script lint (follows sourced helpers)
+shellcheck -x scripts/*                  # bash helpers only; skip python shebangs
 mawk -f tests/check-plaintext.awk BarWidget.qml Panel.qml tabs/*.qml components/*.qml
 ```
 
