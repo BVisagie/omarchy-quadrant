@@ -28,8 +28,8 @@ Item {
   implicitHeight: visible ? column.implicitHeight : 0
 
   readonly property string gpuTitle: {
-    if (gpuInfo && gpuInfo.name) return gpuInfo.name
-    if (gpu && gpu.name) return gpu.name
+    if (gpuInfo && gpuInfo.name) return Model.cleanGpuName(gpuInfo.name)
+    if (gpu && gpu.name) return Model.cleanGpuName(gpu.name)
     if (gpuInfo && gpuInfo.pciId) return Model.gpuVendorLabel(vendor) + " · " + gpuInfo.pciId
     if (gpu && gpu.pciId) return Model.gpuVendorLabel(vendor) + " · " + gpu.pciId
     if (vendor) return Model.gpuVendorLabel(vendor)
@@ -81,7 +81,7 @@ Item {
     if (!live) return "--"
     if (intel)
       return Model.formatMhz(live.freqCurMhz) + " / " + Model.formatMhz(live.freqMaxMhz)
-    return Model.formatMhz(live.clockMhz)
+    return Model.formatGpuClock(live.clockMhz)
   }
 
   function vramText() {

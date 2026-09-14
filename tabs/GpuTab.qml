@@ -44,8 +44,8 @@ Item {
   }
 
   readonly property string gpuTitle: {
-    if (vendor === "nvidia" && live && live.name) return live.name
-    if (gpuInfo && gpuInfo.name) return gpuInfo.name
+    if (vendor === "nvidia" && live && live.name) return Model.cleanGpuName(live.name)
+    if (gpuInfo && gpuInfo.name) return Model.cleanGpuName(gpuInfo.name)
     if (gpuInfo && gpuInfo.pciId) return Model.gpuVendorLabel(vendor) + " · " + gpuInfo.pciId
     if (vendor) return Model.gpuVendorLabel(vendor)
     return "GPU"
@@ -63,8 +63,9 @@ Item {
   readonly property string gpuDetail: {
     if (!live) return ""
     if (vendor === "nvidia") {
-      if (live.memTotalM === null || live.memTotalM === undefined) return ""
-      return live.memTotalM + " MiB VRAM"
+      var nvidiaTotal = Model.nvidiaMiBToBytes(live.memTotalM)
+      if (nvidiaTotal === null) return ""
+      return Model.formatBytes(nvidiaTotal) + " VRAM"
     }
     if (live.vramTotal === null || live.vramTotal === undefined) return ""
     return Model.formatBytes(live.vramTotal) + " VRAM"
@@ -92,8 +93,10 @@ Item {
   function vramText() {
     if (!live) return "--"
     if (vendor === "nvidia") {
-      if (live.memUsedM === null || live.memTotalM === null) return "--"
-      return live.memUsedM + " of " + live.memTotalM + " MiB"
+      var used = Model.nvidiaMiBToBytes(live.memUsedM)
+      var total = Model.nvidiaMiBToBytes(live.memTotalM)
+      if (used === null || total === null) return "--"
+      return Model.formatBytes(used) + " of " + Model.formatBytes(total)
     }
     if (live.vramUsed === null || live.vramTotal === null) return "--"
     return Model.formatBytes(live.vramUsed) + " of " + Model.formatBytes(live.vramTotal)
@@ -216,24 +219,6 @@ Item {
 
     Components.StatRow {
       width: parent.width
-      label: "Driver"
-      visible: root.gpuInfo && root.gpuInfo.driver !== ""
-      value: root.gpuInfo ? root.gpuInfo.driver : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-    }
-
-    Components.StatRow {
-      width: parent.width
-      label: "PCI slot"
-      visible: root.gpuInfo && root.gpuInfo.slot !== ""
-      value: root.gpuInfo ? root.gpuInfo.slot : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-    }
-
-    Components.StatRow {
-      width: parent.width
       label: "VRAM"
       visible: root.vendor !== "intel"
       value: root.vramText()
@@ -265,7 +250,7 @@ Item {
         if (!root.live) return "--"
         if (root.vendor === "intel")
           return Model.formatMhz(root.live.freqCurMhz) + " / " + Model.formatMhz(root.live.freqMaxMhz)
-        return Model.formatMhz(root.live.clockMhz)
+        return Model.formatGpuClock(root.live.clockMhz)
       }
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family

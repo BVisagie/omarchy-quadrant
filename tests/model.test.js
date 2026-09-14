@@ -797,9 +797,9 @@ test("normalizeGpuList keeps slot and pci identity", () => {
 
 test("formatRate and formatBytes", () => {
   assert.equal(Model.formatRate(512), "512 B/s");
-  assert.equal(Model.formatRate(1126), "1.1 KB/s");
-  assert.equal(Model.formatRate(3686), "3.6 KB/s");
-  assert.equal(Model.formatRate(5 * 1024 * 1024), "5 MB/s");
+  assert.equal(Model.formatRate(1126), "1.1 KiB/s");
+  assert.equal(Model.formatRate(3686), "3.6 KiB/s");
+  assert.equal(Model.formatRate(5 * 1024 * 1024), "5 MiB/s");
   assert.equal(Model.formatRate(null), "--");
   assert.equal(Model.formatBytes(2048), "2 KiB");
   assert.equal(Model.formatKiB(1024), "1 MiB");
@@ -820,9 +820,43 @@ test("formatPct, formatTemp, formatUptime", () => {
 test("formatMhz, formatWatts, formatLoad", () => {
   assert.equal(Model.formatMhz(1800), "1800 MHz");
   assert.equal(Model.formatMhz(null), "--");
+  assert.equal(Model.formatGpuClock(1800), "1800 MHz");
+  assert.equal(Model.formatGpuClock(0), "IDLE");
+  assert.equal(Model.formatGpuClock(null), "--");
   assert.equal(Model.formatWatts(85), "85 W");
   assert.equal(Model.formatWatts(8.24), "8.2 W");
   assert.equal(Model.formatLoad(0.5), "0.50");
+  assert.equal(Model.nvidiaMiBToBytes(1024), 1024 * 1024 * 1024);
+  assert.equal(Model.nvidiaMiBToBytes(null), null);
+});
+
+test("cleanCpuName strips trademarks and clock suffixes", () => {
+  assert.equal(Model.cleanCpuName("Intel(R) Core(TM) Ultra 9 185H"), "Intel Core Ultra 9 185H");
+  assert.equal(Model.cleanCpuName("AMD Ryzen 9 7950X 16-Core Processor"), "AMD Ryzen 9 7950X");
+  assert.equal(Model.cleanCpuName("Intel(R) Xeon(R) Processor"), "Intel Xeon");
+  assert.equal(Model.cleanCpuName("AMD Ryzen 7 8845HS w/ Radeon 780M Graphics"), "AMD Ryzen 7 8845HS w/ Radeon 780M Graphics");
+  assert.equal(Model.cleanCpuName(""), "");
+});
+
+test("cleanGpuName prefers the marketing name inside brackets", () => {
+  assert.equal(Model.cleanGpuName("Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M]"), "Radeon RX 7900 XT");
+  assert.equal(Model.cleanGpuName("Navi 31 [Radeon RX 7900 XTX]"), "Radeon RX 7900 XTX");
+  assert.equal(Model.cleanGpuName("AD102 [GeForce RTX 4090]"), "GeForce RTX 4090");
+  assert.equal(Model.cleanGpuName("Raptor Lake-P [Iris Xe Graphics]"), "Iris Xe Graphics");
+  assert.equal(Model.cleanGpuName("Meteor Lake-P [Intel Arc Graphics]"), "Intel Arc Graphics");
+  assert.equal(Model.cleanGpuName("NVIDIA GeForce RTX 4070"), "NVIDIA GeForce RTX 4070");
+  assert.equal(Model.cleanGpuName("Intel Corporation Ice Lake-LP GT2 [Iris Plus Graphics G1]"), "Iris Plus Graphics G1");
+  assert.equal(Model.cleanGpuName(""), "");
+});
+
+test("hostLine joins DMI without repeating the vendor", () => {
+  assert.equal(Model.hostLine({ sysVendor: "Framework", productName: "Laptop 16 (AMD Ryzen 7040 Series)" }),
+    "Framework Laptop 16 (AMD Ryzen 7040 Series)");
+  assert.equal(Model.hostLine({ sysVendor: "Framework", productName: "Framework Laptop 13" }),
+    "Framework Laptop 13");
+  assert.equal(Model.hostLine({ sysVendor: "Dell Inc.", productName: "" }), "Dell Inc.");
+  assert.equal(Model.hostLine({ sysVendor: "", productName: "" }), "");
+  assert.equal(Model.hostLine(null), "");
 });
 
 test("pushCapped bounds history", () => {

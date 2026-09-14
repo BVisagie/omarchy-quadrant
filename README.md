@@ -164,13 +164,16 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
 ## What it measures (and what it does not)
 
 - **CPU**: user (incl. nice) and system (incl. irq/softirq) are stacked in
-  the graph; `iowait` is its own series; `steal` is labeled separately and
-  never folded into "system". The tab header is the `model name` from
-  `/proc/cpuinfo` with physical cores / threads, L3 cache, scaling
-  governor, and current/max frequency (`scaling_cur_freq` when present,
-  else the cpuinfo snapshot). When an integrated GPU is present, a
-  **GRAPHICS** block on this tab shows its identity and live frequency or
-  busy metrics (sampled while the CPU tab is open).
+  the graph; `iowait` is its own series; `steal` is stacked and labeled
+  when it is non-zero, never folded into "system". The tab header is a
+  cleaned `model name` from `/proc/cpuinfo` (trademarks and "N-Core
+  Processor" suffixes stripped) with physical cores / threads, L3 cache,
+  scaling governor, and current/max frequency (`scaling_cur_freq` when
+  present, else the cpuinfo snapshot). Host DMI (`sys_vendor` +
+  `product_name`) is shown under the header when present. When an
+  integrated GPU is present, a **GRAPHICS** block on this tab shows its
+  identity and live frequency or busy metrics (sampled while the CPU tab
+  is open).
 - **Memory**: composition splits RAM into Applications / Kernel
   (unreclaimable slab) / Cache (page cache + **Buffers** + SReclaimable) /
   Free. The RAM ring is the primary gauge; the pressure ring is PSI memory
@@ -191,11 +194,13 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   Integrated Intel (PCI `00:02.x`) and known AMD APUs appear on the CPU
   tab instead; `integratedGpuDevice` overrides that mapping. Multi-GPU
   systems get a dedicated-card selector in the GPU tab; the choice is
-  persisted with `omarchy bar set … gpuDevice`. The tab header is the
-  card's marketing name: NVIDIA's `nvidia-smi` name, or `lspci -D -mm`
-  joined by PCI slot for AMD/Intel, falling back to vendor + PCI ID when
-  pciutils is not installed. Driver and slot come from sysfs `uevent`.
-  Per-process GPU attribution is v2.
+  persisted with `omarchy bar set … gpuDevice`. The tab header is a
+  cleaned marketing name: NVIDIA's `nvidia-smi` name, or the product
+  inside `lspci -D -mm` brackets (so `Navi 31 [Radeon RX 7900 XTX]` reads
+  as `Radeon RX 7900 XTX`), falling back to vendor + PCI ID when pciutils
+  is not installed. Driver and slot stay in the subtitle. A power-gated
+  core clock of 0 MHz is shown as **IDLE**. Per-process GPU attribution
+  is v2.
 - **Disk**: `/proc/diskstats` for whole block devices (`/sys/block/<name>`),
   excluding `loop*`, `ram*`, `zram*` (zram is on the Memory tab), `fd*`,
   `nbd*`, and `sr*`. Device-mapper (`dm-*`) and md RAID (`mdN`) with a

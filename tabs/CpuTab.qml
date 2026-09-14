@@ -131,11 +131,25 @@ Item {
     Components.HardwareHero {
       width: parent.width
       visible: root.sysCpu && root.sysCpu.modelName !== ""
-      title: root.sysCpu ? root.sysCpu.modelName : ""
+      title: root.sysCpu ? Model.cleanCpuName(root.sysCpu.modelName) : ""
       meta: root.cpuMeta
       detail: root.cpuDetail
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      visible: {
+        if (!root.model || !root.model.sysInfo || !root.model.sysInfo.host) return false
+        return Model.hostLine(root.model.sysInfo.host) !== ""
+      }
+      text: root.model && root.model.sysInfo ? Model.hostLine(root.model.sysInfo.host) : ""
+      color: root.panel ? Qt.darker(root.panel.barForeground, 1.4) : "#cacccc"
+      font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      font.pixelSize: Style.font.caption
+      width: parent.width
+      elide: Text.ElideRight
     }
 
     Components.HistoryGraph {
@@ -148,7 +162,8 @@ Item {
       series: [
         { label: "user", color: Theme.series.cpuUser, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.u }) },
         { label: "system", color: Theme.series.cpuSystem, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.s }) },
-        { label: "iowait", color: Theme.series.cpuIowait, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.io }) }
+        { label: "iowait", color: Theme.series.cpuIowait, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.io }) },
+        { label: "steal", color: Theme.series.cpuSteal, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.st }) }
       ]
     }
 
@@ -166,6 +181,7 @@ Item {
 
         delegate: Row {
           required property var modelData
+          visible: modelData.label !== "steal" || (modelData.pct !== null && modelData.pct > 0)
           spacing: Style.space(4)
 
           Rectangle {
@@ -186,15 +202,6 @@ Item {
           }
         }
       }
-    }
-
-    Components.StatRow {
-      width: parent.width
-      label: "Vendor"
-      visible: root.sysCpu && root.sysCpu.vendorId !== ""
-      value: root.sysCpu ? Model.cpuVendorLabel(root.sysCpu.vendorId) : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
     Components.StatRow {
@@ -237,14 +244,6 @@ Item {
       width: parent.width
       label: "Uptime"
       value: root.sample ? Model.formatUptime(root.sample.uptimeS) : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-    }
-
-    Components.StatRow {
-      width: parent.width
-      label: "Cores"
-      value: root.sample ? String(root.sample.cores) : "--"
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }

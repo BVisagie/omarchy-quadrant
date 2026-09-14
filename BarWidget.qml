@@ -370,7 +370,7 @@ BarWidget {
     }
     if (cpuPct)
       cpuHistory = Model.pushTimedWindow(
-        cpuHistory, { u: cpuPct.user, s: cpuPct.system, io: cpuPct.iowait },
+        cpuHistory, { u: cpuPct.user, s: cpuPct.system, io: cpuPct.iowait, st: cpuPct.steal },
         s.ts, 60, historyLimit)
     if (ifaceRates)
       netHistory = Model.pushTimedWindow(

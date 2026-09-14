@@ -1495,6 +1495,55 @@ function gpuVendorLabel(vendor) {
   return vendor ? String(vendor) : "--"
 }
 
+function collapseSpaces(value) {
+  return String(value || "").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "")
+}
+
+// Display names for HardwareHero. Raw firmware / PCI-DB strings stay in
+// the parsed identity objects so tests can still see the unfiltered text.
+function cleanCpuName(raw) {
+  var name = collapseSpaces(raw)
+  if (!name) return ""
+  name = name.replace(/\(R\)|\(TM\)|\(tm\)|\(r\)/g, "")
+  name = name.replace(/\s*CPU\s*@\s*[\d.]+\s*GHz/i, "")
+  name = name.replace(/\s*\d+-Core Processor.*/i, "")
+  name = name.replace(/\s+Processor\s*$/i, "")
+  name = collapseSpaces(name.replace(/[ ,]+$/g, ""))
+  return name || collapseSpaces(raw)
+}
+
+function cleanGpuName(raw) {
+  var name = collapseSpaces(raw)
+  if (!name) return ""
+  name = name.replace(/\s*\([^)]*rev[^)]*\)/i, "")
+  name = name.replace(/\s*\((Ice Lake|Comet Lake|Tiger Lake|Alder Lake|Raptor Lake|Meteor Lake|Arrow Lake|Lunar Lake|Panther Lake|Coffee Lake|Haswell|Skylake|Kaby Lake|Whiskey Lake|Amber Lake)[^)]*\)/i, "")
+  name = name.replace(/^Advanced Micro Devices, Inc\.?\s*/i, "")
+  name = name.replace(/^(AMD\/ATI|ATI)\s*/i, "AMD ")
+  name = name.replace(/^Intel Corporation\s*/i, "Intel ")
+  name = name.replace(/^NVIDIA Corporation\s*/i, "NVIDIA ")
+  name = name.replace(/\s+Corporation\b/g, "")
+  name = collapseSpaces(name)
+  var branded = name.match(/^[^[\]]+\[([^[\]]+)\]\s*$/)
+  if (branded) {
+    var inside = collapseSpaces(branded[1].split("/")[0])
+    if (inside) name = inside
+  }
+  return name || collapseSpaces(raw)
+}
+
+// sys_vendor + product_name, without repeating the vendor when the
+// product already starts with it ("Framework Laptop 16").
+function hostLine(host) {
+  if (!host || typeof host !== "object") return ""
+  var vendor = collapseSpaces(host.sysVendor)
+  var product = collapseSpaces(host.productName)
+  if (vendor && product) {
+    if (product.toLowerCase().indexOf(vendor.toLowerCase()) === 0) return product
+    return vendor + " " + product
+  }
+  return product || vendor
+}
+
 function formatCache(kb) {
   var n = num(kb, null)
   if (n === null || n < 0) return "--"
@@ -1519,7 +1568,7 @@ function formatBytes(n) {
 }
 
 function formatRate(bps) {
-  return formatUnit(bps, ["B", "KB", "MB", "GB"], "/s")
+  return formatUnit(bps, ["B", "KiB", "MiB", "GiB"], "/s")
 }
 
 // Bounded bar format, max ~4 significant glyphs: 999B, 1.0K, 9.9K, 99K,
@@ -1568,6 +1617,21 @@ function formatTemp(c) {
 function formatMhz(v) {
   var n = num(v, null)
   return n === null ? "--" : Math.round(n) + " MHz"
+}
+
+// GPU DPM can park the clock at 0. Call that IDLE rather than "0 MHz".
+// CPU frequency still uses formatMhz — a parked core is not idle silicon.
+function formatGpuClock(v) {
+  var n = num(v, null)
+  if (n === null) return "--"
+  if (n <= 0) return "IDLE"
+  return formatMhz(n)
+}
+
+function nvidiaMiBToBytes(mib) {
+  var n = num(mib, null)
+  if (n === null || n < 0) return null
+  return n * 1024 * 1024
 }
 
 function formatWatts(v) {
@@ -1684,6 +1748,10 @@ if (typeof module !== "undefined" && module.exports) {
     parseSystemInfo: parseSystemInfo,
     cpuVendorLabel: cpuVendorLabel,
     gpuVendorLabel: gpuVendorLabel,
+    collapseSpaces: collapseSpaces,
+    cleanCpuName: cleanCpuName,
+    cleanGpuName: cleanGpuName,
+    hostLine: hostLine,
     formatCache: formatCache,
     formatBytes: formatBytes,
     formatRate: formatRate,
@@ -1692,6 +1760,8 @@ if (typeof module !== "undefined" && module.exports) {
     formatPct: formatPct,
     formatTemp: formatTemp,
     formatMhz: formatMhz,
+    formatGpuClock: formatGpuClock,
+    nvidiaMiBToBytes: nvidiaMiBToBytes,
     formatWatts: formatWatts,
     formatLoad: formatLoad,
     formatUptime: formatUptime,
