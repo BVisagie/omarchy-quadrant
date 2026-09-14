@@ -19,10 +19,11 @@ Item {
   readonly property var gpu: model ? model.gpu : null
   readonly property string vendor: gpu ? gpu.vendor : ""
   // Unified live view: nvidia rows arrive via model.nvidiaGpu; amd/intel
-  // via the stream sample's gpu object.
+  // sysfs via the stream, with DRM fdinfo overlaid when sampled.
   readonly property var live: {
     if (!model) return null
     if (vendor === "nvidia") return model.nvidiaGpu
+    if (model.discreteGpuLive) return model.discreteGpuLive
     return model.sample ? model.sample.gpu : null
   }
   readonly property string nvidiaError: model ? model.nvidiaError : ""
@@ -37,10 +38,11 @@ Item {
   onActiveChanged: if (active) refresh()
 
   function refresh() {
-    // Stream-fed vendors need no panel sampler; NVIDIA polls from the
-    // widget while this tab is open — nudge it for an immediate refresh.
+    // Stream-fed vendors need no panel sampler; NVIDIA and DRM polls
+    // run from the widget while this tab is open — nudge them.
     if (model && model.refreshSysInfo) model.refreshSysInfo()
     if (model && vendor === "nvidia" && model.pollNvidia) model.pollNvidia()
+    if (model && model.pollDiscreteGpu) model.pollDiscreteGpu()
   }
 
   readonly property string gpuTitle: {
@@ -73,13 +75,19 @@ Item {
 
   function busyText() {
     if (!live) return "--"
-    if (vendor === "intel") {
-      if (live.freqCurMhz !== null && live.freqMaxMhz !== null && live.freqMaxMhz > 0)
-        return Model.formatPct(Model.clamp(100 * live.freqCurMhz / live.freqMaxMhz, 0, 100), 1)
-      return "--"
-    }
-    var v = vendor === "nvidia" ? live.utilPct : live.busy
-    return v === null ? "--" : Model.formatPct(v, 1)
+    if (vendor === "nvidia")
+      return live.utilPct === null ? "--" : Model.formatPct(live.utilPct, 1)
+    if (live.busy !== null && live.busy !== undefined)
+      return Model.formatPct(live.busy, 1)
+    if (vendor === "intel" && live.freqCurMhz !== null && live.freqMaxMhz !== null && live.freqMaxMhz > 0)
+      return Model.formatPct(Model.clamp(100 * live.freqCurMhz / live.freqMaxMhz, 0, 100), 1)
+    return "--"
+  }
+
+  readonly property bool busyIsEstimate: {
+    if (!live || vendor === "nvidia") return false
+    if (live.busy !== null && live.busy !== undefined) return live.busySource !== "drm" && live.busySource !== "sysfs"
+    return vendor === "intel"
   }
 
   function vramFraction() {
@@ -98,7 +106,9 @@ Item {
       if (used === null || total === null) return "--"
       return Model.formatBytes(used) + " of " + Model.formatBytes(total)
     }
-    if (live.vramUsed === null || live.vramTotal === null) return "--"
+    if (live.vramUsed === null || live.vramUsed === undefined) return "--"
+    if (live.vramTotal === null || live.vramTotal === undefined)
+      return Model.formatBytes(live.vramUsed)
     return Model.formatBytes(live.vramUsed) + " of " + Model.formatBytes(live.vramTotal)
   }
 
@@ -179,38 +189,36 @@ Item {
       visible: root.live !== null
 
       Components.RingGauge {
-        // Intel has no busy percent without CAP_PERFMON; show the frequency
-        // ratio and label it honestly.
         size: Style.space(Theme.metrics.largeRingSize)
         thickness: Style.space(Theme.metrics.largeRingThickness)
         fraction: {
           if (!root.live) return 0
-          if (root.vendor === "intel") {
-            if (root.live.freqCurMhz !== null && root.live.freqMaxMhz !== null && root.live.freqMaxMhz > 0)
-              return Model.clamp(root.live.freqCurMhz / root.live.freqMaxMhz, 0, 1)
-            return 0
-          }
-          var v = root.vendor === "nvidia" ? root.live.utilPct : root.live.busy
-          return v === null ? 0 : Model.clamp(v / 100, 0, 1)
+          if (root.vendor === "nvidia")
+            return root.live.utilPct === null ? 0 : Model.clamp(root.live.utilPct / 100, 0, 1)
+          if (root.live.busy !== null && root.live.busy !== undefined)
+            return Model.clamp(root.live.busy / 100, 0, 1)
+          if (root.vendor === "intel" && root.live.freqCurMhz !== null && root.live.freqMaxMhz > 0)
+            return Model.clamp(root.live.freqCurMhz / root.live.freqMaxMhz, 0, 1)
+          return 0
         }
         color: Theme.series.gpu
         trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
         centerText: root.busyText()
-        subText: root.vendor === "intel" ? "freq" : "busy"
+        subText: root.busyIsEstimate ? "freq" : "busy"
         foreground: root.panel ? root.panel.barForeground : "#cacccc"
         fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
         anchors.verticalCenter: parent.verticalCenter
       }
 
       Components.RingGauge {
-        visible: root.vendor !== "intel"
+        visible: root.vramText() !== "--"
         size: Style.space(Theme.metrics.largeRingSize)
         thickness: Style.space(Theme.metrics.largeRingThickness)
         fraction: root.vramFraction()
         color: Theme.series.memCache
         trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
         centerText: root.live && vramTotalKnown() ? Model.formatPct(root.vramFraction() * 100) : "--"
-        subText: "VRAM"
+        subText: root.live && root.live.memKind === "shared" ? "shared" : "VRAM"
         foreground: root.panel ? root.panel.barForeground : "#cacccc"
         fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
         anchors.verticalCenter: parent.verticalCenter
@@ -219,8 +227,8 @@ Item {
 
     Components.StatRow {
       width: parent.width
-      label: "VRAM"
-      visible: root.vendor !== "intel"
+      label: root.live && root.live.memKind === "shared" ? "Shared" : "VRAM"
+      visible: root.vramText() !== "--"
       value: root.vramText()
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
@@ -280,8 +288,8 @@ Item {
 
     Text {
       textFormat: Text.PlainText
-      visible: root.vendor === "intel"
-      text: "Intel busy % needs CAP_PERFMON; Quadrant shows the frequency ratio instead."
+      visible: root.vendor === "intel" && root.busyIsEstimate
+      text: "Intel busy % is a frequency ratio until DRM fdinfo returns a sample."
       color: root.panel ? Qt.darker(root.panel.barForeground, 1.5) : "#cacccc"
       font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
       font.pixelSize: Style.font.caption

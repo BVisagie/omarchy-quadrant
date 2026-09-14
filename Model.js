@@ -1169,9 +1169,9 @@ function normalizeAmdGpu(kv) {
   }
 }
 
-// Intel exposes no busy percent without CAP_PERFMON, which we refuse to
-// require. The frequency ratio is an estimate and is labeled "freq" in the
-// UI, never "busy".
+// Intel sysfs still has no busy percent without CAP_PERFMON. Frequency
+// ratio is an estimate labeled "freq" until DRM fdinfo supplies a measured
+// busy overlay (mergeGpuLive).
 function normalizeIntelGpu(kv) {
   if (!kv || typeof kv !== "object") return null
   var cur = num(kv.gt_cur_freq_mhz, null)
@@ -1187,6 +1187,152 @@ function normalizeIntelGpu(kv) {
     freqMaxMhz: max,
     tempC: milliToWhole(kv.temp_package_mc)
   }
+}
+
+function drmEnginePreferred(name) {
+  var n = String(name || "").toLowerCase()
+  return n.indexOf("render") >= 0 || n === "gfx" || n.indexOf("compute") >= 0
+}
+
+function parseDrmSnapshot(data) {
+  if (!data || typeof data !== "object" || data.ok === false) return null
+  var tsNs = num(data.tsNs, null)
+  if (tsNs === null || tsNs < 0) return null
+  var engines = []
+  var list = Array.isArray(data.engines) ? data.engines : []
+  var i
+  for (i = 0; i < list.length && engines.length < 256; i++) {
+    var e = list[i]
+    if (!e || typeof e !== "object") continue
+    var name = clipStr(e.name, 32)
+    if (!name) continue
+    engines.push({
+      client: clipStr(e.client, 64),
+      name: name,
+      ns: num(e.ns, null),
+      cycles: num(e.cycles, null),
+      total: num(e.total, null),
+      capacity: num(e.capacity, 1) || 1
+    })
+  }
+  var rc6 = []
+  var rc = Array.isArray(data.rc6) ? data.rc6 : []
+  for (i = 0; i < rc.length && rc6.length < 8; i++) {
+    if (!rc[i] || typeof rc[i] !== "object") continue
+    var ms = num(rc[i].ms, null)
+    if (ms === null || ms < 0) continue
+    rc6.push({ id: clipStr(rc[i].id, 128), ms: ms })
+  }
+  return {
+    tsNs: tsNs,
+    slot: clipStr(data.slot, 32),
+    engines: engines,
+    rc6: rc6,
+    memDedicated: Math.max(0, num(data.memDedicated, 0) || 0),
+    memShared: Math.max(0, num(data.memShared, 0) || 0)
+  }
+}
+
+function drmBusyFromEngines(prev, curr, dtNs) {
+  var before = {}
+  var i
+  for (i = 0; i < prev.engines.length; i++) {
+    var p = prev.engines[i]
+    before[p.client + "\t" + p.name] = p
+  }
+  var totals = {}
+  var saw = false
+  for (i = 0; i < curr.engines.length; i++) {
+    var c = curr.engines[i]
+    saw = true
+    var prevE = before[c.client + "\t" + c.name]
+    var delta = 0
+    if (c.ns !== null) {
+      var prevNs = prevE && prevE.ns !== null ? prevE.ns : c.ns
+      delta = c.ns - prevNs
+      if (delta > 0) totals[c.name] = (totals[c.name] || 0) + delta
+    } else if (c.cycles !== null && c.total !== null && prevE && prevE.cycles !== null && prevE.total !== null) {
+      var dBusy = c.cycles - prevE.cycles
+      var dTotal = c.total - prevE.total
+      if (dBusy > 0 && dTotal > 0) {
+        var cap = c.capacity > 0 ? c.capacity : 1
+        totals[c.name] = (totals[c.name] || 0) + (dBusy / dTotal) * cap * dtNs
+      }
+    }
+  }
+  if (!saw) return null
+  var names = Object.keys(totals)
+  if (names.length === 0) return 0
+  var preferred = []
+  var all = []
+  for (i = 0; i < names.length; i++) {
+    all.push(totals[names[i]])
+    if (drmEnginePreferred(names[i])) preferred.push(totals[names[i]])
+  }
+  var chosen = preferred.length ? Math.max.apply(null, preferred) : Math.max.apply(null, all)
+  return clamp(100 * chosen / dtNs, 0, 100)
+}
+
+function drmBusyFromRc6(prev, curr, dtNs) {
+  var dtMs = dtNs / 1e6
+  if (!(dtMs > 0)) return null
+  var before = {}
+  var i
+  for (i = 0; i < prev.rc6.length; i++) before[prev.rc6[i].id] = prev.rc6[i].ms
+  var best = null
+  for (i = 0; i < curr.rc6.length; i++) {
+    var start = before[curr.rc6[i].id]
+    if (start === undefined) continue
+    var idle = (curr.rc6[i].ms - start) * 100 / dtMs
+    var busy = clamp(100 - idle, 0, 100)
+    best = best === null ? busy : Math.max(best, busy)
+  }
+  return best
+}
+
+function drmBusyPercent(prev, curr) {
+  if (!prev || !curr) return null
+  var dtNs = curr.tsNs - prev.tsNs
+  if (!(dtNs >= 4e8 && dtNs <= 1e10)) return null
+  var fromEngines = drmBusyFromEngines(prev, curr, dtNs)
+  if (fromEngines !== null) return fromEngines
+  return drmBusyFromRc6(prev, curr, dtNs)
+}
+
+function drmMemoryKind(snap) {
+  if (!snap) return "unknown"
+  if (snap.memDedicated > 0) return "vram"
+  if (snap.memShared > 0) return "shared"
+  return "unknown"
+}
+
+function mergeGpuLive(base, drmBusy, drmSnap) {
+  var out = {}
+  var k
+  if (base && typeof base === "object") {
+    for (k in base) {
+      if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k]
+    }
+  }
+  if (out.busy !== null && out.busy !== undefined) {
+    if (!out.busySource) out.busySource = "sysfs"
+  } else if (drmBusy !== null && drmBusy !== undefined) {
+    out.busy = drmBusy
+    out.busySource = "drm"
+  }
+  if (drmSnap) {
+    if (out.vramTotal) {
+      if (!out.memKind) out.memKind = "vram"
+    } else if (drmSnap.memDedicated > 0) {
+      out.vramUsed = drmSnap.memDedicated
+      out.memKind = "vram"
+    } else if (drmSnap.memShared > 0) {
+      out.vramUsed = drmSnap.memShared
+      out.memKind = "shared"
+    }
+    if (drmSnap.memShared > 0) out.sharedUsed = drmSnap.memShared
+  }
+  return out
 }
 
 function clipPciClass(value) {
@@ -2043,6 +2189,10 @@ if (typeof module !== "undefined" && module.exports) {
     parseKeyValues: parseKeyValues,
     normalizeAmdGpu: normalizeAmdGpu,
     normalizeIntelGpu: normalizeIntelGpu,
+    parseDrmSnapshot: parseDrmSnapshot,
+    drmBusyPercent: drmBusyPercent,
+    drmMemoryKind: drmMemoryKind,
+    mergeGpuLive: mergeGpuLive,
     normalizeGpuList: normalizeGpuList,
     pickGpu: pickGpu,
     normalizeIntegratedGpuDevice: normalizeIntegratedGpuDevice,

@@ -195,8 +195,10 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   per-engine `engine/*/busy_percent`, VRAM info, hwmon temp/power, active
   DPM sclk). NVIDIA runs `nvidia-smi` (timeout-bounded,
   row-capped) **only while the GPU segment or tab is visible** — never in
-  the 1 Hz stream. Discrete Intel uses the same frequency-ratio estimate
-  as the CPU-tab iGPU block. Intel i915 frequency files are read from the
+  the 1 Hz stream. Discrete Intel uses DRM fdinfo engine time (Render/3D)
+  for busy % while the GPU segment or tab is visible, with RC6 residency
+  as fallback; the frequency ratio stays an estimate labeled `freq` / `~`
+  until a DRM sample arrives. Intel i915 frequency files are read from the
   DRM card node as well as the PCI device node (and xe `tile*/gt*/freq0`).
   Integrated Intel (PCI `00:02.x`) and known AMD APUs appear on the CPU
   tab instead; `integratedGpuDevice` overrides that mapping. Multi-GPU

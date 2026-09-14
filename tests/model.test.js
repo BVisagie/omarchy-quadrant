@@ -676,6 +676,56 @@ test("normalizeAmdGpu tolerates missing files", () => {
   assert.deepEqual(g.engines, []);
 });
 
+test("drmBusyPercent prefers render/gfx/compute engine time", () => {
+  const prev = Model.parseDrmSnapshot({
+    ok: true, tsNs: 1e9, slot: "0000:00:02.0",
+    engines: [
+      { client: "1", name: "render", ns: 0 },
+      { client: "1", name: "video", ns: 0 }
+    ],
+    rc6: [], memDedicated: 0, memShared: 0
+  });
+  const curr = Model.parseDrmSnapshot({
+    ok: true, tsNs: 2e9, slot: "0000:00:02.0",
+    engines: [
+      { client: "1", name: "render", ns: 4e8 },
+      { client: "1", name: "video", ns: 9e8 }
+    ],
+    rc6: [], memDedicated: 0, memShared: 1
+  });
+  // 0.4s of render in a 1s window = 40%, video ignored
+  assert.equal(Math.round(Model.drmBusyPercent(prev, curr)), 40);
+  assert.equal(Model.drmMemoryKind(curr), "shared");
+});
+
+test("drmBusyPercent falls back to RC6 when engines are missing", () => {
+  const prev = Model.parseDrmSnapshot({
+    ok: true, tsNs: 1e9, engines: [],
+    rc6: [{ id: "gt0", ms: 0 }], memDedicated: 0, memShared: 0
+  });
+  const curr = Model.parseDrmSnapshot({
+    ok: true, tsNs: 2e9, engines: [],
+    rc6: [{ id: "gt0", ms: 250 }], memDedicated: 0, memShared: 0
+  });
+  // 250ms idle in 1000ms → 75% busy
+  assert.equal(Math.round(Model.drmBusyPercent(prev, curr)), 75);
+  assert.equal(Model.drmBusyPercent(prev, null), null);
+});
+
+test("mergeGpuLive overlays DRM busy without clobbering AMD sysfs busy", () => {
+  const amd = Model.mergeGpuLive({ kind: "amd", busy: 12, vramTotal: 8 }, 40, {
+    memDedicated: 1, memShared: 2
+  });
+  assert.equal(amd.busy, 12);
+  assert.equal(amd.busySource, "sysfs");
+  const intel = Model.mergeGpuLive({ kind: "intel", busy: null, freqEstimate: 50 }, 22, {
+    memDedicated: 0, memShared: 4096
+  });
+  assert.equal(intel.busy, 22);
+  assert.equal(intel.busySource, "drm");
+  assert.equal(intel.memKind, "shared");
+});
+
 test("normalizeIntelGpu reports a labeled frequency estimate, never busy", () => {
   const g = Model.normalizeIntelGpu(Model.parseKeyValues(fixture("intel-sysfs.txt")));
   assert.equal(g.busy, null);

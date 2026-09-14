@@ -56,25 +56,29 @@ Item {
     return ""
   }
 
+  readonly property bool busyIsEstimate: {
+    if (!live) return intel
+    if (live.busy !== null && live.busy !== undefined)
+      return live.busySource !== "drm" && live.busySource !== "sysfs"
+    return intel
+  }
+
   function ringFraction() {
     if (!live) return 0
-    if (intel) {
-      if (live.freqCurMhz !== null && live.freqMaxMhz !== null && live.freqMaxMhz > 0)
-        return Model.clamp(live.freqCurMhz / live.freqMaxMhz, 0, 1)
-      return 0
-    }
-    if (live.busy === null || live.busy === undefined) return 0
-    return Model.clamp(live.busy / 100, 0, 1)
+    if (live.busy !== null && live.busy !== undefined)
+      return Model.clamp(live.busy / 100, 0, 1)
+    if (intel && live.freqCurMhz !== null && live.freqMaxMhz !== null && live.freqMaxMhz > 0)
+      return Model.clamp(live.freqCurMhz / live.freqMaxMhz, 0, 1)
+    return 0
   }
 
   function ringText() {
     if (!live) return "--"
-    if (intel) {
-      if (live.freqCurMhz !== null && live.freqMaxMhz !== null && live.freqMaxMhz > 0)
-        return Model.formatPct(Model.clamp(100 * live.freqCurMhz / live.freqMaxMhz, 0, 100), 1)
-      return "--"
-    }
-    return live.busy === null ? "--" : Model.formatPct(live.busy, 1)
+    if (live.busy !== null && live.busy !== undefined)
+      return Model.formatPct(live.busy, 1)
+    if (intel && live.freqCurMhz !== null && live.freqMaxMhz !== null && live.freqMaxMhz > 0)
+      return Model.formatPct(Model.clamp(100 * live.freqCurMhz / live.freqMaxMhz, 0, 100), 1)
+    return "--"
   }
 
   function freqText() {
@@ -85,7 +89,9 @@ Item {
   }
 
   function vramText() {
-    if (!live || live.vramUsed === null || live.vramTotal === null) return "--"
+    if (!live || live.vramUsed === null || live.vramUsed === undefined) return "--"
+    if (live.vramTotal === null || live.vramTotal === undefined)
+      return Model.formatBytes(live.vramUsed)
     return Model.formatBytes(live.vramUsed) + " of " + Model.formatBytes(live.vramTotal)
   }
 
@@ -130,7 +136,7 @@ Item {
         color: Theme.series.gpu
         trackColor: Theme.trackFor(root.foreground)
         centerText: root.ringText()
-        subText: root.intel ? "freq" : "busy"
+        subText: root.busyIsEstimate ? "freq" : "busy"
         foreground: root.foreground
         fontFamily: root.fontFamily
         anchors.verticalCenter: parent.verticalCenter
@@ -166,8 +172,8 @@ Item {
 
     Components.StatRow {
       width: parent.width
-      visible: root.amd && root.live && root.live.vramTotal !== null && root.live.vramTotal > 0
-      label: "VRAM"
+      visible: root.live && root.live.vramUsed !== null && root.live.vramUsed !== undefined
+      label: root.live && root.live.memKind === "shared" ? "Shared" : "VRAM"
       value: root.vramText()
       foreground: root.foreground
       fontFamily: root.fontFamily
@@ -175,8 +181,8 @@ Item {
 
     Text {
       textFormat: Text.PlainText
-      visible: root.intel
-      text: "Intel busy % needs CAP_PERFMON; frequency ratio is shown instead."
+      visible: root.intel && root.busyIsEstimate
+      text: "Intel busy % is a frequency ratio until DRM fdinfo returns a sample."
       color: Qt.darker(root.foreground, 1.5)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
