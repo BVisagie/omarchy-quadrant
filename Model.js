@@ -1837,13 +1837,85 @@ var JUNK_RAM_TYPES = {
   "n/a": 1, n: 1, na: 1, ram: 1, dimm: 1, "<out of spec>": 1
 }
 
+var JUNK_RAM_MAKERS = {
+  unknown: 1, none: 1, "n/a": 1, n: 1, na: 1, "not specified": 1,
+  "to be filled by o.e.m.": 1, oem: 1, "oem manufacturer": 1,
+  manufacturer00: 1, manufacturer0: 1, defaultstring: 1, "default string": 1,
+  "no dimm": 1, empty: 1, null: 1
+}
+
 function ramTypeRanked(type) {
   var t = String(type || "")
   return /^(LP)?DDR|GDDR|HBM/i.test(t)
 }
 
+function cleanRamMaker(value) {
+  var t = collapseSpaces(value)
+  if (!t) return ""
+  if (JUNK_RAM_MAKERS[t.toLowerCase()]) return ""
+  if (/^manufacturer\d+$/i.test(t)) return ""
+  return clipStr(t, 48)
+}
+
+function dimmGiB(bytes) {
+  var n = num(bytes, 0)
+  if (!(n > 0)) return 0
+  var g = n / (1024 * 1024 * 1024)
+  var r = Math.round(g)
+  if (r > 0 && Math.abs(g - r) / r < 0.02) return r
+  return Math.round(g * 10) / 10
+}
+
+function formatRamKit(modules) {
+  var list = Array.isArray(modules) ? modules : []
+  if (list.length === 0) return ""
+  var groups = []
+  var order = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var g = dimmGiB(list[i].bytes)
+    if (!(g > 0)) continue
+    var key = String(g)
+    if (!groups[key]) {
+      groups[key] = 0
+      order.push(g)
+    }
+    groups[key]++
+  }
+  if (order.length === 0) return ""
+  order.sort(function (a, b) { return b - a })
+  var bits = []
+  for (i = 0; i < order.length; i++) {
+    var size = order[i]
+    var count = groups[String(size)]
+    var sizeText = (size % 1 === 0) ? String(size) : size.toFixed(1)
+    if (count === 1 && order.length === 1) bits.push(sizeText + " GiB")
+    else bits.push(count + "\u00d7" + sizeText + " GiB")
+  }
+  return bits.join(" + ")
+}
+
+function formatRamMaker(modules) {
+  var list = Array.isArray(modules) ? modules : []
+  var seen = {}
+  var names = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var m = cleanRamMaker(list[i].maker)
+    if (!m) continue
+    var key = m.toLowerCase()
+    if (seen[key]) continue
+    seen[key] = true
+    names.push(m)
+    if (names.length >= 2) break
+  }
+  if (names.length === 1) return names[0]
+  if (names.length === 2) return names[0] + " + " + names[1]
+  return ""
+}
+
 function parseUdevRam(text) {
-  var empty = { type: "", speedMTs: null, label: "" }
+  var empty = { type: "", speedMTs: null, label: "", maker: "", kit: "", modules: [] }
   if (typeof text !== "string" || text.length === 0) return empty
   var devices = {}
   var lines = text.split("\n")
@@ -1860,9 +1932,10 @@ function parseUdevRam(text) {
   var types = []
   var configured = []
   var rated = []
-  for (var id in devices) {
-    if (!Object.prototype.hasOwnProperty.call(devices, id)) continue
-    var d = devices[id]
+  var modules = []
+  for (var did in devices) {
+    if (!Object.prototype.hasOwnProperty.call(devices, did)) continue
+    var d = devices[did]
     if (d.PRESENT === "0") continue
     var size = num(d.SIZE, 0)
     if (!(size > 0)) continue
@@ -1876,6 +1949,13 @@ function parseUdevRam(text) {
     var sgts = num(d.SPEED_GTS, 0)
     if (spd > 0) rated.push(spd)
     else if (sgts > 0) rated.push(Math.round(sgts * 1000))
+    if (modules.length < 8) {
+      modules.push({
+        bytes: size,
+        maker: cleanRamMaker(d.MANUFACTURER),
+        part: clipStr(collapseSpaces(d.PART_NUMBER), 48)
+      })
+    }
   }
   var type = ""
   for (i = 0; i < types.length; i++) {
@@ -1891,8 +1971,22 @@ function parseUdevRam(text) {
   }
   speed = minOf(configured)
   if (speed === null) speed = minOf(rated)
-  var label = formatRamLabel(type, speed)
-  return { type: type, speedMTs: speed, label: label }
+  var maker = formatRamMaker(modules)
+  var kit = formatRamKit(modules)
+  var spec = formatRamLabel(type, speed)
+  var bits = []
+  if (maker && kit) bits.push(maker + " " + kit)
+  else if (kit) bits.push(kit)
+  else if (maker) bits.push(maker)
+  if (spec) bits.push(spec)
+  return {
+    type: type,
+    speedMTs: speed,
+    maker: maker,
+    kit: kit,
+    modules: modules,
+    label: bits.join(" · ")
+  }
 }
 
 function formatRamLabel(type, speedMTs) {
@@ -1907,7 +2001,7 @@ function formatRamLabel(type, speedMTs) {
 function parseSystemMem(mem) {
   var swaps = []
   var zram = []
-  var ram = { type: "", speedMTs: null, label: "" }
+  var ram = { type: "", speedMTs: null, label: "", maker: "", kit: "", modules: [] }
   if (!mem || typeof mem !== "object") return { swaps: swaps, zram: zram, ram: ram }
   ram = parseUdevRam(mem.udevPayload)
   var i
@@ -2209,6 +2303,8 @@ if (typeof module !== "undefined" && module.exports) {
     parseDiskInfo: parseDiskInfo,
     parseUdevRam: parseUdevRam,
     formatRamLabel: formatRamLabel,
+    formatRamKit: formatRamKit,
+    formatRamMaker: formatRamMaker,
     pickDisk: pickDisk,
     swapRates: swapRates,
     memComposition: memComposition,

@@ -39,7 +39,7 @@ Item {
   }
 
   readonly property string memTitle: {
-    if (comp) return Model.formatKiB(comp.totalK) + " installed"
+    if (comp) return Model.formatKiB(comp.totalK) + " usable"
     return "Memory"
   }
 

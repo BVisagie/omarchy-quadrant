@@ -998,9 +998,16 @@ test("parseUdevRam reads configured DIMM type and speed, skipping empty slots", 
   const ram = Model.parseUdevRam(fixture("udev-dmi.txt"));
   assert.equal(ram.type, "DDR4");
   assert.equal(ram.speedMTs, 3200);
-  assert.equal(ram.label, "DDR4 3200 MT/s");
+  assert.equal(ram.maker, "Kingston");
+  assert.equal(ram.kit, "2\u00d716 GiB");
+  assert.equal(ram.modules.length, 2);
+  assert.equal(ram.label, "Kingston 2\u00d716 GiB \u00b7 DDR4 3200 MT/s");
   assert.equal(Model.parseUdevRam("").label, "");
   assert.equal(Model.formatRamLabel("LPDDR5", 9600), "LPDDR5 9600 MT/s");
+  assert.equal(Model.formatRamKit([
+    { bytes: 8 * 1024 * 1024 * 1024 },
+    { bytes: 16 * 1024 * 1024 * 1024 }
+  ]), "1\u00d716 GiB + 1\u00d78 GiB");
 });
 
 test("hostLine joins DMI without repeating the vendor", () => {

@@ -189,7 +189,9 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   per resource** — when `/proc/pressure/cpu` or `/proc/pressure/memory`
   is unreadable that half is JSON `null` and the ring shows `--`, not
   zero. The process column is "% of RAM". The tab header is installed
-  RAM plus DIMM type/speed from unprivileged udev DMI when present; swap
+  RAM plus DIMM identity from unprivileged udev DMI when present
+  (maker, module count and size, type/speed — e.g. Kingston 2×16 GiB ·
+  DDR4 3600 MT/s); swap
   devices from `/proc/swaps` are listed (zram includes the active
   compression algorithm and disk size).
 - **GPU**: the GPU tab and bar segment cover **dedicated** cards only.
