@@ -8,9 +8,9 @@ import "../Theme.js" as Theme
 //
 // Icon/friendly-name matching is EXACT-MATCH ONLY against the normalized
 // desktop-entry id, Name, Icon, and StartupWMClass — substring matching
-// would let a process borrow another app's identity. The raw comm is always
-// shown next to any friendly name, and every label is PlainText because
-// process names are attacker-controlled.
+// would let a process borrow another app's identity. When a desktop entry
+// matches, its Name is shown; otherwise the resolved comm from Model.js.
+// Every label is PlainText because process names are attacker-controlled.
 Column {
   id: root
 
@@ -148,8 +148,7 @@ Column {
       readonly property string displayName: {
         if (isOther) return "Other traffic"
         var raw = String(modelData && modelData.comm || "")
-        if (entry && entry.name !== "" && root.normalizeKey(entry.name) !== root.normalizeKey(raw))
-          return entry.name + " (" + raw + ")"
+        if (entry && entry.name !== "") return entry.name
         return raw
       }
 

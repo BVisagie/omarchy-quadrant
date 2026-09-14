@@ -873,6 +873,172 @@ function parsePs(text, maxRows) {
   return out
 }
 
+// Friendly names for the top-N roster. Wrapper binaries (electron, chrome)
+// take a label from exe basename or cmdline tokens against a fixed map —
+// never a free-form substring of argv. Kernel threads get a short class.
+var WRAPPER_COMMS = {
+  electron: 1, chrome: 1, chromium: 1, "chromium-browser": 1,
+  firefox: 1, "firefox-bin": 1
+}
+
+var APP_LABELS = [
+  ["brave-browser", "Brave"],
+  ["brave-bin", "Brave"],
+  ["brave", "Brave"],
+  ["google-chrome", "Chrome"],
+  ["microsoft-edge", "Edge"],
+  ["msedge", "Edge"],
+  ["vivaldi-bin", "Vivaldi"],
+  ["vivaldi", "Vivaldi"],
+  ["signal-desktop", "Signal"],
+  ["telegram-desktop", "Telegram"],
+  ["code-oss", "Code"],
+  ["vscodium", "Codium"],
+  ["codium", "Codium"],
+  ["obsidian", "Obsidian"],
+  ["1password", "1Password"],
+  ["discord", "Discord"],
+  ["spotify", "Spotify"],
+  ["slack", "Slack"],
+  ["steam", "Steam"],
+  ["cursor", "Cursor"],
+  ["ghostty", "Ghostty"],
+  ["chromium", "Chromium"],
+  ["chrome", "Chrome"],
+  ["firefox", "Firefox"],
+  ["code", "Code"]
+]
+
+var KWORKER_TASK = {
+  events: "kworker events",
+  events_unbound: "kworker events",
+  events_power_efficient: "kworker events",
+  "mm_percpu_wq": "kworker mm",
+  netns: "kworker netns",
+  kcryptd: "kcryptd"
+}
+
+function basenameToken(path) {
+  var s = collapseSpaces(path)
+  if (!s) return ""
+  var slash = s.lastIndexOf("/")
+  if (slash >= 0) s = s.slice(slash + 1)
+  return s.replace(/\s+/g, "")
+}
+
+function hintTokens(exe, cmd) {
+  var s = (basenameToken(exe) + " " + String(cmd || "")).toLowerCase()
+  return s.split(/[^a-z0-9._+-]+/)
+}
+
+function labelFromHints(exe, cmd) {
+  var tokens = hintTokens(exe, cmd)
+  var seen = {}
+  var t
+  for (t = 0; t < tokens.length; t++) {
+    if (tokens[t]) seen[tokens[t]] = true
+  }
+  var i
+  for (i = 0; i < APP_LABELS.length; i++) {
+    if (seen[APP_LABELS[i][0]]) return APP_LABELS[i][1]
+  }
+  return ""
+}
+
+function kworkerLabel(comm) {
+  var m = String(comm || "").match(/^kworker\/[^-\s]*-(.+)$/i)
+  if (!m) return "kworker"
+  var task = m[1].toLowerCase()
+  if (KWORKER_TASK[task]) return KWORKER_TASK[task]
+  if (task.indexOf("events") === 0) return "kworker events"
+  if (task.indexOf("btrfs") === 0) return "kworker btrfs"
+  if (task.indexOf("flush") === 0) return "kworker flush"
+  return "kworker"
+}
+
+function displayName(comm, exe, cmd) {
+  var raw = clipStr(collapseSpaces(comm), 64)
+  if (!raw) return ""
+  if (/^kworker\//i.test(raw)) return kworkerLabel(raw)
+  if (/^kswapd/i.test(raw)) return "kswapd"
+  if (/^ksoftirqd/i.test(raw)) return "ksoftirqd"
+  if (/^kcompactd/i.test(raw)) return "kcompactd"
+  if (/^khugepaged$/i.test(raw)) return "khugepaged"
+  if (/^migration\//i.test(raw)) return "migration"
+  if (/^watchdog\//i.test(raw)) return "watchdog"
+  var key = raw.toLowerCase()
+  if (WRAPPER_COMMS[key]) {
+    var hinted = labelFromHints(exe, cmd)
+    if (hinted) return hinted
+    var exeBase = basenameToken(exe)
+    if (exeBase && exeBase.toLowerCase() !== key) return clipStr(exeBase, 64)
+  }
+  var direct = labelFromHints(raw, "")
+  if (direct && !WRAPPER_COMMS[key]) {
+    // comm itself is a known app id
+    if (raw.toLowerCase() === direct.toLowerCase()) return direct
+  }
+  return raw
+}
+
+function parseProcRows(text, maxRows) {
+  var cap = (maxRows === undefined) ? 32 : Math.max(1, Math.round(num(maxRows, 32)))
+  if (typeof text === "string") {
+    var trimmed = text.replace(/^\s+/, "")
+    if (trimmed.charAt(0) === "[") {
+      var parsed = safeJson(trimmed)
+      var out = []
+      if (Array.isArray(parsed)) {
+        var i
+        for (i = 0; i < parsed.length && out.length < cap; i++) {
+          var e = parsed[i]
+          if (!e || typeof e !== "object") continue
+          var pid = num(e.pid, null)
+          var value = num(e.value, null)
+          if (pid === null || value === null) continue
+          out.push({
+            pid: Math.round(pid),
+            value: value,
+            comm: clipStr(e.comm, 128),
+            exe: clipStr(e.exe, 64),
+            cmd: clipStr(e.cmd, 160)
+          })
+        }
+      }
+      return out
+    }
+  }
+  return parsePs(text, cap)
+}
+
+function nameAndCollapse(rows, maxRows) {
+  var limit = Math.max(1, Math.round(num(maxRows, 5)))
+  var list = Array.isArray(rows) ? rows : []
+  var groups = {}
+  var order = []
+  var i
+  for (i = 0; i < list.length; i++) {
+    var r = list[i]
+    if (!r) continue
+    var name = displayName(r.comm, r.exe, r.cmd)
+    if (!name) continue
+    var key = name.toLowerCase()
+    if (!groups[key]) {
+      groups[key] = { pid: r.pid, comm: name, value: 0, n: 0 }
+      order.push(key)
+    }
+    var g = groups[key]
+    g.value += num(r.value, 0) || 0
+    g.n += 1
+    if (r.pid < g.pid) g.pid = r.pid
+  }
+  var out = []
+  for (i = 0; i < order.length; i++) out.push(groups[order[i]])
+  out.sort(function (a, b) { return b.value - a.value || a.pid - b.pid })
+  if (out.length > limit) out.length = limit
+  return out
+}
+
 // ------------------------------------------------------------------- ss
 //
 // Parse `ss -H -t -i -n -p state established` output into per-socket counter
@@ -2322,6 +2488,9 @@ if (typeof module !== "undefined" && module.exports) {
     swapUsage: swapUsage,
     pickInterface: pickInterface,
     parsePs: parsePs,
+    displayName: displayName,
+    parseProcRows: parseProcRows,
+    nameAndCollapse: nameAndCollapse,
     parseSs: parseSs,
     sumSocketsByPid: sumSocketsByPid,
     socketsOnIface: socketsOnIface,

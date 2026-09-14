@@ -2,15 +2,14 @@
 # process-memory — one-shot top-by-RSS process sampler for the Quadrant panel.
 #
 # Emits one JSON envelope on stdout:
-#   {"ok":true,"ts":<epoch>,"metric":"rssKb","payload":"<raw ps output>"}
-# rss is KiB; the "% of RAM" column is computed in QML from the stream's
-# MemTotal. The raw ps text travels as a single JSON string built with
-# jq --arg; parsing happens in Model.js (node-tested). Failures emit
-# {"ok":false,...} and exit non-zero.
+#   {"ok":true,"ts":<epoch>,"metric":"rssKb","payload":"<json array>"}
+# rss is KiB from /proc/<pid>/statm; the "% of RAM" column is computed in
+# QML from the stream's MemTotal. Failures emit {"ok":false,...} and exit
+# non-zero.
 #
 # Usage: process-memory [row_count]     row_count clamps to 1..10 (default 5)
 #
-# QUADRANT_AWK overrides the awk binary; CI runs this under mawk and gawk.
+# Payload is JSON so Model.js can name wrappers and collapse duplicate apps.
 
 # shellcheck disable=SC2016  # jq programs are single-quoted on purpose
 set -euo pipefail
@@ -41,18 +40,73 @@ resolve_bin() {
 }
 
 JQ=$(resolve_bin jq) || fail "jq not found"
-PS=$(resolve_bin ps) || fail "ps not found"
-awk_name=${QUADRANT_AWK:-awk}
-[[ $awk_name =~ ^[A-Za-z0-9._+-]+$ ]] || fail "bad awk name"
-AWK=$(resolve_bin "$awk_name") || fail "awk not found"
+PY=$(resolve_bin python3) || fail "python3 not found"
 
 count=${1:-5}
 [[ $count =~ ^[0-9]+$ ]] || fail "bad row count '$count'"
 (( count < 1 )) && count=1
 (( count > 10 )) && count=10
 
-if ! payload=$(LC_ALL=C "$PS" -eo pid=,rss=,comm= --sort=-rss | "$AWK" -v max="$count" 'NR <= max'); then
-  fail "ps failed"
+# RSS from /proc/<pid>/statm (resident pages). Payload is a JSON array of
+# {pid,value,comm,exe,cmd} so Model.js can name wrappers and collapse
+# duplicate apps. comm is /proc/<pid>/comm, never argv.
+export QUADRANT_PRSS_COUNT=$count
+if ! payload=$("$PY" - <<'PY'
+import json, os
+
+count = max(1, min(10, int(os.environ.get("QUADRANT_PRSS_COUNT", "5"))))
+proc = os.environ.get("QUADRANT_PROC_PATH", "/proc")
+page = os.sysconf("SC_PAGE_SIZE") or 4096
+limit = min(32, max(count * 4, 16))
+
+def exe_base(pid):
+    try:
+        target = os.readlink(os.path.join(proc, pid, "exe"))
+    except OSError:
+        return ""
+    return os.path.basename(target).replace(" (deleted)", "")[:64]
+
+def cmdline_hint(pid):
+    try:
+        raw = open(os.path.join(proc, pid, "cmdline"), "rb").read().replace(b"\0", b" ")
+        return raw.decode("utf-8", "replace").strip()[:160]
+    except OSError:
+        return ""
+
+rows = []
+try:
+    pids = os.listdir(proc)
+except OSError:
+    pids = []
+for pid in pids:
+    if not pid.isdigit():
+        continue
+    try:
+        with open(os.path.join(proc, pid, "statm"), "r", encoding="utf-8") as fh:
+            fields = fh.read().split()
+        if len(fields) < 2:
+            continue
+        rss_kb = int(fields[1]) * page / 1024.0
+        with open(os.path.join(proc, pid, "comm"), "r", errors="ignore") as fh:
+            comm = fh.read().strip().replace("\n", " ")[:128] or pid
+    except (OSError, ValueError):
+        continue
+    rows.append((rss_kb, int(pid), comm, exe_base(pid), cmdline_hint(pid)))
+
+rows.sort(key=lambda r: (-r[0], r[1]))
+out = []
+for rss_kb, pid, comm, exe, cmd in rows[:limit]:
+    out.append({
+        "pid": pid,
+        "value": round(rss_kb),
+        "comm": comm,
+        "exe": exe,
+        "cmd": cmd,
+    })
+print(json.dumps(out, separators=(",", ":")))
+PY
+); then
+  fail "process sampler failed"
 fi
 
 "$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$payload" \

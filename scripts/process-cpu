@@ -52,8 +52,10 @@ count=${1:-5}
 (( count > 10 )) && count=10
 
 # Interval CPU% from /proc/<pid>/stat utime+stime over the widget's poll
-# window (state in XDG_RUNTIME_DIR). Same payload shape as `ps -eo pid=,pcpu=,comm=`
-# so Model.parsePs stays unchanged. comm comes from /proc/<pid>/comm, never argv.
+# window (state in XDG_RUNTIME_DIR). Payload is a JSON array of
+# {pid,value,comm,exe,cmd}; Model.js names wrappers and collapses duplicates.
+# comm comes from /proc/<pid>/comm, never argv. exe is the basename of the
+# exe symlink; cmd is a clipped cmdline used only as a whitelist hint.
 export QUADRANT_PCPU_COUNT=$count
 if ! payload=$("$PY" - <<'PY'
 import json, os, time
@@ -64,6 +66,7 @@ runtime = os.environ.get("XDG_RUNTIME_DIR") or os.path.join(os.path.expanduser("
 state_path = os.path.join(runtime, "quadrant-pcpu.json")
 clk = os.sysconf("SC_CLK_TCK") or 100
 now = time.monotonic()
+limit = min(32, max(count * 4, 16))
 
 def parse_stat(text):
     rparen = text.rfind(")")
@@ -76,6 +79,20 @@ def parse_stat(text):
         return int(fields[11]) + int(fields[12])
     except ValueError:
         return None
+
+def exe_base(pid):
+    try:
+        target = os.readlink(os.path.join(proc, pid, "exe"))
+    except OSError:
+        return ""
+    return os.path.basename(target).replace(" (deleted)", "")[:64]
+
+def cmdline_hint(pid):
+    try:
+        raw = open(os.path.join(proc, pid, "cmdline"), "rb").read().replace(b"\0", b" ")
+        return raw.decode("utf-8", "replace").strip()[:160]
+    except OSError:
+        return ""
 
 snap = {}
 try:
@@ -94,7 +111,7 @@ for pid in pids:
             comm = fh.read().strip().replace("\n", " ")[:128] or pid
     except OSError:
         continue
-    snap[pid] = {"ticks": ticks, "comm": comm}
+    snap[pid] = {"ticks": ticks, "comm": comm, "exe": exe_base(pid), "cmd": cmdline_hint(pid)}
 
 prev = None
 try:
@@ -107,7 +124,7 @@ tmp = state_path + ".tmp"
 try:
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump({"t": now, "p": snap}, fh, separators=(",", ":"))
+        json.dump({"t": now, "p": {k: {"ticks": v["ticks"]} for k, v in snap.items()}}, fh, separators=(",", ":"))
     os.replace(tmp, state_path)
 except OSError:
     try:
@@ -116,7 +133,6 @@ except OSError:
         pass
 
 rows = []
-dt = 0.0
 if isinstance(prev, dict) and "t" in prev and "p" in prev:
     dt = now - float(prev["t"])
     before = prev.get("p") or {}
@@ -129,13 +145,19 @@ if isinstance(prev, dict) and "t" in prev and "p" in prev:
             if delta < 0:
                 continue
             pct = 100.0 * delta / float(clk) / dt
-            rows.append((pct, int(pid), cur["comm"]))
+            rows.append((pct, int(pid), cur))
 
 rows.sort(key=lambda r: (-r[0], r[1]))
-lines = []
-for pct, pid, comm in rows[:count]:
-    lines.append("%d %.1f %s" % (pid, pct, comm))
-print("\n".join(lines))
+out = []
+for pct, pid, rec in rows[:limit]:
+    out.append({
+        "pid": pid,
+        "value": round(pct, 1),
+        "comm": rec["comm"],
+        "exe": rec["exe"],
+        "cmd": rec["cmd"],
+    })
+print(json.dumps(out, separators=(",", ":")))
 PY
 ); then
   fail "process sampler failed"

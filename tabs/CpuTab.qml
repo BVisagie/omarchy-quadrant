@@ -77,17 +77,19 @@ Item {
       errorText = "process sampler failed: " + ((env && env.error) ? String(env.error) : "bad output")
       return
     }
-    var parsed = Model.parsePs(env.payload, panel ? panel.processCount : 5)
+    var limit = panel ? panel.processCount : 5
+    var parsed = Model.parseProcRows(env.payload, 32)
+    var collapsed = Model.nameAndCollapse(parsed, limit)
     var mapped = []
-    for (var i = 0; i < parsed.length; i++) {
+    for (var i = 0; i < collapsed.length; i++) {
       mapped.push({
-        pid: parsed[i].pid,
-        comm: parsed[i].comm,
-        valueText: Model.formatPct(parsed[i].value, 1),
-        sortKey: parsed[i].value
+        pid: collapsed[i].pid,
+        comm: collapsed[i].comm,
+        valueText: Model.formatPct(collapsed[i].value, 1),
+        sortKey: collapsed[i].value
       })
     }
-    rows = Model.mergeRoster(rows, mapped, panel ? panel.processCount : 5)
+    rows = Model.mergeRoster(rows, mapped, limit)
     errorText = ""
   }
 

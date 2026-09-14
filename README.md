@@ -180,7 +180,9 @@ omarchy bar set dev.bvisagie.quadrant networkInterface '"wg0"'
   integrated GPU is present, a **GRAPHICS** block shows its identity and
   live frequency or busy metrics (sampled while the CPU tab is open).
   Top processes use interval CPU% from `/proc/<pid>/stat` over the panel
-  poll window, not procps lifetime `%CPU`.
+  poll window, not procps lifetime `%CPU`. Wrapper binaries (`electron`,
+  `chrome`) are labeled from exe/cmdline against a fixed map, kernel
+  threads get a short class, and same-name rows are summed.
 - **Memory**: the RAM ring is **used** `(MemTotal − MemAvailable) /
   MemTotal` — the same quantity as the bar. Composition (Applications /
   Kernel unreclaimable slab / Cache = page cache + **Buffers** +

@@ -98,18 +98,20 @@ Item {
       return
     }
     var totalK = root.sample ? root.sample.mem.tot : 0
-    var parsed = Model.parsePs(env.payload, panel ? panel.processCount : 5)
+    var limit = panel ? panel.processCount : 5
+    var parsed = Model.parseProcRows(env.payload, 32)
+    var collapsed = Model.nameAndCollapse(parsed, limit)
     var mapped = []
-    for (var i = 0; i < parsed.length; i++) {
-      var pct = totalK > 0 ? 100 * parsed[i].value / totalK : null
+    for (var i = 0; i < collapsed.length; i++) {
+      var pct = totalK > 0 ? 100 * collapsed[i].value / totalK : null
       mapped.push({
-        pid: parsed[i].pid,
-        comm: parsed[i].comm,
+        pid: collapsed[i].pid,
+        comm: collapsed[i].comm,
         valueText: pct === null ? "--" : Model.formatPct(pct, 1),
-        sortKey: parsed[i].value
+        sortKey: collapsed[i].value
       })
     }
-    rows = Model.mergeRoster(rows, mapped, panel ? panel.processCount : 5)
+    rows = Model.mergeRoster(rows, mapped, limit)
     errorText = ""
   }
 

@@ -479,6 +479,33 @@ test("parsePs honors the row cap", () => {
   assert.equal(Model.parsePs(null, 5).length, 0);
 });
 
+test("displayName maps wrappers and kernel threads", () => {
+  assert.equal(Model.displayName("electron", "brave", "/usr/lib/brave-bin/brave --type=gpu"), "Brave");
+  assert.equal(Model.displayName("electron", "codium", "/usr/share/codium/codium"), "Codium");
+  assert.equal(Model.displayName("chrome", "chrome", "/opt/google/chrome/chrome --type=renderer"), "Chrome");
+  assert.equal(Model.displayName("electron", "electron", "/usr/lib/electron/electron"), "electron");
+  assert.equal(Model.displayName("kworker/3:5-events", "", ""), "kworker events");
+  assert.equal(Model.displayName("kworker/u88:1-kec", "", ""), "kworker");
+  assert.equal(Model.displayName("kworker/0:1-btrfs-endio", "", ""), "kworker btrfs");
+  assert.equal(Model.displayName("kswapd0", "", ""), "kswapd");
+  assert.equal(Model.displayName("quickshell", "quickshell", ""), "quickshell");
+  assert.equal(Model.displayName("", "", ""), "");
+});
+
+test("nameAndCollapse sums same-app rows and keeps the lowest pid", () => {
+  const rows = Model.parseProcRows(JSON.stringify([
+    { pid: 200, value: 11.1, comm: "electron", exe: "brave", cmd: "/usr/lib/brave/brave" },
+    { pid: 100, value: 7.4, comm: "electron", exe: "brave", cmd: "/usr/lib/brave/brave --type=renderer" },
+    { pid: 50, value: 3.0, comm: "quickshell", exe: "quickshell", cmd: "" }
+  ]));
+  const collapsed = Model.nameAndCollapse(rows, 5);
+  assert.equal(collapsed.length, 2);
+  assert.equal(collapsed[0].comm, "Brave");
+  assert.equal(Math.round(collapsed[0].value * 10) / 10, 18.5);
+  assert.equal(collapsed[0].pid, 100);
+  assert.equal(collapsed[1].comm, "quickshell");
+});
+
 // -------------------------------------------------------------------- ss
 
 test("parseSs parses real captured output", () => {
