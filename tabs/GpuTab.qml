@@ -57,8 +57,7 @@ Item {
     var parts = []
     if (vendor) parts.push(Model.gpuVendorLabel(vendor))
     if (gpu && gpu.card) parts.push(gpu.card)
-    if (gpuInfo && gpuInfo.driver) parts.push("driver " + gpuInfo.driver)
-    if (gpuInfo && gpuInfo.slot) parts.push(gpuInfo.slot)
+    if (gpuInfo && gpuInfo.driver) parts.push(gpuInfo.driver)
     return parts.join(" · ")
   }
 

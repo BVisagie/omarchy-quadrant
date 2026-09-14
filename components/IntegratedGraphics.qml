@@ -41,7 +41,7 @@ Item {
     if (vendor) parts.push(Model.gpuVendorLabel(vendor))
     if (gpu && gpu.card) parts.push(gpu.card)
     var driver = gpuInfo && gpuInfo.driver ? gpuInfo.driver : (gpu ? gpu.driver : "")
-    if (driver) parts.push("driver " + driver)
+    if (driver) parts.push(driver)
     return parts.join(" · ")
   }
 

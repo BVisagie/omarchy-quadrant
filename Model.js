@@ -2114,10 +2114,21 @@ function cleanGpuName(raw) {
 
 // sys_vendor + product_name, without repeating the vendor when the
 // product already starts with it ("Framework Laptop 16").
+function junkDmi(value) {
+  var t = collapseSpaces(value).toLowerCase()
+  if (!t) return true
+  return t === "system product name" || t === "system manufacturer"
+    || t === "to be filled by o.e.m." || t === "to be filled by oem"
+    || t === "default string" || t === "not specified" || t === "none"
+    || t === "n/a" || t === "na" || t === "oem"
+}
+
 function hostLine(host) {
   if (!host || typeof host !== "object") return ""
   var vendor = collapseSpaces(host.sysVendor)
   var product = collapseSpaces(host.productName)
+  if (junkDmi(vendor)) vendor = ""
+  if (junkDmi(product)) product = ""
   if (vendor && product) {
     if (product.toLowerCase().indexOf(vendor.toLowerCase()) === 0) return product
     return vendor + " " + product

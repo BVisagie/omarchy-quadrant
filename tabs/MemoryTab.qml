@@ -44,25 +44,9 @@ Item {
   }
 
   readonly property string memMeta: {
-    var bits = []
     var m = sysMem
-    if (m && m.ram && m.ram.label) bits.push(m.ram.label)
-    if (m && m.zram && m.zram.length > 0) {
-      var z = m.zram[0]
-      var zbits = [z.dev]
-      if (z.alg) zbits.push(z.alg)
-      if (z.diskBytes) zbits.push(Model.formatBytes(z.diskBytes))
-      bits.push(zbits.join(" · "))
-    } else if (m && m.swaps && m.swaps.length > 0) {
-      var s = m.swaps[0]
-      var parts = [s.kind]
-      if (s.file) parts.push(s.file)
-      if (s.sizeKb) parts.push(Model.formatKiB(s.sizeKb))
-      bits.push(parts.join(" · "))
-    } else if (swap && swap.totalK <= 0) {
-      bits.push("no swap")
-    }
-    return bits.join(" · ")
+    if (m && m.ram && m.ram.label) return m.ram.label
+    return ""
   }
 
   readonly property color memTrack: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
@@ -263,7 +247,7 @@ Item {
 
         Text {
           textFormat: Text.PlainText
-          text: "Used is not-available. Cache is reclaimable."
+          text: "Cache can be reclaimed. Used cannot."
           color: root.panel ? Qt.darker(root.panel.barForeground, 1.5) : "#cacccc"
           font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.caption
@@ -320,16 +304,6 @@ Item {
 
     PanelSeparator {
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
-    }
-
-    Components.StatRow {
-      width: parent.width
-      label: "Used"
-      value: root.comp
-             ? Model.formatKiB(root.comp.usedK) + " of " + Model.formatKiB(root.comp.totalK)
-             : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
     Components.StatRow {

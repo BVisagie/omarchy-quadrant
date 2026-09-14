@@ -1016,6 +1016,8 @@ test("hostLine joins DMI without repeating the vendor", () => {
   assert.equal(Model.hostLine({ sysVendor: "Framework", productName: "Framework Laptop 13" }),
     "Framework Laptop 13");
   assert.equal(Model.hostLine({ sysVendor: "Dell Inc.", productName: "" }), "Dell Inc.");
+  assert.equal(Model.hostLine({ sysVendor: "ASUS", productName: "System Product Name" }), "ASUS");
+  assert.equal(Model.hostLine({ sysVendor: "To Be Filled By O.E.M.", productName: "To Be Filled By O.E.M." }), "");
   assert.equal(Model.hostLine({ sysVendor: "", productName: "" }), "");
   assert.equal(Model.hostLine(null), "");
 });
