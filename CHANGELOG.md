@@ -2,9 +2,11 @@
 
 ## 1.0.0 — 2026-10-02
 
-The best-in-class release: one PR, thirteen commits, every tab rebuilt.
+A rebuilt system monitor with a shared data store, saved history, and
+updated tabs.
 
 ### Fixed
+
 - The stream really forks nothing per tick; a killed sampler's FIFO
   directory is swept at the next start and SIGTERM cleans up.
 - Per-core usage is keyed by cpu id (offline cores no longer shift the
@@ -16,17 +18,21 @@ The best-in-class release: one PR, thirteen commits, every tab rebuilt.
   strings; old entries are migrated on first save; `omarchy bar set` takes
   effect at once (no more stale local copies).
 - The process list no longer empties for good when `panelIntervalMs` is
-  long; per-process CPU is a share of the machine, memory is PSS.
+  long; per-process CPU is a share of the machine, and memory uses PSS
+  where readable, with RSS as a fallback.
 - Muted text and graph colours follow the theme on light and dark themes.
 - `barPalette: vivid` does what the manifest promised.
 - History follows one interface and one disk.
 
 ### Added
+
 - One store per shell (service kind): a two-monitor desktop runs one
   sampler, not two.
-- One hour of persisted history per graph, with gaps drawn as gaps.
+- One hour of persisted history per graph, with graph breaks for gaps
+  beyond the cadence-dependent threshold.
 - Per-process GPU rows (DRM fdinfo / NVIDIA compute apps), per-process
-  disk I/O for your own processes, sparklines on every process row.
+  disk I/O for readable processes across devices, and sparklines on CPU,
+  Memory, Drives, and attributed Network rows.
 - Labelled time graphs with average and peak and a 60 s / 1 h toggle;
   memory framed on its own range; hover readout.
 - Network identity (type, link speed, addresses), an interface picker, a
@@ -40,6 +46,7 @@ The best-in-class release: one PR, thirteen commits, every tab rebuilt.
   a qmllint gate.
 
 ### Changed
+
 - Requires Omarchy 4.0.3 or later.
 - `Model.js` is now `lib/*.mjs`; `process-cpu` and `process-memory` are
   `process-sample`; `Theme.js` is gone.

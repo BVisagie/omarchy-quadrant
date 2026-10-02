@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Quadrant screenshot hero</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1920px; height: 1320px; }
+  body {
+    overflow: hidden;
+    color: #edf3f7;
+    font-family: "DejaVu Sans", sans-serif;
+    background:
+      radial-gradient(ellipse at 16% 55%, #15383b88, transparent 50%),
+      radial-gradient(ellipse at 53% 70%, #3b332566, transparent 43%),
+      linear-gradient(135deg, #101a24, #0a111b 58%, #101923);
+  }
+  main { padding: 66px 70px 48px; }
+  header { height: 242px; position: relative; }
+  .eyebrow {
+    color: #91a8b9; font-size: 17px; font-weight: 600;
+    letter-spacing: 5px; margin: 0 0 17px;
+  }
+  h1 { font-size: 100px; font-weight: 650; letter-spacing: -5px; margin: 0; line-height: 1.05; }
+  .tagline { margin: 16px 0 0; color: #acbecb; font-size: 30px; letter-spacing: -.6px; }
+  .metrics {
+    position: absolute; right: 0; top: 19px; margin: 0;
+    font-family: "DejaVu Sans Mono", monospace; color: #b6c7cf;
+    font-size: 19px; line-height: 2.1; letter-spacing: 1px;
+    text-align: right;
+  }
+  .metrics span { color: #6ac3bd; }
+  .panels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; }
+  figure { margin: 0; min-width: 0; }
+  figcaption {
+    font-family: "DejaVu Sans Mono", monospace;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 17px; height: 52px; margin-bottom: 12px;
+    text-transform: uppercase; letter-spacing: 3px; color: #d2e0e7;
+    border-top: 1px solid #44516180;
+  }
+  figcaption small { font-size: 12px; letter-spacing: 1.5px; color: #8197a7; }
+  .screen {
+    border: 1px solid #68828b99; border-radius: 9px; overflow: hidden;
+    box-shadow: 0 20px 55px #0009, 0 0 24px #46bbb41a;
+    background: #071010;
+  }
+  .light .screen { border-color: #aa9e87; box-shadow: 0 20px 55px #0009, 0 0 24px #c7a36018; }
+  .mono .screen { border-color: #6a7280; box-shadow: 0 20px 55px #0009; }
+  img { display: block; width: 100%; height: auto; }
+  footer {
+    margin-top: 38px; display: flex; justify-content: space-between;
+    color: #7f95a5; font-family: "DejaVu Sans Mono", monospace;
+    font-size: 15px; letter-spacing: .5px;
+  }
+</style>
+<main>
+  <header>
+    <p class="eyebrow">OMARCHY SYSTEM MONITOR</p>
+    <h1>Quadrant</h1>
+    <p class="tagline">Your system, at a glance.</p>
+    <p class="metrics">CPU <span>·</span> GPU <span>·</span> Memory<br>Drives <span>·</span> Network</p>
+  </header>
+  <section class="panels" aria-label="Quadrant in three Omarchy themes">
+    <figure>
+      <figcaption>CPU <small>Dark theme</small></figcaption>
+      <div class="screen"><img src="../screenshots/cpu.png" alt="CPU tab in a dark teal theme"></div>
+    </figure>
+    <figure class="light">
+      <figcaption>GPU <small>Light theme</small></figcaption>
+      <div class="screen"><img src="../screenshots/gpu.png" alt="GPU tab in a light theme"></div>
+    </figure>
+    <figure class="mono">
+      <figcaption>Memory <small>Monochrome theme</small></figcaption>
+      <div class="screen"><img src="../screenshots/memory.png" alt="Memory tab in a black monochrome theme"></div>
+    </figure>
+  </section>
+  <footer><span>One plugin. Your Omarchy palette.</span><span>Live usage · History · Processes</span></footer>
+</main>
+</html>
