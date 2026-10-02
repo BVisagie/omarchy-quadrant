@@ -19,7 +19,28 @@ jobs:
       - name: Manifest parses
         run: jq -e '.id and .kinds and .entryPoints.barWidget and .barWidget.schema' manifest.json
       - name: Model tests
-        run: node --test tests/model.test.js
+        run: node --test tests/lib/*.test.js
+      - name: qmllint gate
+        # Needs qmllint plus an Omarchy shell to resolve qs.* imports; the
+        # script skips cleanly elsewhere, so this documents the local gate
+        # and fails the moment a runner with the shell is attached.
+        run: bash tests/qmllint.sh
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+      - name: Install ruff
+        run: python3 -m pip install --quiet ruff
+      - name: Lint python helpers
+        run: |
+          ruff check --no-cache scripts/gpu-drm scripts/qproc.py tests/py
+          python3 -m py_compile scripts/gpu-drm scripts/qproc.py
+      - name: Python helper tests
+        run: python3 -m unittest discover -s tests/py -t . -v
 
   scripts:
     runs-on: ubuntu-latest
@@ -36,6 +57,7 @@ jobs:
       - name: shellcheck
         run: |
           for f in scripts/*; do
+            [[ -f $f ]] || continue
             head=$(head -n1 "$f")
             case $head in
               *python*) continue ;;
@@ -45,6 +67,7 @@ jobs:
       - name: bash syntax
         run: |
           for f in scripts/*; do
+            [[ -f $f ]] || continue
             head=$(head -n1 "$f")
             case $head in
               *python*) continue ;;
@@ -55,27 +78,32 @@ jobs:
         # Quote the whole command so GitHub Actions YAML stays valid; the
         # block scalar still lets the shell expand the QML globs.
         run: |
-          ${{ matrix.awk }} -f tests/check-plaintext.awk BarWidget.qml Panel.qml tabs/*.qml components/*.qml
+          ${{ matrix.awk }} -f tests/check-plaintext.awk $(find . -path ./.git -prune -o -name '*.qml' -print | sort)
       - name: Script smoke tests (${{ matrix.awk }})
         run: |
           set -e
           export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/quadrant-ci}"
           mkdir -p "$XDG_RUNTIME_DIR"
           export QUADRANT_AWK="${{ matrix.awk }}"
-          ./scripts/process-cpu 3 | jq -e '.ok == true and .metric == "pcpu"'
-          ./scripts/process-memory 3 | jq -e '.ok == true and .metric == "rssKb"'
+          ./scripts/process-sample 3 | jq -e '.ok == true and .metric == "procs" and (.payload | fromjson | .procs > 0)'
+          sleep 1
+          ./scripts/process-sample 3 --window 30 | jq -e '.ok == true and (.payload | fromjson | (.cpu | length) > 0)'
           ./scripts/process-net eth0 | jq -e '.ok == true'
           ./scripts/gpu-stats list | jq -e '.ok == true'
           bash tests/intel-freq-paths.sh
           ./scripts/system-info | jq -e '.ok == true and .cpu and .mem and .host'
           ./scripts/disk-info | jq -e '.ok == true and .disks and .dfPayload and (.backing | type == "object")'
           # failure path: bad input must produce an ok:false envelope
-          if ./scripts/process-cpu nope | jq -e '.ok == false' >/dev/null; then
+          if ./scripts/process-sample nope | jq -e '.ok == false' >/dev/null; then
             echo "failure envelope OK"
           else
-            echo "process-cpu did not report failure correctly"
+            echo "process-sample did not report failure correctly"
             exit 1
           fi
-          timeout 3 ./scripts/quadrant-stream 500 | head -n 2 | while IFS= read -r line; do
+          QUADRANT_STREAM_TICKS=2 ./scripts/quadrant-stream 500 | while IFS= read -r line; do
             echo "$line" | jq -e '.v == 1 and .cpu and .mem and .net and has("cf") and has("disk")'
           done
+      - name: Stream fork budget (${{ matrix.awk }})
+        run: bash tests/stream-forks.sh
+      - name: Store smoke test (skips without quickshell)
+        run: bash tests/qs-smoke.sh

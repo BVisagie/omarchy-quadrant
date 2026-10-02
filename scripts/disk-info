@@ -44,6 +44,15 @@ resolve_bin() {
 JQ=$(resolve_bin jq) || fail "jq not found"
 DF=$(resolve_bin df) || fail "df not found"
 
+# `disk-info` (identity: devices, mapper folding, df) runs at startup and on
+# R; `disk-info usage` (df plus NVMe temperatures only) is what the panel
+# polls while the Drives tab is open.
+mode=${1:-identity}
+case $mode in
+  identity|usage) ;;
+  *) fail "usage: disk-info [identity|usage]" ;;
+esac
+
 trim() {
   local s=$1
   s=${s#"${s%%[![:space:]]*}"}
@@ -181,6 +190,35 @@ physical_parent() {
 }
 
 # --- disks -----------------------------------------------------------------
+
+if [[ $mode == usage ]]; then
+  temp_fields=()
+  for dev in /sys/block/nvme*n[0-9]*; do
+    [[ -d $dev ]] || continue
+    name=${dev##*/}
+    [[ $name =~ ^[A-Za-z0-9._+-]+$ ]] || continue
+    tmc=$(nvme_temp_mc "$name" || true)
+    [[ -n ${tmc:-} ]] || continue
+    temp_fields+=("$name" "$(( tmc / 1000 ))")
+  done
+  if (( ${#temp_fields[@]} == 0 )); then
+    temps_json='{}'
+  else
+    temps_json=$("$JQ" -cn --args '
+      reduce range(0; $ARGS.positional | length; 2) as $i ({};
+        .[$ARGS.positional[$i]] = ($ARGS.positional[$i + 1] | tonumber))' "${temp_fields[@]}")
+  fi
+  dfPayload=""
+  if ! dfPayload=$("$DF" -P -B1 -T 2>/dev/null); then
+    fail "df failed"
+  fi
+  if (( ${#dfPayload} > 65536 )); then
+    dfPayload=${dfPayload:0:65536}
+  fi
+  "$JQ" -n --argjson temps "$temps_json" --arg dfPayload "$dfPayload" \
+    '{ ok: true, usage: true, temps: $temps, dfPayload: $dfPayload }'
+  exit 0
+fi
 
 disk_fields=()
 disk_count=0

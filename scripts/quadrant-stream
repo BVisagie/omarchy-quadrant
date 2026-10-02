@@ -9,16 +9,19 @@
 #
 # Process budget: ONE bash process, zero fork/exec per tick. Timing comes
 # from `read -t` on a self-held FIFO (a bash builtin), all parsing is bash
-# builtins, the timestamp is $EPOCHREALTIME, and integer sanitization is done
-# in place — command substitution would fork a subshell per field per tick.
-# The only forks happen once at startup (mktemp/mkfifo) or once per newly
-# seen interface name (escape cache fill).
+# builtins, the timestamp is $EPOCHREALTIME, integer sanitization is done in
+# place, and JSON escaping writes through `printf -v` — a command
+# substitution anywhere on the tick path would fork a subshell per field per
+# tick. The only forks happen once at startup (mktemp/mkfifo).
+# tests/stream-forks.sh enforces this by watching the process's
+# waited-for-children counters stay flat across ticks.
 #
 # Usage: quadrant-stream [interval_ms] [gpu_device_path] [gpu_vendor]
 #   interval_ms      tick cadence, 250..60000 (default 1000)
 #   gpu_device_path  e.g. /sys/class/drm/card0/device (optional)
 #   gpu_vendor       amd | intel (optional; nvidia is never sampled here —
 #                    nvidia-smi runs on demand from the panel instead)
+#   QUADRANT_STREAM_TICKS=N   exit after N ticks (tests only)
 
 set -euo pipefail
 
@@ -54,8 +57,26 @@ fi
 # A FIFO opened read-write by ourselves never yields data and never EOFs, so
 # `read -t` on it is a pure-builtin sleep.
 : "${XDG_RUNTIME_DIR:?quadrant-stream: XDG_RUNTIME_DIR is not set}"
-tmpdir=$(mktemp -d "$XDG_RUNTIME_DIR/quadrant-stream.XXXXXX")
+
+# The FIFO directory carries our PID. A previous sampler that was SIGKILLed
+# (watchdog, shell crash) never ran its EXIT trap, so sweep directories
+# whose owner is gone before creating ours. Directories of live samplers —
+# another monitor's copy, a dev instance — are left alone.
+for stale in "$XDG_RUNTIME_DIR"/quadrant-stream.*; do
+  [[ -d $stale ]] || continue
+  owner=${stale##*/quadrant-stream.}
+  owner=${owner%%.*}
+  if [[ $owner =~ ^[0-9]+$ ]]; then
+    kill -0 "$owner" 2>/dev/null && continue
+  fi
+  rm -rf "$stale"
+done
+
+tmpdir=$(mktemp -d "$XDG_RUNTIME_DIR/quadrant-stream.$$.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
+# A plain SIGTERM/SIGINT/SIGHUP interrupts `read -t`; exiting from the
+# handler is what makes the EXIT trap (and the cleanup) run.
+trap 'exit 0' TERM INT HUP
 mkfifo "$tmpdir/tick.fifo"
 exec 9<>"$tmpdir/tick.fifo"
 
@@ -87,16 +108,19 @@ read_int_file() {
   fi
 }
 
-# JSON-escape a string (no surrounding quotes). Interface names are
-# kernel-controlled but can legally contain spaces and control characters;
-# anything non-printable is replaced rather than escaped so one tick can
-# never split into two lines. Results are cached: this involves one subshell
-# per newly seen name, never one per tick.
-declare -A ESC_CACHE=()
+# json_escape <string> <varname>: JSON-escape a string (no surrounding
+# quotes) into <varname>. Interface names are kernel-controlled but can
+# legally contain spaces and control characters; anything non-printable is
+# replaced rather than escaped so one tick can never split into two lines.
+# Writes through a nameref — never a command substitution — so the call is
+# fork-free.
 json_escape() {
   local s=$1
+  # shellcheck disable=SC2034  # nameref target is the caller's variable
+  local -n json_dst=$2
   local out="" c i
-  if [[ $s =~ ^[A-Za-z0-9_.:+@-]+$ ]]; then printf '%s' "$s"; return; fi
+  # shellcheck disable=SC2034
+  if [[ $s =~ ^[A-Za-z0-9_.:+@-]+$ ]]; then json_dst=$s; return; fi
   for (( i=0; i<${#s}; i++ )); do
     c=${s:i:1}
     case $c in
@@ -105,12 +129,24 @@ json_escape() {
       *) out+='?' ;;
     esac
   done
-  printf '%s' "$out"
+  # shellcheck disable=SC2034
+  json_dst=$out
 }
+# esc_name <name> <varname>: cached json_escape. The cache lives in this
+# process (an earlier version filled it inside a subshell, which discarded
+# the entry and forked again on every tick).
+declare -A ESC_CACHE=()
 esc_name() {
   local n=$1
-  if [[ -z ${ESC_CACHE[$n]+set} ]]; then ESC_CACHE[$n]=$(json_escape "$n"); fi
-  printf '%s' "${ESC_CACHE[$n]}"
+  # shellcheck disable=SC2034  # nameref target is the caller's variable
+  local -n esc_dst=$2
+  if [[ -z ${ESC_CACHE[$n]+set} ]]; then
+    local escaped=""
+    json_escape "$n" escaped
+    ESC_CACHE[$n]=$escaped
+  fi
+  # shellcheck disable=SC2034
+  esc_dst=${ESC_CACHE[$n]}
 }
 
 # --- startup probes ---------------------------------------------------------
@@ -186,17 +222,23 @@ fi
 
 read_stat() {
   # $1: name of result array — user nice system idle iowait irq softirq steal cores
-  # Also rewrites CORE_JSON as a JSON array of per-logical 8-tuples.
-  local tag u n s id iw irq si st _rest
+  # Also rewrites CORE_JSON as a JSON array of per-logical 8-tuples and
+  # CORE_IDS as the matching array of cpu numbers. /proc/stat lists online
+  # CPUs only, so the ids can be sparse (SMT off, hot-unplugged cores);
+  # consumers must key per-core data by id, never by position.
+  local tag u n s id iw irq si st _rest cid
   # shellcheck disable=SC2178
   local -n out=$1
   local cores=0
   CORE_JSON=""
+  CORE_IDS=""
   {
     read -r tag "out[0]" "out[1]" "out[2]" "out[3]" "out[4]" "out[5]" "out[6]" "out[7]" _rest
     while read -r tag u n s id iw irq si st _rest; do
       case $tag in
         cpu[0-9]*)
+          cid=${tag#cpu}
+          [[ $cid =~ ^[0-9]+$ ]] || continue
           [[ $u =~ ^[0-9]+$ ]] || u=0
           [[ $n =~ ^[0-9]+$ ]] || n=0
           [[ $s =~ ^[0-9]+$ ]] || s=0
@@ -205,8 +247,9 @@ read_stat() {
           [[ $irq =~ ^[0-9]+$ ]] || irq=0
           [[ $si =~ ^[0-9]+$ ]] || si=0
           [[ $st =~ ^[0-9]+$ ]] || st=0
-          [[ -n $CORE_JSON ]] && CORE_JSON+=","
+          [[ -n $CORE_JSON ]] && { CORE_JSON+=","; CORE_IDS+=","; }
           CORE_JSON+="[$u,$n,$s,$id,$iw,$irq,$si,$st]"
+          CORE_IDS+="$cid"
           cores=$(( cores + 1 ))
           (( cores >= 128 )) && break
           ;;
@@ -269,7 +312,7 @@ read_vmstat() {
 
 read_netdev() {
   # Rewrites global NET_JSON with {"n":..,"rx":..,"tx":..} fragments.
-  local line name rest rx tx
+  local line name rest rx tx en
   local -a f
   NET_JSON=""
   while IFS= read -r line; do
@@ -284,15 +327,16 @@ read_netdev() {
     [[ ${#f[@]} -ge 9 ]] || continue
     rx=${f[0]}; [[ $rx =~ ^[0-9]+$ ]] || rx=0
     tx=${f[8]}; [[ $tx =~ ^[0-9]+$ ]] || tx=0
+    esc_name "$name" en
     [[ -n $NET_JSON ]] && NET_JSON+=","
-    NET_JSON+="{\"n\":\"$(esc_name "$name")\",\"rx\":$rx,\"tx\":$tx}"
+    NET_JSON+="{\"n\":\"$en\",\"rx\":$rx,\"tx\":$tx}"
   done < /proc/net/dev
 }
 
 read_diskstats() {
   # Rewrites global DISK_JSON with {"n","rd","rs","wr","ws","io"} fragments.
   # Whole block devices only (/sys/block/<name>); drop loop/ram/zram/fd/nbd/sr.
-  local _maj _min name reads _m1 rsect _rt writes _m2 wsect _wt _infl io_ticks _rest
+  local _maj _min name reads _m1 rsect _rt writes _m2 wsect _wt _infl io_ticks _rest en
   local count=0
   DISK_JSON=""
   while read -r _maj _min name reads _m1 rsect _rt writes _m2 wsect _wt _infl io_ticks _rest; do
@@ -306,33 +350,36 @@ read_diskstats() {
     [[ $writes =~ ^[0-9]+$ ]] || writes=0
     [[ $wsect =~ ^[0-9]+$ ]] || wsect=0
     [[ $io_ticks =~ ^[0-9]+$ ]] || io_ticks=0
+    esc_name "$name" en
     [[ -n $DISK_JSON ]] && DISK_JSON+=","
-    DISK_JSON+="{\"n\":\"$(esc_name "$name")\",\"rd\":$reads,\"rs\":$rsect,\"wr\":$writes,\"ws\":$wsect,\"io\":$io_ticks}"
+    DISK_JSON+="{\"n\":\"$en\",\"rd\":$reads,\"rs\":$rsect,\"wr\":$writes,\"ws\":$wsect,\"io\":$io_ticks}"
     count=$(( count + 1 ))
     if (( count >= 16 )); then break; fi
   done < /proc/diskstats
 }
 
 read_routes4() {
-  local iface dest metric _rest
+  local iface dest metric _rest en
   R4_JSON=""
   while read -r iface dest _rest _rest _rest _rest metric _rest; do
     [[ $dest == 00000000 && $iface != lo ]] || continue
     [[ $metric =~ ^[0-9]+$ ]] || metric=0
+    esc_name "$iface" en
     [[ -n $R4_JSON ]] && R4_JSON+=","
-    R4_JSON+="{\"n\":\"$(esc_name "$iface")\",\"m\":$metric}"
+    R4_JSON+="{\"n\":\"$en\",\"m\":$metric}"
   done < /proc/net/route
 }
 
 read_routes6() {
   R6_JSON=""
   [[ -r /proc/net/ipv6_route ]] || return 0
-  local dest dlen metric ifn _rest
+  local dest dlen metric ifn _rest en
   while read -r dest dlen _rest _rest _rest metric _rest _rest _rest ifn; do
     [[ $dlen == 00 && -n ${ifn:-} && $ifn != lo ]] || continue
     [[ $metric =~ ^[0-9A-Fa-f]+$ ]] || continue
+    esc_name "$ifn" en
     [[ -n $R6_JSON ]] && R6_JSON+=","
-    R6_JSON+="{\"n\":\"$(esc_name "$ifn")\",\"m\":$(( 16#$metric ))}"
+    R6_JSON+="{\"n\":\"$en\",\"m\":$(( 16#$metric ))}"
   done < /proc/net/ipv6_route
 }
 
@@ -385,6 +432,7 @@ read_gpu() {
 emit() {
   local -a cpu=() mem=() vm=()
   CORE_JSON=""
+  CORE_IDS=""
   read_stat cpu
   read_meminfo mem
   read_vmstat vm
@@ -452,7 +500,7 @@ emit() {
   [[ $l15 =~ ^[0-9.]+$ ]] || l15=0
   [[ $up =~ ^[0-9.]+$ ]] || up=0
 
-  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"disk":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s,"cf":%s,"cc":[%s]}\n' \
+  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"disk":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s,"cf":%s,"cc":[%s],"ci":[%s]}\n' \
     "$EPOCHREALTIME" \
     "${cpu[0]}" "${cpu[1]}" "${cpu[2]}" "${cpu[3]}" \
     "${cpu[4]}" "${cpu[5]}" "${cpu[6]}" "${cpu[7]}" \
@@ -462,11 +510,16 @@ emit() {
     "${vm[0]}" "${vm[1]}" \
     "$NET_JSON" "$DISK_JSON" "$R4_JSON" "$R6_JSON" \
     "$GPU_JSON" "$temp_json" \
-    "$l1" "$l5" "$l15" "$up" "${cpu[8]}" "$cf_json" "$CORE_JSON"
+    "$l1" "$l5" "$l15" "$up" "${cpu[8]}" "$cf_json" "$CORE_JSON" "$CORE_IDS"
 }
 
+ticks=0
+max_ticks=${QUADRANT_STREAM_TICKS:-0}
+[[ $max_ticks =~ ^[0-9]+$ ]] || max_ticks=0
 while :; do
   emit
+  ticks=$(( ticks + 1 ))
+  (( max_ticks > 0 && ticks >= max_ticks )) && break
   # Builtin sleep: times out every interval; the FIFO never delivers input.
   IFS= read -r -t "$interval_s" -u 9 _ || true
 done

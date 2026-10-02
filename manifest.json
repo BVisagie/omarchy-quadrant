@@ -2,24 +2,31 @@
   "schemaVersion": 1,
   "id": "dev.bvisagie.quadrant",
   "name": "Quadrant",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "author": "Bernard Visagie",
   "license": "MIT",
-  "description": "Unified system monitor for the Quattro bar: CPU, GPU, memory, network, and an optional disk segment, with a tabbed detail panel.",
+  "description": "Unified system monitor for the Quattro bar: CPU, GPU, memory, drives and network in one slot, with a tabbed panel that names your hardware, keeps an hour of history and shows the processes behind the numbers.",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "service"
   ],
   "entryPoints": {
-    "barWidget": "BarWidget.qml"
+    "barWidget": "BarWidget.qml",
+    "service": "Service.qml"
   },
   "barWidget": {
     "displayName": "Quadrant",
-    "description": "CPU, GPU, memory, and network readouts with a tabbed detail panel (Drives tab included; dedicated GPU only in the bar; disk fills the GPU slot when none is present)",
+    "description": "CPU, GPU, memory, drives and network readouts with a tabbed detail panel: per-process CPU, memory, disk I/O, network and GPU; one hour of history; dedicated GPU only in the bar, Drives in its place when there is none.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "segments": ["cpu", "gpu", "memory", "network"],
+      "segments": [
+        "cpu",
+        "gpu",
+        "memory",
+        "network"
+      ],
       "processCount": 5,
       "barIntervalMs": 1000,
       "panelIntervalMs": 2000,
@@ -29,74 +36,151 @@
       "diskDevice": "auto",
       "diskFallbackWithoutGpu": true,
       "barPalette": "theme",
-      "barLabels": "glyph"
+      "barLabels": "glyph",
+      "rateUnit": "bytes"
     },
     "schema": [
       {
         "key": "segments",
-        "type": "list",
+        "type": "multiselect",
         "label": "Bar segments",
-        "description": "Which metric segments appear in the bar slot. Any subset of: cpu, gpu, memory, disk, network. disk is off by default when a dedicated GPU is present. Each panel tab has a Show in bar checkbox that updates this list. An empty list keeps a compact system-monitor icon. The GPU segment and tab are dedicated cards only. When no dedicated GPU is detected, the configured gpu token is shown as disk unless diskFallbackWithoutGpu is false."
+        "description": "Which metric segments appear in the bar slot. Each panel tab has a Show in bar checkbox that updates this list. An empty list keeps a compact system-monitor icon. The GPU segment is dedicated cards only; when none is detected the gpu token is shown as Drives unless diskFallbackWithoutGpu is false.",
+        "options": [
+          {
+            "value": "cpu",
+            "label": "CPU",
+            "description": "Non-idle CPU time"
+          },
+          {
+            "value": "gpu",
+            "label": "GPU",
+            "description": "Dedicated card busy % (Drives stands in when there is none)"
+          },
+          {
+            "value": "memory",
+            "label": "Memory",
+            "description": "Used RAM"
+          },
+          {
+            "value": "disk",
+            "label": "Drives",
+            "description": "Disk busy %"
+          },
+          {
+            "value": "network",
+            "label": "Network",
+            "description": "Up/down rates"
+          }
+        ],
+        "noSelectionText": "Icon only",
+        "placeholderText": "Search segments...",
+        "emptyText": "No segments",
+        "defaultValue": [
+          "cpu",
+          "gpu",
+          "memory",
+          "network"
+        ]
       },
       {
         "key": "processCount",
-        "type": "number",
-        "label": "Process rows (1-10)",
-        "description": "How many top processes each panel tab lists."
+        "type": "integer",
+        "label": "Process rows",
+        "description": "How many top processes each panel tab lists.",
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "defaultValue": 5
       },
       {
         "key": "barIntervalMs",
-        "type": "number",
+        "type": "integer",
         "label": "Bar refresh (ms)",
-        "description": "Cadence of the streaming sampler that feeds the bar segments and history graphs. 250-60000."
+        "description": "Cadence of the streaming sampler that feeds the bar segments and history graphs.",
+        "min": 250,
+        "max": 60000,
+        "step": 250,
+        "defaultValue": 1000
       },
       {
         "key": "panelIntervalMs",
-        "type": "number",
+        "type": "integer",
         "label": "Panel refresh (ms)",
-        "description": "Cadence of the on-demand samplers that run while the panel is open. 500-60000."
+        "description": "Cadence of the on-demand samplers that run while the panel is open.",
+        "min": 500,
+        "max": 60000,
+        "step": 500,
+        "defaultValue": 2000
       },
       {
         "key": "networkInterface",
         "type": "string",
         "label": "Interface (auto or name)",
-        "description": "Interface whose rates the network segment and tab report. 'auto' picks the default route across IPv4 and IPv6 by lowest metric."
+        "description": "Interface whose rates the network segment and tab report. 'auto' picks the default route across IPv4 and IPv6 by lowest metric.",
+        "defaultValue": "auto"
       },
       {
         "key": "gpuDevice",
         "type": "string",
         "label": "GPU (auto or cardN)",
-        "description": "Which dedicated card the GPU segment and tab read. 'auto' prefers the boot display card among dedicated GPUs, else card0. Integrated cards are shown on the CPU tab instead."
+        "description": "Which dedicated card the GPU segment and tab read. 'auto' prefers the boot display card among dedicated GPUs, else card0. Integrated cards are shown on the CPU tab instead.",
+        "defaultValue": "auto"
       },
       {
         "key": "integratedGpuDevice",
         "type": "string",
         "label": "Integrated GPU (auto, none, or cardN)",
-        "description": "Which card is treated as integrated graphics on the CPU tab. 'auto' uses positive evidence (Intel at 00:02.x, known AMD APU names). 'none' treats every card as dedicated. A cardN value forces that card to be integrated."
+        "description": "Which card is treated as integrated graphics on the CPU tab. 'auto' uses positive evidence (Intel at 00:02.x, known AMD APU names). 'none' treats every card as dedicated. A cardN value forces that card to be integrated.",
+        "defaultValue": "auto"
       },
       {
         "key": "diskFallbackWithoutGpu",
         "type": "boolean",
         "label": "Show Drives in the bar when no dedicated GPU",
-        "description": "When true (default), the configured gpu bar token is displayed as disk if no dedicated GPU is detected. Unchecking Show in bar on the Drives tab sets this to false. Does not rewrite the segments list."
+        "description": "When true, the configured gpu bar token is displayed as Drives if no dedicated GPU is detected. Unchecking Show in bar on the Drives tab sets this to false. Does not rewrite the segments list.",
+        "defaultValue": true
       },
       {
         "key": "diskDevice",
         "type": "string",
         "label": "Disk (auto or name)",
-        "description": "Which whole block device the disk segment and Drives tab follow. 'auto' prefers the disk backing /, else the largest."
+        "description": "Which whole block device the disk segment and Drives tab follow. 'auto' prefers the disk backing /, else the largest.",
+        "defaultValue": "auto"
       },
       {
         "key": "barPalette",
-        "type": "string",
-        "label": "Bar palette (theme or vivid)",
-        "description": "theme (default) paints ≥90% values with the theme urgent color. vivid keeps the original per-resource Tokyo-night hues."
+        "type": "enum",
+        "label": "Bar palette",
+        "description": "theme paints values at 90% or more with the theme urgent color; heat ramps every value from muted through accent to urgent; vivid keeps fixed per-resource hues.",
+        "options": [
+          "theme",
+          "heat",
+          "vivid"
+        ],
+        "defaultValue": "theme"
       },
       {
         "key": "barLabels",
-        "type": "string",
-        "label": "Bar labels (glyph, letter, or none)",
-        "description": "How CPU, GPU, memory, disk, and network cells are labelled. glyph (default) uses Nerd Font icons; letter falls back to C/G/M/D/N; none shows only the value."
+        "type": "enum",
+        "label": "Bar labels",
+        "description": "glyph uses Nerd Font icons; letter falls back to C/G/M/D/N; none shows only the value.",
+        "options": [
+          "glyph",
+          "letter",
+          "none"
+        ],
+        "defaultValue": "glyph"
+      },
+      {
+        "key": "rateUnit",
+        "type": "enum",
+        "label": "Network rate unit",
+        "description": "bytes shows B/s, KiB/s...; bits shows b/s, Kb/s... (network only).",
+        "options": [
+          "bytes",
+          "bits"
+        ],
+        "defaultValue": "bytes"
       }
     ]
   }

@@ -1,140 +1,163 @@
 import QtQuick
-import Quickshell.Io
 import qs.Ui
 import qs.Commons
-import "Model.js" as Model
-import "Theme.js" as Theme
+import "lib/index.mjs" as Model
+import "components" as Components
 
 // Quadrant bar slot: one compact widget covering CPU, GPU, memory, network,
-// and an optional disk segment. Owns the long-lived sampler
-// (quadrant-stream), the 60s history buffers, and GPU/disk detection; the
-// nested Panel reads everything through hostWidget. An empty segments list
-// collapses the slot to a system-monitor glyph; the panel stays complete.
+// and an optional disk segment. All sampling and state live in the Store,
+// which the shell runs once as the plugin's service; this widget — one copy
+// per monitor — binds to it, pushes its settings and viewer state, and
+// renders. An empty segments list collapses the slot to a system-monitor
+// glyph; the panel stays complete.
 BarWidget {
   id: root
   moduleName: "dev.bvisagie.quadrant"
 
-  // ---- settings (manifest barWidget.defaults mirrored as fallbacks) ----
-  property var localSegments: null
-  readonly property var segmentsSetting: {
-    if (Array.isArray(root.localSegments)) return root.localSegments
-    return Model.segmentsFromSetting(setting("segments", null))
-  }
-  readonly property int barIntervalMs: Model.clamp(setting("barIntervalMs", 1000), 250, 60000)
-  readonly property int panelIntervalMs: Model.clamp(setting("panelIntervalMs", 2000), 500, 60000)
-  readonly property int historyLimit: Math.ceil(60000 / barIntervalMs) + 1
-  readonly property int processCount: Model.clamp(setting("processCount", 5), 1, 10)
-  readonly property string networkInterface: Model.normalizeDeviceSetting(setting("networkInterface", "auto"))
-  readonly property string gpuDevice: Model.normalizeDeviceSetting(setting("gpuDevice", "auto"))
-  readonly property string integratedGpuDevice: Model.normalizeIntegratedGpuDevice(setting("integratedGpuDevice", "auto"))
-  property var localDiskFallback: null
-  readonly property bool diskFallbackWithoutGpu: {
-    if (root.localDiskFallback === true || root.localDiskFallback === false)
-      return root.localDiskFallback
-    return Model.parseBoolSetting(setting("diskFallbackWithoutGpu", true), true)
-  }
-  readonly property string diskDevice: Model.normalizeDeviceSetting(setting("diskDevice", "auto"))
-  readonly property string barPaletteMode: {
-    var v = String(setting("barPalette", "theme")).toLowerCase()
-    return v === "vivid" ? "vivid" : "theme"
-  }
-  readonly property string barLabelsMode: {
-    var v = String(setting("barLabels", "glyph")).toLowerCase()
-    return (v === "letter" || v === "none") ? v : "glyph"
-  }
-  // Bar glyphs are icons, not captions: they size with the shell's body
-  // text so they read at the same weight as neighbouring bar widgets,
-  // while the percentage stays at caption.
-  readonly property int glyphFontSize: Style.font.body
+  // ---- store resolution ------------------------------------------------
+  // bar.shell.serviceFor() is not a notifying binding, so it is retried a
+  // few times after the bar arrives; a shell without services (pre-4.0.3)
+  // gets an embedded copy instead.
+  property var store: null
+  property int storeTries: 0
 
-  readonly property var visibleBarCells: Model.visibleBarCells(
-    effectiveBarSegments,
-    discreteGpuAvailable,
-    diskAvailable
-  )
+  function resolveStore() {
+    if (root.store) return
+    var svc = null
+    try {
+      if (root.bar && root.bar.shell && typeof root.bar.shell.serviceFor === "function")
+        svc = root.bar.shell.serviceFor(root.moduleName)
+    } catch (e) {
+      svc = null
+    }
+    if (svc) {
+      root.store = svc
+      return
+    }
+    root.storeTries++
+    if (root.storeTries >= 10) {
+      localStore.active = true
+      root.store = localStore.item
+      return
+    }
+    storeRetry.restart()
+  }
+
+  Timer {
+    id: storeRetry
+    interval: 300
+    repeat: false
+    onTriggered: root.resolveStore()
+  }
+
+  Loader {
+    id: localStore
+    active: false
+    sourceComponent: Components.Store {
+      embedded: true
+      shell: root.bar ? root.bar.shell : null
+      runCommand: function (cmd) { if (root.bar && typeof root.bar.run === "function") root.bar.run(cmd) }
+    }
+  }
+
+  onBarChanged: {
+    resolveStore()
+    injectPanel()
+  }
+  onStoreChanged: {
+    pushSettings()
+    pushViewer()
+    injectPanel()
+  }
+  Component.onCompleted: resolveStore()
+  Component.onDestruction: {
+    if (store) store.clearViewer(viewerId)
+    unregisterCells()
+  }
+
+  // ---- settings + viewer state → store ---------------------------------
+  function pushSettings() {
+    if (root.store) root.store.applySettings(root.settings)
+  }
+  onSettingsChanged: {
+    pushSettings()
+    injectPanel()
+  }
+
+  readonly property string viewerId: String(root)
+  readonly property var viewerState: ({
+    gpuSegment: segmentEnabled("gpu") && discreteGpuAvailable,
+    gpuTab: panelOpenOn("gpu"),
+    cpuTab: panelOpenOn("cpu"),
+    memTab: panelOpenOn("mem"),
+    diskTab: panelOpenOn("disk"),
+    netTab: panelOpenOn("net"),
+    open: opened
+  })
+  onViewerStateChanged: pushViewer()
+  function pushViewer() {
+    if (root.store) root.store.setViewer(viewerId, viewerState)
+  }
+  function panelOpenOn(tab) {
+    var p = panelLoader.item
+    return p ? (p.opened === true && p.currentTab === tab) : false
+  }
+
+  // ---- store reads used by the slot ------------------------------------
+  readonly property var cpuPct: store ? store.cpuPct : null
+  readonly property var memComp: store ? store.memComp : null
+  readonly property var diskRates: store ? store.diskRates : null
+  readonly property var ifaceRates: store ? store.ifaceRates : null
+  readonly property var gpuDisplay: store ? store.gpuDisplay : null
+  readonly property var gpu: store ? store.gpu : null
+  readonly property bool streamLive: store ? store.streamLive : false
+  readonly property bool discreteGpuAvailable: store ? store.discreteGpuAvailable : false
+  readonly property bool diskAvailable: store ? store.diskAvailable : false
+  readonly property var visibleBarCells: store ? store.visibleBarCells : []
+  readonly property string barPaletteMode: store ? store.barPaletteMode : "theme"
+  readonly property string barLabelsMode: store ? store.barLabelsMode : "glyph"
+  readonly property string rateUnit: store ? store.rateUnit : "bytes"
+  function segmentEnabled(name) {
+    return store ? store.segmentEnabled(name) : false
+  }
+
   readonly property int visibleSegmentCount: visibleBarCells.length
   readonly property bool showMonitorFallback: visibleSegmentCount === 0
+  // Bar glyphs are icons, not captions: they size with the shell's body
+  // text so they read at the same weight as neighbouring bar widgets,
+  // while the value stays at caption.
+  readonly property int glyphFontSize: Style.font.body
 
-  readonly property var effectiveBarSegments: Model.effectiveSegments(
-    segmentsSetting,
-    gpuTopologyReady,
-    discreteGpuAvailable,
-    diskFallbackWithoutGpu,
-    gpuListFailed !== true
-  )
+  // ---- colours ---------------------------------------------------------
+  readonly property color barFg: root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground
+  readonly property color barBg: root.bar ? root.bar.background : Color.background
+  readonly property color barUrgent: root.bar ? root.bar.urgent : Color.urgent
+  readonly property color mutedLabelColor: Model.dimColor(String(barFg), String(barBg), 0.38)
+  readonly property color quietValueColor: Model.dimColor(String(barFg), String(barBg), 0.12)
 
-  function segmentEnabled(name) {
-    return effectiveBarSegments.indexOf(name) !== -1
+  // Hot state with hysteresis: a value enters the hot band at 90 % and only
+  // leaves it below 80 %, so a reading hovering on the line cannot flicker.
+  property bool cpuHot: false
+  property bool memHot: false
+  property bool gpuHot: false
+  property bool diskHot: false
+  onCpuPctChanged: cpuHot = Model.band(cpuHot, cpuPct ? cpuPct.nonIdle : null, 90, 80)
+  onMemCompChanged: memHot = Model.band(memHot, memComp ? memComp.usedPct : null, 90, 80)
+  onGpuDisplayChanged: gpuHot = Model.band(gpuHot, gpuDisplay ? gpuDisplay.pct : null, 90, 80)
+  onDiskRatesChanged: diskHot = Model.band(diskHot, diskRates ? diskRates.utilPct : null, 90, 80)
+
+  // Value colour per palette mode:
+  //   theme  foreground, urgent while hot
+  //   heat   continuous muted → accent → urgent ramp
+  //   vivid  fixed per-resource hue, urgent while hot
+  function valueColorFor(metric, pct, hot) {
+    if (barPaletteMode === "heat")
+      return Model.heatColor(pct === null ? 0 : pct, String(quietValueColor), String(Color.accent), String(barUrgent), 8)
+    if (hot) return barUrgent
+    if (barPaletteMode === "vivid") return Model.VIVID[metric] || barFg
+    return barFg
   }
 
-  function localPath(rel) {
-    return decodeURIComponent(String(Qt.resolvedUrl(rel)).replace(/^file:\/\//, ""))
-  }
-
-  readonly property string streamScript: localPath("scripts/quadrant-stream")
-  readonly property string gpuStatsScript: localPath("scripts/gpu-stats")
-  readonly property string diskInfoScript: localPath("scripts/disk-info")
-
-  // ---- sampler state ----
-  property var sample: null
-  property var prevSample: null
-  property bool streamLive: false
-  property double lastSampleAtMs: 0
-  property double streamStartedAtMs: 0
-  property string streamError: ""
-  property var cpuPct: null
-  property var coreUsage: ({})
-  property var memComp: null
-  property var swapRate: ({ inKBs: 0, outKBs: 0 })
-  property var ifaceRates: null
-  property var cpuHistory: []
-  property var netHistory: []
-  property var diskHistory: []
-  property var diskRateList: null
-  property var diskRates: null
-  property var diskInfo: null
-  property string diskInfoError: ""
-  property string selectedDiskName: ""
-
-  // ---- GPU state ----
-  property var rawGpus: []
-  property var gpus: []
-  property var discreteGpus: []
-  property var integratedGpus: []
-  property var gpu: null
-  // Primitive stream args so a same-card object rebuild (system-info on R,
-  // or a name fill-in) does not relaunch quadrant-stream.
-  readonly property string streamGpuPath: Model.gpuStreamPath(gpu)
-  readonly property string streamGpuVendor: Model.gpuStreamVendor(gpu)
-  readonly property string streamGpuSignature: Model.gpuStreamSignature(gpu)
-  property var integratedGpu: null
-  property bool gpuListReady: false
-  property bool gpuListFailed: false
-  property bool sysInfoReady: false
-  property bool gpuTopologyReady: false
-  property var nvidiaGpu: null
-  property string nvidiaError: ""
-  property var discreteGpuLive: null
-  property var discreteDrmPrev: null
-  property var igpuDrmPrev: null
-  property string gpuDetectionError: ""
-  property string gpuDeviceWarning: ""
-  property var integratedGpuLive: null
-  property string integratedGpuError: ""
-
-  // ---- hardware identity (one-shot, re-run on R) ----
-  property var sysInfo: null
-  readonly property var cpuFreqMhz: sample && sample.cpuFreqMhz !== undefined ? sample.cpuFreqMhz : null
-
-  readonly property var themePal: Theme.barPaletteFor(
-    String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground),
-    String(Color.accent),
-    String(root.bar ? root.bar.urgent : Color.urgent)
-  )
-  readonly property bool cpuHot: cpuPct !== null && cpuPct.nonIdle >= 90
-  readonly property bool memHot: memComp !== null && memComp.usedPct >= 90
-  readonly property bool gpuHot: gpuDisplay !== null && gpuDisplay.pct >= 90
-  readonly property bool diskHot: diskRates !== null && diskRates.utilPct >= 90
   readonly property string cpuValueText: cpuPct ? Model.formatPct(cpuPct.nonIdle) : "--"
   readonly property string memValueText: memComp ? Model.formatPct(memComp.usedPct) : "--"
   readonly property string gpuValueText: {
@@ -142,181 +165,83 @@ BarWidget {
     return (gpuDisplay.estimated ? "~" : "") + Model.formatPct(gpuDisplay.pct)
   }
   readonly property string diskValueText: diskRates ? Model.formatPct(diskRates.utilPct) : "--"
-  readonly property color hotTextColor: {
-    if (barPaletteMode === "vivid") return Theme.series.cpuSteal
-    return themePal.urgent
+  readonly property string netUpText: ifaceRates ? Model.formatRateCompact(ifaceRates.txBps) : "--"
+  readonly property string netDownText: ifaceRates ? Model.formatRateCompact(ifaceRates.rxBps) : "--"
+
+  // ---- per-segment tooltips ----------------------------------------------
+  function tooltipFor(metric) {
+    if (!streamLive) return "Quadrant: sampler offline"
+    if (metric === "cpu") return Model.cpuBarTooltip(cpuPct)
+    if (metric === "gpu") return gpuDisplay ? "GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (frequency estimate)" : "") : "GPU --"
+    if (metric === "mem") return memComp ? "Memory " + Model.formatPct(memComp.usedPct) + " used · " + Model.formatKiB(memComp.usedK) : "Memory --"
+    if (metric === "disk") return diskRates
+      ? "Drives " + Model.formatPct(diskRates.utilPct) + " busy · R " + Model.formatRate(diskRates.readBps) + " · W " + Model.formatRate(diskRates.writeBps)
+      : "Drives --"
+    if (metric === "net") return ifaceRates
+      ? "Network ↓ " + Model.formatRateUnit(ifaceRates.rxBps, rateUnit) + " · ↑ " + Model.formatRateUnit(ifaceRates.txBps, rateUnit)
+      : "Network --"
+    return "Quadrant"
   }
-  readonly property color mutedLabelColor: {
-    var c = Theme.mutedFor(String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground))
-    return c || Color.foreground
+
+  readonly property string slotTooltip: {
+    if (!streamLive) return "Quadrant: sampler offline"
+    if (!showMonitorFallback) return ""
+    return "Quadrant"
   }
-  // Single caption/glyph line. Vertical bars drop the glyph, so they
-  // keep the caption height. Network's two-line vertical form can be taller.
-  readonly property int lineBoxHeight: {
-    if (root.vertical) return pctSizer.implicitHeight
-    var g = Math.max(cpuGlyphSizer.implicitHeight, netGlyphSizer.implicitHeight)
-    return g > pctSizer.implicitHeight ? g : pctSizer.implicitHeight
+
+  // ---- sizing ----------------------------------------------------------
+  // Cells size to their content with one constant gap between them, so a
+  // one-digit value never leaves a hole before the next glyph. The slot
+  // itself stays at a fixed width — the sum of every visible cell at its
+  // widest ("99%") — so neighbouring bar widgets never move; the slack
+  // collects at the end of the slot, and a cell that changes digit count
+  // slides its neighbours smoothly.
+  readonly property real labelGap: Style.space(3)
+  readonly property real segmentGap: Style.space(8)
+  readonly property real outerPad: Style.spaceReal(6)
+
+  FontMetrics { id: captionFm; font.family: button.fontFamily; font.pixelSize: Style.font.caption }
+  FontMetrics { id: glyphFm; font.family: button.fontFamily; font.pixelSize: root.glyphFontSize }
+
+  function labelFor(metric) {
+    return root.vertical ? "" : Model.barLabelFor(root.barLabelsMode, metric)
   }
-  // Each cell is its own glyph (or letter) plus one reserved value slot.
-  // Sharing the widest glyph padded narrower icons and made the gaps
-  // between percentages look uneven.
-  function metricLabelWidthFor(metric) {
-    if (root.vertical || root.barLabelsMode === "none") return 0
-    if (metric === "cpu") return cpuGlyphSizer.implicitWidth
-    if (metric === "gpu") return gpuGlyphSizer.implicitWidth
-    if (metric === "mem") return memGlyphSizer.implicitWidth
-    if (metric === "disk") return diskGlyphSizer.implicitWidth
-    if (metric === "net") return netGlyphSizer.implicitWidth
-    return 0
+  function labelWidthFor(metric) {
+    var label = labelFor(metric)
+    return label === "" ? 0 : Math.ceil(glyphFm.advanceWidth(label))
   }
-  function metricValueWidthFor(metric) {
-    var w = pctSizer.implicitWidth
-    if (metric === "gpu" && root.reserveEstimatePrefix)
-      w += tildeSizer.implicitWidth
-    return Math.ceil(w)
-  }
-  function metricCellWidthFor(metric) {
-    var w = metricValueWidthFor(metric)
-    var lw = metricLabelWidthFor(metric)
-    if (lw > 0)
-      w += Style.space(Theme.metrics.barLabelGap) + lw
-    if (root.vertical && root.bar)
-      return Math.min(w, root.bar.barSize)
-    return w
-  }
-  // Truncating the sizer to int shrank the slot by a fraction of a pixel
-  // and ElideRight ate the download rate. Ceil plus one pixel of guard.
-  readonly property real networkRateWidth: Math.ceil(netSizer.implicitWidth) + 1
-  readonly property real networkCellWidth: {
-    var w = root.networkRateWidth
-    var lw = metricLabelWidthFor("net")
-    if (lw > 0)
-      w += Style.space(Theme.metrics.barLabelGap) + lw
-    if (root.vertical)
-      return Math.min(w, root.verticalSlot)
-    return w
-  }
-  // Only an Intel GPU reporting frequency-derived load ever prefixes "~".
-  // Reserving it machine-wide would pad every cell on hardware that
-  // can never show it.
+  readonly property int lineBoxHeight: Math.ceil(Math.max(captionFm.height, root.vertical ? 0 : glyphFm.height))
   readonly property bool reserveEstimatePrefix: {
     if (!root.segmentEnabled("gpu") || !root.discreteGpuAvailable) return false
     return root.gpu && root.gpu.vendor === "intel"
   }
+  // Widest a cell can get; the slot reserves this much per visible cell.
+  function metricReserveFor(metric) {
+    var w = Math.ceil(captionFm.advanceWidth("99%"))
+    if (metric === "gpu" && root.reserveEstimatePrefix) w += Math.ceil(captionFm.advanceWidth("~"))
+    var lw = labelWidthFor(metric)
+    if (lw > 0) w += labelGap + lw
+    return w
+  }
+  readonly property real networkRateReserve: Math.ceil(captionFm.advanceWidth(root.vertical ? "↓999K" : "↓999K ↑999K")) + 1
+  readonly property real networkReserve: {
+    var w = root.networkRateReserve
+    var lw = labelWidthFor("net")
+    if (lw > 0) w += labelGap + lw
+    return w
+  }
+  readonly property real reservedWidth: {
+    var cells = root.visibleBarCells
+    var w = 0
+    for (var i = 0; i < cells.length; i++) {
+      if (i > 0) w += segmentGap
+      w += cells[i] === "net" ? networkReserve : metricReserveFor(cells[i])
+    }
+    return Math.ceil(w)
+  }
   readonly property int verticalSlot: root.bar ? root.bar.barSize : Style.bar.sizeVertical
-  readonly property bool discreteGpuAvailable: gpuTopologyReady && gpu !== null && gpuListFailed !== true
-  readonly property bool gpuAvailable: discreteGpuAvailable
-  readonly property bool diskAvailable: sample !== null && sample.disk && sample.disk.length > 0
-  readonly property string effectiveDisk: {
-    var rates = diskRateList
-    var disks = diskInfo && diskInfo.disks ? diskInfo.disks : []
-    var mounts = diskInfo && diskInfo.mounts ? diskInfo.mounts : []
-    var backing = diskInfo && diskInfo.backing ? diskInfo.backing : {}
-    return Model.pickDisk(disks, mounts, rates, selectedDiskName || diskDevice, backing) || ""
-  }
-  readonly property bool pinnedDisk: diskDevice !== "auto" && diskDevice !== ""
-  readonly property string diskDeviceError: {
-    if (!pinnedDisk || !sample) return ""
-    var backing = diskInfo && diskInfo.backing ? diskInfo.backing : {}
-    var disks = diskInfo && diskInfo.disks ? diskInfo.disks : []
-    var rates = diskRateList
-    var name = Model.resolveBackingDisk(diskDevice, backing)
-    if (Model.diskNamePresent(name, disks, rates)) return ""
-    if (Model.diskNamePresent(diskDevice, disks, rates)) return ""
-    return "Pinned disk " + diskDevice + " is not available"
-  }
-  readonly property bool nvidiaSelected: gpu !== null && gpu.vendor === "nvidia"
-  // Position of the selected card among the NVIDIA cards — nvidia-smi -i
-  // indexes NVIDIA devices, not /sys cards.
-  readonly property int nvidiaIndex: {
-    if (!nvidiaSelected) return 0
-    var idx = 0
-    var list = discreteGpus
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].vendor !== "nvidia") continue
-      if (list[i].card === gpu.card) return idx
-      idx++
-    }
-    return 0
-  }
-  readonly property bool panelGpuOpen: panelLoader.item
-    ? (panelLoader.item.opened === true && panelLoader.item.currentTab === "gpu")
-    : false
-  readonly property bool panelCpuOpen: panelLoader.item
-    ? (panelLoader.item.opened === true && panelLoader.item.currentTab === "cpu")
-    : false
-  readonly property bool igpuSampleable: {
-    if (!root.integratedGpu) return false
-    var v = root.integratedGpu.vendor
-    return v === "amd" || v === "intel"
-  }
-  readonly property bool drmSampleable: {
-    if (!gpu || !gpu.path) return false
-    if (gpu.vendor === "intel") return true
-    if (gpu.vendor === "amd") {
-      var g = sample && sample.gpu
-      return !g || g.busy === null || g.busy === undefined
-    }
-    return false
-  }
 
-  readonly property string effectiveInterface: {
-    if (networkInterface !== "auto" && networkInterface !== "") return networkInterface
-    return sample ? Model.pickInterface(sample.r4, sample.r6, sample.net) : ""
-  }
-  readonly property bool pinnedInterface: networkInterface !== "auto" && networkInterface !== ""
-  readonly property bool effectiveInterfaceAvailable: {
-    if (!sample || effectiveInterface === "") return false
-    for (var i = 0; i < sample.net.length; i++)
-      if (sample.net[i].n === effectiveInterface) return true
-    return false
-  }
-  readonly property string networkInterfaceError: {
-    if (!pinnedInterface || !sample || effectiveInterfaceAvailable) return ""
-    return "Pinned interface " + networkInterface + " is not available"
-  }
-
-  // GPU segment value: { pct, estimated } or null when unknown.
-  readonly property var gpuDisplay: {
-    if (!gpu) return null
-    if (gpu.vendor === "nvidia") {
-      if (nvidiaGpu && nvidiaGpu.utilPct !== null) return ({ pct: nvidiaGpu.utilPct, estimated: false })
-      return null
-    }
-    var extra = discreteGpuLive
-    if (extra && extra.busy !== null && extra.busy !== undefined)
-      return ({ pct: extra.busy, estimated: extra.busySource !== "drm" && extra.busySource !== "sysfs" })
-    var g = sample ? sample.gpu : null
-    if (!g) return extra && extra.freqEstimate !== null && extra.freqEstimate !== undefined
-      ? ({ pct: extra.freqEstimate, estimated: true }) : null
-    if (g.busy !== null && g.busy !== undefined) return ({ pct: g.busy, estimated: false })
-    if (g.kind === "intel") {
-      if (g.freqCurMhz !== null && g.freqMaxMhz !== null && g.freqMaxMhz > 0)
-        return ({ pct: Model.clamp(100 * g.freqCurMhz / g.freqMaxMhz, 0, 100), estimated: true })
-      return null
-    }
-    return null
-  }
-
-  readonly property string tooltipLine: {
-    if (!streamLive) return "Quadrant: sampler offline"
-    var parts = []
-    if (segmentEnabled("cpu") && cpuPct)
-      parts.push(Model.cpuBarTooltip(cpuPct))
-    if (segmentEnabled("gpu") && discreteGpuAvailable && gpuDisplay)
-      parts.push("GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (freq)" : ""))
-    if (segmentEnabled("memory") && memComp)
-      parts.push("MEM " + Model.formatPct(memComp.usedPct))
-    if (segmentEnabled("disk") && diskAvailable && diskRates)
-      parts.push("DISK " + Model.formatPct(diskRates.utilPct)
-        + "  R " + Model.formatRate(diskRates.readBps)
-        + "  W " + Model.formatRate(diskRates.writeBps))
-    if (segmentEnabled("network") && ifaceRates)
-      parts.push("↑ " + Model.formatRate(ifaceRates.txBps) + " ↓ " + Model.formatRate(ifaceRates.rxBps))
-    return parts.length > 0 ? parts.join("  ·  ") : "Quadrant"
-  }
-
-  // ---- panel contract (Quattro bar-widget shape) ----
+  // ---- panel contract (Quattro bar-widget shape) -----------------------
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
 
@@ -334,585 +259,55 @@ BarWidget {
     if ("hostWidget" in target) target.hostWidget = root
   }
 
-  // Click on a segment: open the panel on that tab; clicking the slot
-  // elsewhere toggles the panel on the last-used tab. Segment MouseAreas
-  // sit above WidgetButton's own MouseArea; ignoreNextToggle drops the
-  // button press when both still fire.
-  property bool ignoreNextToggle: false
-
-  function noteSegmentPress() {
-    ignoreNextToggle = true
-  }
-
+  // A segment click opens the panel on that tab (or closes it when that tab
+  // is already showing); a click elsewhere in the slot toggles the panel on
+  // the last-used tab. Right-click opens btop, middle-click toggles.
   function segmentClicked(tab) {
-    ignoreNextToggle = true
     var p = panelLoader.item
-    if (!p) {
-      Qt.callLater(function () { root.ignoreNextToggle = false })
-      return
-    }
+    if (!p) return
     if (p.opened) {
       if (p.currentTab === tab) p.close()
       else p.currentTab = tab
     } else {
       p.showTab(tab)
     }
-    Qt.callLater(function () { root.ignoreNextToggle = false })
+  }
+
+  function launchBtop() {
+    Util.execArgv(["omarchy-launch-or-focus-tui", "btop"])
+  }
+
+  property real wheelAccumulator: 0
+  function handleWheel(delta) {
+    var r = Util.wheelSteps(root.wheelAccumulator, delta)
+    root.wheelAccumulator = r.remainder
+    var p = panelLoader.item
+    if (!p || !p.opened || r.steps === 0) return
+    p.stepTab(r.steps > 0 ? -1 : 1)
+  }
+
+  // Segment cells are registered as click targets after the slot button
+  // so they sit above it in the bar's hit test (the bar walks targets
+  // newest first).
+  function registerCells() {
+    if (!root.bar || typeof root.bar.registerClickTarget !== "function") return
+    var cells = [cpuCell, gpuCell, memCell, diskCell, netCell]
+    for (var i = 0; i < cells.length; i++) {
+      if (typeof root.bar.unregisterClickTarget === "function") root.bar.unregisterClickTarget(cells[i])
+      root.bar.registerClickTarget(cells[i])
+    }
+  }
+  function unregisterCells() {
+    if (!root.bar || typeof root.bar.unregisterClickTarget !== "function") return
+    var cells = [cpuCell, gpuCell, memCell, diskCell, netCell]
+    for (var i = 0; i < cells.length; i++) root.bar.unregisterClickTarget(cells[i])
   }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
-  // Quattro's default open-panel mark is 55% of the slot. Quadrant is a
-  // wide multi-segment widget, so that became a long underline. A short
-  // centered mark matches first-party icon widgets.
   readonly property real indicatorSlot: showMonitorFallback ? Style.bar.statusSlot : Style.bar.iconSlot
   readonly property real openPanelIndicatorWidth: Math.max(Style.space(10), Math.round(indicatorSlot * 0.55))
   readonly property real openPanelIndicatorHeight: Math.max(Style.space(10), Math.round(indicatorSlot * 0.55))
-
-  onBarChanged: injectPanel()
-  onSettingsChanged: injectPanel()
-
-  // ---- sampler wiring ----
-  function handleSample(line) {
-    var s = Model.parseStreamLine(line)
-    if (!s) return
-    var dt = prevSample ? s.ts - prevSample.ts : 0
-    cpuPct = Model.cpuDelta(prevSample ? prevSample.cpu : null, s.cpu)
-    coreUsage = {}
-    if (prevSample && prevSample.cpuCores && s.cpuCores) {
-      var coreDeltas = Model.cpuCoreDeltas(prevSample.cpuCores, s.cpuCores)
-      var usage = {}
-      for (var c = 0; c < coreDeltas.length; c++) usage[coreDeltas[c].id] = coreDeltas[c].busy
-      coreUsage = usage
-    }
-    memComp = Model.memComposition(s.mem)
-    swapRate = Model.swapRates(prevSample ? prevSample.vm : null, s.vm, dt)
-    var rates = Model.netRates(prevSample ? prevSample.net : null, s.net, dt)
-    ifaceRates = null
-    for (var i = 0; i < rates.length; i++) {
-      if (rates[i].name === effectiveInterface) { ifaceRates = rates[i]; break }
-    }
-    if (cpuPct)
-      cpuHistory = Model.pushTimedWindow(
-        cpuHistory, { u: cpuPct.user, s: cpuPct.system, io: cpuPct.iowait, st: cpuPct.steal },
-        s.ts, 60, historyLimit)
-    if (ifaceRates)
-      netHistory = Model.pushTimedWindow(
-        netHistory, { rx: ifaceRates.rxBps, tx: ifaceRates.txBps },
-        s.ts, 60, historyLimit)
-    var dRates = Model.diskRates(prevSample ? prevSample.disk : null, s.disk, dt)
-    diskRateList = dRates
-    var chosen = Model.pickDisk(
-      diskInfo && diskInfo.disks ? diskInfo.disks : [],
-      diskInfo && diskInfo.mounts ? diskInfo.mounts : [],
-      dRates,
-      selectedDiskName || diskDevice,
-      diskInfo && diskInfo.backing ? diskInfo.backing : {}
-    )
-    diskRates = null
-    for (var d = 0; d < dRates.length; d++) {
-      if (dRates[d].name === chosen) { diskRates = dRates[d]; break }
-    }
-    if (diskRates)
-      diskHistory = Model.pushTimedWindow(
-        diskHistory, { r: diskRates.readBps, w: diskRates.writeBps },
-        s.ts, 60, historyLimit)
-    prevSample = s
-    sample = s
-    streamLive = true
-    lastSampleAtMs = Date.now()
-    streamError = ""
-  }
-
-  function restartStream() {
-    streamProc.intentionalStop = true
-    streamProc.running = false
-    streamLive = false
-    streamRelaunchTimer.restart()
-  }
-
-  onBarIntervalMsChanged: restartStream()
-  onStreamGpuSignatureChanged: restartStream()
-
-  Process {
-    id: streamProc
-    property bool intentionalStop: false
-    command: {
-      var args = [root.streamScript, String(root.barIntervalMs)]
-      if (root.streamGpuPath !== "" && root.streamGpuVendor !== "")
-        args.push(root.streamGpuPath, root.streamGpuVendor)
-      return args
-    }
-    running: true
-    stdout: SplitParser {
-      onRead: function(line) { root.handleSample(line) }
-    }
-    onRunningChanged: if (running) root.streamStartedAtMs = Date.now()
-    onExited: function(exitCode, exitStatus) {
-      root.streamLive = false
-      if (streamProc.intentionalStop) {
-        streamProc.intentionalStop = false
-      } else {
-        // Crashed or killed: relaunch. Never present a dead sampler as
-        // "all zeros" — streamLive=false drives the offline tooltip.
-        if (root.streamError === "")
-          root.streamError = "System sampler exited with code " + exitCode
-        streamCrashTimer.restart()
-      }
-    }
-  }
-
-  // An alive Process can still wedge on a kernel/sysfs read. Detect missing
-  // ticks, keep the last-good data visible, and let onExited relaunch it.
-  Timer {
-    id: streamWatchdog
-    interval: Math.max(2000, root.barIntervalMs * 3)
-    repeat: true
-    running: true
-    onTriggered: {
-      if (!streamProc.running) return
-      var reference = root.lastSampleAtMs > root.streamStartedAtMs
-        ? root.lastSampleAtMs : root.streamStartedAtMs
-      if (reference > 0 && Date.now() - reference <= interval) return
-      root.streamLive = false
-      root.streamError = "System sampler stopped producing data; restarting"
-      streamProc.signal(9)
-    }
-  }
-
-  Timer {
-    id: streamRelaunchTimer
-    interval: 250
-    repeat: false
-    onTriggered: streamProc.running = true
-  }
-
-  Timer {
-    id: streamCrashTimer
-    interval: 2000
-    repeat: false
-    onTriggered: streamProc.running = true
-  }
-
-  // ---- GPU detection + on-demand NVIDIA sampling ----
-  function reconcileGpuTopology() {
-    if (!gpuListReady || !sysInfoReady) {
-      gpuTopologyReady = false
-      return
-    }
-    if (gpuListFailed) {
-      gpus = []
-      discreteGpus = []
-      integratedGpus = []
-      setIntegratedGpu(null)
-      gpu = null
-      gpuDeviceWarning = ""
-      gpuTopologyReady = true
-      return
-    }
-    var topo = Model.reconcileGpuTopology(rawGpus, sysInfo, integratedGpuDevice)
-    gpus = topo.gpus
-    discreteGpus = topo.discreteGpus
-    integratedGpus = topo.integratedGpus
-    setIntegratedGpu(topo.integratedGpu)
-    gpuDeviceWarning = Model.gpuDevicePinMessage(topo.gpus, gpuDevice)
-    gpu = Model.pickGpu(topo.discreteGpus, gpuDevice)
-    gpuTopologyReady = true
-  }
-
-  function applyGpuList(text) {
-    var data = Model.safeJson(text)
-    if (!data || data.ok !== true) {
-      gpuDetectionError = (data && data.error)
-        ? "GPU detection failed: " + String(data.error)
-        : "GPU detection returned invalid output"
-      rawGpus = []
-      gpuListFailed = true
-      gpuListReady = true
-      reconcileGpuTopology()
-      return
-    }
-    rawGpus = Model.normalizeGpuList(data)
-    gpuListFailed = false
-    gpuListReady = true
-    gpuDetectionError = ""
-    reconcileGpuTopology()
-  }
-
-  function persistSegments(list) {
-    if (!root.bar || typeof root.bar.run !== "function") return
-    var value = JSON.stringify(list)
-    if (typeof value !== "string" || value.charAt(0) !== "[") return
-    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
-    var quotedValue = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote(value) : ("'" + value.replace(/'/g, "'\\''") + "'")
-    root.bar.run("omarchy bar set " + quotedId + " segments " + quotedValue)
-  }
-
-  function persistBoolSetting(key, enabled) {
-    if (!root.bar || typeof root.bar.run !== "function") return
-    if (typeof key !== "string" || !/^[A-Za-z][A-Za-z0-9]*$/.test(key)) return
-    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
-    root.bar.run("omarchy bar set " + quotedId + " " + key + " " + (enabled ? "true" : "false"))
-  }
-
-  function setBarSegment(name, enabled) {
-    if (name === "disk" && root.gpuTopologyReady && !root.discreteGpuAvailable && !root.gpuListFailed) {
-      root.localDiskFallback = enabled === true
-      persistBoolSetting("diskFallbackWithoutGpu", enabled === true)
-      if (enabled !== true && root.segmentsSetting.indexOf("disk") !== -1) {
-        var withoutDisk = Model.toggleSegment(root.segmentsSetting, "disk", false)
-        root.localSegments = withoutDisk
-        persistSegments(withoutDisk)
-      }
-      return
-    }
-    var next = Model.toggleSegment(root.segmentsSetting, name, enabled)
-    root.localSegments = next
-    persistSegments(next)
-  }
-
-  function persistGpuDevice(card) {
-    if (!root.bar || typeof root.bar.run !== "function") return
-    if (typeof card !== "string" || !/^card[0-9]+$/.test(card)) return
-    var value = '"' + card + '"'
-    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
-    var quotedValue = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote(value) : ("'" + value + "'")
-    root.bar.run("omarchy bar set " + quotedId + " gpuDevice " + quotedValue)
-  }
-
-  function selectGpu(card) {
-    var chosen = Model.pickGpu(discreteGpus, card)
-    if (chosen) {
-      gpu = chosen
-      persistGpuDevice(chosen.card)
-    }
-  }
-
-  onGpuDeviceChanged: {
-    if (!gpuTopologyReady || gpuListFailed) return
-    gpuDeviceWarning = Model.gpuDevicePinMessage(gpus, gpuDevice)
-    var chosen = Model.pickGpu(discreteGpus, gpuDevice)
-    gpu = chosen
-  }
-
-  onIntegratedGpuDeviceChanged: {
-    if (gpuListReady && sysInfoReady) reconcileGpuTopology()
-  }
-
-  // Same physical card, new object: keep last-good live metrics. A real
-  // identity change (or disappearance) clears the sample and re-polls.
-  function setIntegratedGpu(next) {
-    if (Model.gpuIdentityEqual(root.integratedGpu, next)) return
-    root.integratedGpu = next
-    root.integratedGpuLive = null
-    root.integratedGpuError = ""
-    if (root.igpuSampleable && root.panelCpuOpen) root.pollIgpu()
-  }
-
-  Process {
-    id: gpuListProc
-    command: [root.gpuStatsScript, "list"]
-    running: true
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyGpuList(text)
-    }
-    onExited: function(exitCode, exitStatus) {
-      if (exitCode !== 0 && root.gpuDetectionError === "")
-        root.gpuDetectionError = "GPU detection exited with code " + exitCode
-      if (exitCode !== 0) {
-        root.rawGpus = []
-        root.gpuListFailed = true
-        root.gpuListReady = true
-        root.reconcileGpuTopology()
-      }
-    }
-  }
-
-  function applySysInfo(text) {
-    var data = Model.safeJson(text)
-    if (!data || data.ok !== true) {
-      sysInfoReady = true
-      reconcileGpuTopology()
-      return
-    }
-    sysInfo = Model.parseSystemInfo(data)
-    sysInfoReady = true
-    reconcileGpuTopology()
-  }
-
-  function refreshSysInfo() {
-    if (sysInfoProc.running) return
-    sysInfoProc.running = true
-  }
-
-  Process {
-    id: sysInfoProc
-    command: [root.localPath("scripts/system-info")]
-    running: true
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applySysInfo(text)
-    }
-    onExited: function(exitCode, exitStatus) {
-      if (root.sysInfoReady) return
-      if (exitCode === 0) return
-      root.sysInfoReady = true
-      root.reconcileGpuTopology()
-    }
-  }
-
-  function applyDiskInfo(text) {
-    var data = Model.safeJson(text)
-    if (!data || data.ok !== true) {
-      diskInfoError = (data && data.error)
-        ? "Disk detection failed: " + String(data.error)
-        : "Disk detection returned invalid output"
-      return
-    }
-    diskInfo = Model.parseDiskInfo(data)
-    diskInfoError = ""
-  }
-
-  function refreshDiskInfo() {
-    if (diskInfoProc.running) return
-    diskInfoWatchdog.restart()
-    diskInfoProc.running = true
-  }
-
-  function persistDiskDevice(name) {
-    if (!root.bar || typeof root.bar.run !== "function") return
-    if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+$/.test(name)) return
-    var value = '"' + name + '"'
-    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
-    var quotedValue = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote(value) : ("'" + value + "'")
-    root.bar.run("omarchy bar set " + quotedId + " diskDevice " + quotedValue)
-  }
-
-  function selectDisk(name) {
-    if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+$/.test(name)) return
-    selectedDiskName = name
-    persistDiskDevice(name)
-    diskHistory = []
-  }
-
-  Process {
-    id: diskInfoProc
-    command: [root.diskInfoScript]
-    running: true
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyDiskInfo(text)
-    }
-    onRunningChanged: if (running) diskInfoWatchdog.restart()
-    onExited: function(exitCode, exitStatus) {
-      diskInfoWatchdog.stop()
-      if (exitCode !== 0 && root.diskInfoError === "")
-        root.diskInfoError = "Disk detection exited with code " + exitCode
-    }
-  }
-
-  Timer {
-    id: diskInfoWatchdog
-    interval: 6000
-    repeat: false
-    onTriggered: {
-      if (diskInfoProc.running) {
-        diskInfoProc.signal(9)
-        root.diskInfoError = "Disk detection timed out"
-      }
-    }
-  }
-
-  function applyNvidia(text) {
-    var data = Model.safeJson(text)
-    if (!data || data.ok !== true) {
-      root.nvidiaGpu = null
-      root.nvidiaError = (data && data.error) ? String(data.error) : "gpu-stats returned bad output"
-      return
-    }
-    var rows = Model.parseNvidiaCsv(data.payload)
-    root.nvidiaGpu = rows.length > 0 ? rows[0] : null
-    root.nvidiaError = ""
-  }
-
-  function pollNvidia() {
-    if (nvidiaProc.running) return
-    nvidiaWatchdog.restart()
-    nvidiaProc.running = true
-  }
-
-  Timer {
-    id: nvidiaTimer
-    interval: root.panelIntervalMs
-    repeat: true
-    running: root.nvidiaSelected && (root.segmentEnabled("gpu") || root.panelGpuOpen)
-    onRunningChanged: if (running) root.pollNvidia()
-    onTriggered: root.pollNvidia()
-  }
-
-  Process {
-    id: nvidiaProc
-    command: [root.gpuStatsScript, "sample", "nvidia", String(root.nvidiaIndex)]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyNvidia(text)
-    }
-    onExited: function(exitCode, exitStatus) {
-      nvidiaWatchdog.stop()
-      if (exitCode !== 0) {
-        root.nvidiaGpu = null
-        if (root.nvidiaError === "")
-          root.nvidiaError = "gpu-stats exited with code " + exitCode
-      }
-    }
-  }
-
-  Timer {
-    id: nvidiaWatchdog
-    interval: 6000
-    repeat: false
-    onTriggered: {
-      if (nvidiaProc.running) {
-        nvidiaProc.signal(9)
-        root.nvidiaGpu = null
-        root.nvidiaError = "gpu-stats timed out"
-      }
-    }
-  }
-
-  function applyDrmOverlay(data, which, live) {
-    var prev = which === "igpu" ? root.igpuDrmPrev : root.discreteDrmPrev
-    var snap = Model.parseDrmSnapshot(data && data.drm)
-    var busy = Model.drmBusyPercent(prev, snap)
-    if (snap) {
-      if (which === "igpu") root.igpuDrmPrev = snap
-      else root.discreteDrmPrev = snap
-    }
-    return Model.mergeGpuLive(live, busy, snap)
-  }
-
-  function applyIgpu(text) {
-    var data = Model.safeJson(text)
-    if (!data || data.ok !== true) {
-      root.integratedGpuError = (data && data.error) ? String(data.error) : "gpu-stats returned bad output"
-      return
-    }
-    var live = null
-    if (data.vendor === "intel") live = Model.normalizeIntelGpu(Model.parseKeyValues(data.payload))
-    else if (data.vendor === "amd") live = Model.normalizeAmdGpu(Model.parseKeyValues(data.payload))
-    if (live) {
-      root.integratedGpuLive = root.applyDrmOverlay(data, "igpu", live)
-      root.integratedGpuError = ""
-      return
-    }
-    root.integratedGpuError = "gpu-stats returned no readable iGPU metrics"
-  }
-
-  function pollIgpu() {
-    if (!root.igpuSampleable || !root.panelCpuOpen) return
-    if (igpuProc.running) return
-    igpuWatchdog.restart()
-    igpuProc.running = true
-  }
-
-  Timer {
-    id: igpuTimer
-    interval: root.panelIntervalMs
-    repeat: true
-    running: root.igpuSampleable && root.panelCpuOpen
-    onRunningChanged: if (running) root.pollIgpu()
-    onTriggered: root.pollIgpu()
-  }
-
-  Process {
-    id: igpuProc
-    command: {
-      if (!root.igpuSampleable) return [root.gpuStatsScript, "sample", "intel", "/sys/class/drm"]
-      return [root.gpuStatsScript, "sample", root.integratedGpu.vendor, root.integratedGpu.path]
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyIgpu(text)
-    }
-    onExited: function(exitCode, exitStatus) {
-      igpuWatchdog.stop()
-      if (exitCode !== 0 && root.integratedGpuError === "")
-        root.integratedGpuError = "gpu-stats exited with code " + exitCode
-    }
-  }
-
-  Timer {
-    id: igpuWatchdog
-    interval: 6000
-    repeat: false
-    onTriggered: {
-      if (igpuProc.running) {
-        igpuProc.signal(9)
-        root.integratedGpuError = "gpu-stats timed out"
-      }
-    }
-  }
-
-  function applyDiscreteGpu(text) {
-    var data = Model.safeJson(text)
-    if (!data || data.ok !== true) {
-      root.discreteGpuLive = null
-      return
-    }
-    var live = null
-    if (data.vendor === "intel") live = Model.normalizeIntelGpu(Model.parseKeyValues(data.payload))
-    else if (data.vendor === "amd") live = Model.normalizeAmdGpu(Model.parseKeyValues(data.payload))
-    if (!live) live = { kind: data.vendor || "" }
-    root.discreteGpuLive = root.applyDrmOverlay(data, "discrete", live)
-  }
-
-  function pollDiscreteGpu() {
-    if (!root.drmSampleable) return
-    if (discreteGpuProc.running) return
-    discreteGpuWatchdog.restart()
-    discreteGpuProc.running = true
-  }
-
-  Timer {
-    id: discreteGpuTimer
-    interval: root.panelIntervalMs
-    repeat: true
-    running: root.drmSampleable && (root.segmentEnabled("gpu") || root.panelGpuOpen)
-    onRunningChanged: if (running) root.pollDiscreteGpu()
-    onTriggered: root.pollDiscreteGpu()
-  }
-
-  Process {
-    id: discreteGpuProc
-    command: {
-      if (!root.drmSampleable) return [root.gpuStatsScript, "sample", "intel", "/sys/class/drm"]
-      return [root.gpuStatsScript, "sample", root.gpu.vendor, root.gpu.path]
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyDiscreteGpu(text)
-    }
-    onExited: function(exitCode, exitStatus) {
-      discreteGpuWatchdog.stop()
-    }
-  }
-
-  Timer {
-    id: discreteGpuWatchdog
-    interval: 6000
-    repeat: false
-    onTriggered: {
-      if (discreteGpuProc.running) discreteGpuProc.signal(9)
-    }
-  }
 
   Loader {
     id: panelLoader
@@ -925,163 +320,108 @@ BarWidget {
     }
   }
 
-  // ---- bar slot ----
+  // ---- bar slot ----------------------------------------------------------
   BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.showMonitorFallback ? Theme.barGlyphs.monitor : ""
+    text: root.showMonitorFallback ? Model.BAR_GLYPHS.monitor : ""
     hasVisualContent: true
     keepSpace: true
-    tooltipText: root.tooltipLine
-    // tooltipLine is rates/percentages, never process comm. The shell's
-    // WidgetButton tooltip Text is already PlainText.
-    // Empty-segment fallback is a compact status item. It keeps the shell's
-    // standard icon canvas/font while avoiding icon-slot padding.
+    tooltipText: root.slotTooltip
     slotSize: root.showMonitorFallback ? Style.bar.statusSlot : Style.bar.iconSlot
     fontSize: Style.bar.iconFont
     fixedWidth: root.vertical
                 ? -1
-                : (root.showMonitorFallback
-                   ? Style.bar.statusSlot
-                   : segGrid.implicitWidth + Style.spaceReal(Theme.metrics.barOuterPad) * 2)
+                : (root.showMonitorFallback ? Style.bar.statusSlot : root.reservedWidth + root.outerPad * 2)
     fixedHeight: root.vertical
-                 ? (root.showMonitorFallback
-                    ? Style.bar.statusSlot
-                    : segGrid.implicitHeight + Style.spaceReal(Theme.metrics.barOuterPad) * 2)
+                 ? (root.showMonitorFallback ? Style.bar.statusSlot : segGrid.implicitHeight + root.outerPad * 2)
                  : -1
 
-    onPressed: function(buttonCode) {
-      if (buttonCode !== Qt.LeftButton) return
-      if (root.ignoreNextToggle) {
-        root.ignoreNextToggle = false
-        return
-      }
+    onPressed: function (buttonCode) {
+      if (buttonCode === Qt.RightButton) { root.launchBtop(); return }
       root.toggle()
     }
+    onWheelMoved: function (delta) { root.handleWheel(delta) }
+    onBarChanged: Qt.callLater(root.registerCells)
+    Component.onCompleted: Qt.callLater(root.registerCells)
 
-    // Shared sizers: cell width is locked to glyph + "100%" so digits
-    // never resize the slot. The "~" estimate prefix is reserved only
-    // when an Intel GPU can show it. Hidden, not Grid children.
-    Text {
-      id: pctSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: "100%"
-      font.family: button.fontFamily
-      font.pixelSize: Style.font.caption
-    }
-    Text {
-      id: tildeSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: "~"
-      font.family: button.fontFamily
-      font.pixelSize: Style.font.caption
-    }
-    Text {
-      id: cpuGlyphSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barLabelFor(root.barLabelsMode, "cpu")
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-    }
-    Text {
-      id: gpuGlyphSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barLabelFor(root.barLabelsMode, "gpu")
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-    }
-    Text {
-      id: memGlyphSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barLabelFor(root.barLabelsMode, "mem")
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-    }
-    Text {
-      id: diskGlyphSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barLabelFor(root.barLabelsMode, "disk")
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-    }
-    Text {
-      id: netGlyphSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barLabelFor(root.barLabelsMode, "net")
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-    }
     Grid {
       id: segGrid
       z: 1
       visible: !root.showMonitorFallback
-      anchors.centerIn: parent
+      // Horizontal bars pack cells from the left so the slack sits at the
+      // end of the slot; vertical bars centre the stack in the strip.
+      anchors.left: root.vertical ? undefined : parent.left
+      anchors.leftMargin: root.vertical ? 0 : root.outerPad
+      anchors.verticalCenter: root.vertical ? undefined : parent.verticalCenter
+      anchors.horizontalCenter: root.vertical ? parent.horizontalCenter : undefined
+      anchors.top: root.vertical ? parent.top : undefined
+      anchors.topMargin: root.vertical ? root.outerPad : 0
       columns: root.vertical ? 1 : Math.max(1, root.visibleBarCells.length)
-      columnSpacing: Style.space(Theme.metrics.barSegmentGap)
-      rowSpacing: Style.space(Theme.metrics.barSegmentGap)
+      columnSpacing: root.segmentGap
+      rowSpacing: root.segmentGap
       verticalItemAlignment: Grid.AlignVCenter
-      horizontalItemAlignment: Grid.AlignHCenter
+      horizontalItemAlignment: Grid.AlignLeft
+      move: Transition { NumberAnimation { properties: "x,y"; duration: 160; easing.type: Easing.OutCubic } }
 
       MetricCell {
+        id: cpuCell
         visible: root.segmentEnabled("cpu")
         tab: "cpu"
         metric: "cpu"
         valueText: root.cpuValueText
-        hot: root.cpuHot
+        valueColor: root.valueColorFor("cpu", root.cpuPct ? root.cpuPct.nonIdle : null, root.cpuHot)
       }
-
       MetricCell {
+        id: gpuCell
         visible: root.segmentEnabled("gpu") && root.discreteGpuAvailable
         tab: "gpu"
         metric: "gpu"
         valueText: root.gpuValueText
-        hot: root.gpuHot
+        valueColor: root.valueColorFor("gpu", root.gpuDisplay ? root.gpuDisplay.pct : null, root.gpuHot)
       }
-
       MetricCell {
+        id: memCell
         visible: root.segmentEnabled("memory")
         tab: "mem"
         metric: "mem"
         valueText: root.memValueText
-        hot: root.memHot
+        valueColor: root.valueColorFor("mem", root.memComp ? root.memComp.usedPct : null, root.memHot)
       }
-
       MetricCell {
+        id: diskCell
         visible: root.segmentEnabled("disk") && root.diskAvailable
         tab: "disk"
         metric: "disk"
         valueText: root.diskValueText
-        hot: root.diskHot
+        valueColor: root.valueColorFor("disk", root.diskRates ? root.diskRates.utilPct : null, root.diskHot)
       }
 
-      // ---- Network: glyph + inline rates; two-line only on vertical bars ----
+      // Network: glyph + inline rates; two lines on vertical bars.
       Item {
+        id: netCell
         visible: root.segmentEnabled("network")
-        implicitWidth: root.networkCellWidth
+        implicitWidth: {
+          var w = Math.ceil(netCol.implicitWidth)
+          if (netLabel.visible) w += root.labelGap + Math.ceil(netLabel.implicitWidth)
+          if (root.vertical) return Math.min(w, root.verticalSlot)
+          return w
+        }
         implicitHeight: root.vertical ? netCol.implicitHeight : root.lineBoxHeight
-
-        Text {
-          id: netSizer
-          visible: false
-          textFormat: Text.PlainText
-          text: root.vertical ? "↓999T" : "↑ 999T  ↓ 999T"
-          font.family: button.fontFamily
-          font.pixelSize: Style.font.caption
+        readonly property bool pressable: true
+        readonly property bool interactive: true
+        readonly property bool tooltipHovered: netHover.containsMouse
+        function triggerPress(buttonCode) {
+          if (buttonCode === Qt.RightButton) root.launchBtop()
+          else root.segmentClicked("net")
         }
 
         Text {
           id: netLabel
-          visible: !root.vertical && Theme.barLabelFor(root.barLabelsMode, "net") !== ""
+          visible: !root.vertical && root.labelFor("net") !== ""
           textFormat: Text.PlainText
-          text: Theme.barLabelFor(root.barLabelsMode, "net")
+          text: root.labelFor("net")
           color: root.mutedLabelColor
           font.family: button.fontFamily
           font.pixelSize: root.glyphFontSize
@@ -1092,72 +432,84 @@ BarWidget {
         Column {
           id: netCol
           anchors.left: netLabel.visible ? netLabel.right : parent.left
-          anchors.leftMargin: netLabel.visible ? Style.space(Theme.metrics.barLabelGap) : 0
+          anchors.leftMargin: netLabel.visible ? root.labelGap : 0
           anchors.verticalCenter: parent.verticalCenter
-          width: netLabel.visible ? root.networkRateWidth : parent.width
+          width: root.vertical ? parent.width : implicitWidth
           spacing: 0
 
+          // Down first: it is the number people glance at.
           Text {
             visible: root.vertical
             textFormat: Text.PlainText
             width: parent.width
             elide: Text.ElideRight
-            horizontalAlignment: Text.AlignLeft
-            text: "↑" + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.txBps) : "--")
-            color: button.foreground
+            text: "↓" + root.netDownText
+            color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
+            font.features: ({ "tnum": 1 })
           }
           Text {
             visible: !root.vertical
             textFormat: Text.PlainText
-            width: parent.width
-            elide: Text.ElideRight
-            horizontalAlignment: Text.AlignLeft
-            text: "↑ " + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.txBps) : "--")
-                 + "  ↓ " + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.rxBps) : "--")
-            color: button.foreground
+            text: "↓" + root.netDownText + " ↑" + root.netUpText
+            color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
+            font.features: ({ "tnum": 1 })
           }
           Text {
             visible: root.vertical
             textFormat: Text.PlainText
             width: parent.width
             elide: Text.ElideRight
-            horizontalAlignment: Text.AlignLeft
-            text: "↓" + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.rxBps) : "--")
-            color: button.foreground
+            text: "↑" + root.netUpText
+            color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
+            font.features: ({ "tnum": 1 })
           }
         }
 
         MouseArea {
+          id: netHover
           anchors.fill: parent
-          hoverEnabled: false
-          acceptedButtons: Qt.LeftButton
-          onPressed: root.noteSegmentPress()
-          onClicked: root.segmentClicked("net")
+          hoverEnabled: true
+          acceptedButtons: Qt.NoButton
+          onEntered: if (root.bar) root.bar.showTooltip(netCell, root.tooltipFor("net"))
+          onExited: if (root.bar) root.bar.hideTooltip(netCell)
         }
       }
     }
   }
 
-  // Metric cell: this cell's glyph/letter + a reserved percentage slot.
-  // The value hugs the icon; leftover slot width sits after the digits.
+  // Metric cell: this cell's glyph/letter plus its value, sized to content. It is
+  // a registered click target (triggerPress) and a tooltip target
+  // (tooltipHovered); the bar routes clicks and shows tooltips for it.
   component MetricCell: Item {
     id: cell
 
     property string tab: ""
     property string metric: ""
     property string valueText: "--"
-    property bool hot: false
+    property color valueColor: root.barFg
 
-    readonly property string label: root.vertical ? "" : Theme.barLabelFor(root.barLabelsMode, metric)
-    readonly property color valueColor: cell.hot ? root.hotTextColor : button.foreground
+    readonly property bool pressable: true
+    readonly property bool interactive: true
+    readonly property bool tooltipHovered: cellHover.containsMouse
+    readonly property string label: root.labelFor(metric)
 
-    implicitWidth: root.metricCellWidthFor(metric)
+    function triggerPress(buttonCode) {
+      if (buttonCode === Qt.RightButton) root.launchBtop()
+      else root.segmentClicked(cell.tab)
+    }
+
+    implicitWidth: {
+      var w = Math.ceil(valueLabel.implicitWidth)
+      if (labelText.visible) w += root.labelGap + Math.ceil(labelText.implicitWidth)
+      if (root.vertical && root.bar) return Math.min(w, root.bar.barSize)
+      return w
+    }
     implicitHeight: root.lineBoxHeight
 
     Text {
@@ -1173,25 +525,26 @@ BarWidget {
     }
 
     Text {
+      id: valueLabel
       textFormat: Text.PlainText
       text: cell.valueText
       color: cell.valueColor
       font.family: button.fontFamily
       font.pixelSize: Style.font.caption
-      horizontalAlignment: Text.AlignLeft
-      elide: Text.ElideRight
+      font.features: ({ "tnum": 1 })
       anchors.verticalCenter: parent.verticalCenter
       anchors.left: labelText.visible ? labelText.right : parent.left
-      anchors.leftMargin: labelText.visible ? Style.space(Theme.metrics.barLabelGap) : 0
-      anchors.right: parent.right
+      anchors.leftMargin: labelText.visible ? root.labelGap : 0
+      Behavior on color { ColorAnimation { duration: 320 } }
     }
 
     MouseArea {
+      id: cellHover
       anchors.fill: parent
-      hoverEnabled: false
-      acceptedButtons: Qt.LeftButton
-      onPressed: root.noteSegmentPress()
-      onClicked: root.segmentClicked(cell.tab)
+      hoverEnabled: true
+      acceptedButtons: Qt.NoButton
+      onEntered: if (root.bar) root.bar.showTooltip(cell, root.tooltipFor(cell.metric))
+      onExited: if (root.bar) root.bar.hideTooltip(cell)
     }
   }
 }
