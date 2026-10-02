@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "dev.bvisagie.quadrant",
   "name": "Quadrant",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "author": "Bernard Visagie",
   "license": "MIT",
-  "description": "Unified system monitor for the Quattro bar: CPU, GPU, memory, network, and an optional disk segment, with a tabbed detail panel.",
+  "description": "Unified system monitor for the Quattro bar: CPU, GPU, memory, drives and network in one slot, with a tabbed panel that names your hardware, keeps an hour of history and shows the processes behind the numbers.",
   "kinds": [
     "bar-widget",
     "service"
@@ -16,7 +16,7 @@
   },
   "barWidget": {
     "displayName": "Quadrant",
-    "description": "CPU, GPU, memory, and network readouts with a tabbed detail panel (Drives tab included; dedicated GPU only in the bar; disk fills the GPU slot when none is present)",
+    "description": "CPU, GPU, memory, drives and network readouts with a tabbed detail panel: per-process CPU, memory, disk I/O, network and GPU; one hour of history; dedicated GPU only in the bar, Drives in its place when there is none.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
