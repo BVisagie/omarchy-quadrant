@@ -41,3 +41,14 @@ test("bar labels resolve glyphs, letters and none", () => {
   assert.equal(Model.barLabelFor("letter", "nope"), "");
   assert.equal(Object.keys(Model.VIVID).length, 5);
 });
+
+test("bar glyphs are the Nerd Font code points", () => {
+  const cp = (s) => s.codePointAt(0);
+  assert.equal(cp(Model.BAR_GLYPHS.cpu), 0xF061A);
+  assert.equal(cp(Model.BAR_GLYPHS.gpu), 0xF08AE);
+  assert.equal(cp(Model.BAR_GLYPHS.mem), 0xEFC5);
+  assert.equal(cp(Model.BAR_GLYPHS.disk), 0xF02CA);
+  assert.equal(cp(Model.BAR_GLYPHS.net), 0xF0317);
+  assert.equal(cp(Model.BAR_GLYPHS.monitor), 0xF0A07);
+  for (const k of Object.keys(Model.BAR_GLYPHS)) assert.equal([...Model.BAR_GLYPHS[k]].length, 1, k);
+});
