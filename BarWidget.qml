@@ -196,32 +196,35 @@ BarWidget {
   readonly property real segmentGap: Style.space(6)
   readonly property real outerPad: Style.spaceReal(6)
 
-  // One TextMetrics per measured string: a metrics object whose text is
-  // rewritten inside a binding would loop on itself.
-  TextMetrics { id: pctMetrics; font.family: button.fontFamily; font.pixelSize: Style.font.caption; text: "100%" }
-  TextMetrics { id: tildeMetrics; font.family: button.fontFamily; font.pixelSize: Style.font.caption; text: "~" }
-  TextMetrics { id: netMetrics; font.family: button.fontFamily; font.pixelSize: Style.font.caption; text: root.vertical ? "↓999T" : "↑ 999T  ↓ 999T" }
-  TextMetrics { id: glyphHeightMetrics; font.family: button.fontFamily; font.pixelSize: root.glyphFontSize; text: Model.BAR_GLYPHS.cpu + "C" }
-  TextMetrics { id: netLabelMetrics; font.family: button.fontFamily; font.pixelSize: root.glyphFontSize; text: root.labelFor("net") }
+  // Widths come from FontMetrics.advanceWidth(): a pure measurement, so a
+  // binding that reads it never re-triggers itself (TextMetrics did).
+  FontMetrics { id: captionFm; font.family: button.fontFamily; font.pixelSize: Style.font.caption }
+  FontMetrics { id: glyphFm; font.family: button.fontFamily; font.pixelSize: root.glyphFontSize }
 
   function labelFor(metric) {
     return root.vertical ? "" : Model.barLabelFor(root.barLabelsMode, metric)
   }
-  readonly property int lineBoxHeight: Math.ceil(Math.max(pctMetrics.height, root.vertical ? 0 : glyphHeightMetrics.height))
+  function labelWidthFor(metric) {
+    var label = labelFor(metric)
+    return label === "" ? 0 : Math.ceil(glyphFm.advanceWidth(label))
+  }
+  readonly property int lineBoxHeight: Math.ceil(Math.max(captionFm.height, root.vertical ? 0 : glyphFm.height))
   readonly property bool reserveEstimatePrefix: {
     if (!root.segmentEnabled("gpu") || !root.discreteGpuAvailable) return false
     return root.gpu && root.gpu.vendor === "intel"
   }
-  // Value slot width; the cell adds its own label width.
-  function metricValueWidthFor(metric) {
-    var w = Math.ceil(pctMetrics.advanceWidth)
-    if (metric === "gpu" && root.reserveEstimatePrefix) w += Math.ceil(tildeMetrics.advanceWidth)
+  function metricCellWidthFor(metric) {
+    var w = Math.ceil(captionFm.advanceWidth("100%"))
+    if (metric === "gpu" && root.reserveEstimatePrefix) w += Math.ceil(captionFm.advanceWidth("~"))
+    var lw = labelWidthFor(metric)
+    if (lw > 0) w += labelGap + lw
+    if (root.vertical && root.bar) return Math.min(w, root.bar.barSize)
     return w
   }
-  readonly property real networkRateWidth: Math.ceil(netMetrics.advanceWidth) + 1
+  readonly property real networkRateWidth: Math.ceil(captionFm.advanceWidth(root.vertical ? "↓999T" : "↑ 999T  ↓ 999T")) + 1
   readonly property real networkCellWidth: {
     var w = root.networkRateWidth
-    var lw = root.labelFor("net") === "" ? 0 : Math.ceil(netLabelMetrics.advanceWidth)
+    var lw = labelWidthFor("net")
     if (lw > 0) w += labelGap + lw
     if (root.vertical) return Math.min(w, root.verticalSlot)
     return w
@@ -479,20 +482,7 @@ BarWidget {
       else root.segmentClicked(cell.tab)
     }
 
-    TextMetrics {
-      id: labelMetrics
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-      text: cell.label
-    }
-    readonly property real labelWidth: cell.label === "" ? 0 : Math.ceil(labelMetrics.advanceWidth)
-
-    implicitWidth: {
-      var w = root.metricValueWidthFor(metric)
-      if (cell.labelWidth > 0) w += root.labelGap + cell.labelWidth
-      if (root.vertical && root.bar) return Math.min(w, root.bar.barSize)
-      return w
-    }
+    implicitWidth: root.metricCellWidthFor(metric)
     implicitHeight: root.lineBoxHeight
 
     Text {
