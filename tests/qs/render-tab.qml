@@ -25,6 +25,9 @@ ShellRoot {
     id: fakePanel
     property bool opened: true
     property bool longWindow: Quickshell.env("QUADRANT_RENDER_LONG") === "1"
+    property int cursorIndex: -1
+    property bool cursorActive: false
+    function hoverRow(index, on) { cursorActive = on; cursorIndex = on ? index : -1 }
     property string currentTab: harness.tab
     property color barForeground: Color.foreground
     property var bar: fakeBar
@@ -46,7 +49,7 @@ ShellRoot {
       spacing: 0
       Loader {
         width: parent.width
-        sourceComponent: harness.tab === "cpu" ? cpuC : harness.tab === "mem" ? memC : harness.tab === "gpu" ? gpuC : harness.tab === "disk" ? diskC : netC
+        sourceComponent: harness.tab === "cpu" ? cpuC : harness.tab === "mem" ? memC : harness.tab === "gpu" ? gpuC : harness.tab === "disk" ? diskC : harness.tab === "settings" ? settingsC : netC
       }
     }
   }
@@ -55,6 +58,7 @@ ShellRoot {
   Component { id: gpuC; Tabs.GpuTab { width: col.width; panel: fakePanel; model: store } }
   Component { id: diskC; Tabs.DiskTab { width: col.width; panel: fakePanel; model: store } }
   Component { id: netC; Tabs.NetworkTab { width: col.width; panel: fakePanel; model: store } }
+  Component { id: settingsC; Components.SettingsView { width: col.width; store: store } }
 
   Component.onCompleted: store.setViewer("render", { gpuSegment: true, gpuTab: true, cpuTab: true, memTab: true, diskTab: true, netTab: true, open: true })
 

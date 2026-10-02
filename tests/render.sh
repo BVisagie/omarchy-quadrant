@@ -12,7 +12,7 @@ shell_dir=${OMARCHY_PATH:-/usr/share/omarchy}/shell
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/tree" "$work/state"
-cp -r components tabs lib scripts Theme.js "$work/tree/" 2>/dev/null || cp -r components tabs lib scripts "$work/tree/"
+cp -r components tabs lib scripts "$work/tree/"
 ln -s "$shell_dir/Commons" "$work/tree/Commons"
 ln -s "$shell_dir/Ui" "$work/tree/Ui"
 cp tests/qs/render-tab.qml "$work/tree/shell.qml"

@@ -2,7 +2,6 @@ import QtQuick
 import qs.Ui
 import qs.Commons
 import "lib/index.mjs" as Model
-import "Theme.js" as Theme
 import "components" as Components
 
 // Quadrant bar slot: one compact widget covering CPU, GPU, memory, network,
@@ -114,6 +113,7 @@ BarWidget {
   readonly property var visibleBarCells: store ? store.visibleBarCells : []
   readonly property string barPaletteMode: store ? store.barPaletteMode : "theme"
   readonly property string barLabelsMode: store ? store.barLabelsMode : "glyph"
+  readonly property string rateUnit: store ? store.rateUnit : "bytes"
   function segmentEnabled(name) {
     return store ? store.segmentEnabled(name) : false
   }
@@ -122,18 +122,39 @@ BarWidget {
   readonly property bool showMonitorFallback: visibleSegmentCount === 0
   // Bar glyphs are icons, not captions: they size with the shell's body
   // text so they read at the same weight as neighbouring bar widgets,
-  // while the percentage stays at caption.
+  // while the value stays at caption.
   readonly property int glyphFontSize: Style.font.body
 
-  readonly property var themePal: Theme.barPaletteFor(
-    String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground),
-    String(Color.accent),
-    String(root.bar ? root.bar.urgent : Color.urgent)
-  )
-  readonly property bool cpuHot: cpuPct !== null && cpuPct.nonIdle >= 90
-  readonly property bool memHot: memComp !== null && memComp.usedPct >= 90
-  readonly property bool gpuHot: gpuDisplay !== null && gpuDisplay.pct >= 90
-  readonly property bool diskHot: diskRates !== null && diskRates.utilPct >= 90
+  // ---- colours ---------------------------------------------------------
+  readonly property color barFg: root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground
+  readonly property color barBg: root.bar ? root.bar.background : Color.background
+  readonly property color barUrgent: root.bar ? root.bar.urgent : Color.urgent
+  readonly property color mutedLabelColor: Model.dimColor(String(barFg), String(barBg), 0.38)
+  readonly property color quietValueColor: Model.dimColor(String(barFg), String(barBg), 0.12)
+
+  // Hot state with hysteresis: a value enters the hot band at 90 % and only
+  // leaves it below 80 %, so a reading hovering on the line cannot flicker.
+  property bool cpuHot: false
+  property bool memHot: false
+  property bool gpuHot: false
+  property bool diskHot: false
+  onCpuPctChanged: cpuHot = Model.band(cpuHot, cpuPct ? cpuPct.nonIdle : null, 90, 80)
+  onMemCompChanged: memHot = Model.band(memHot, memComp ? memComp.usedPct : null, 90, 80)
+  onGpuDisplayChanged: gpuHot = Model.band(gpuHot, gpuDisplay ? gpuDisplay.pct : null, 90, 80)
+  onDiskRatesChanged: diskHot = Model.band(diskHot, diskRates ? diskRates.utilPct : null, 90, 80)
+
+  // Value colour per palette mode:
+  //   theme  foreground, urgent while hot
+  //   heat   continuous muted → accent → urgent ramp
+  //   vivid  fixed per-resource hue, urgent while hot
+  function valueColorFor(metric, pct, hot) {
+    if (barPaletteMode === "heat")
+      return Model.heatColor(pct === null ? 0 : pct, String(quietValueColor), String(Color.accent), String(barUrgent), 8)
+    if (hot) return barUrgent
+    if (barPaletteMode === "vivid") return Model.VIVID[metric] || barFg
+    return barFg
+  }
+
   readonly property string cpuValueText: cpuPct ? Model.formatPct(cpuPct.nonIdle) : "--"
   readonly property string memValueText: memComp ? Model.formatPct(memComp.usedPct) : "--"
   readonly property string gpuValueText: {
@@ -141,80 +162,73 @@ BarWidget {
     return (gpuDisplay.estimated ? "~" : "") + Model.formatPct(gpuDisplay.pct)
   }
   readonly property string diskValueText: diskRates ? Model.formatPct(diskRates.utilPct) : "--"
-  readonly property color hotTextColor: {
-    if (barPaletteMode === "vivid") return Theme.series.cpuSteal
-    return themePal.urgent
+  readonly property string netUpText: ifaceRates ? Model.formatRateCompact(ifaceRates.txBps) : "--"
+  readonly property string netDownText: ifaceRates ? Model.formatRateCompact(ifaceRates.rxBps) : "--"
+
+  // ---- per-segment tooltips ----------------------------------------------
+  function tooltipFor(metric) {
+    if (!streamLive) return "Quadrant: sampler offline"
+    if (metric === "cpu") return Model.cpuBarTooltip(cpuPct)
+    if (metric === "gpu") return gpuDisplay ? "GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (frequency estimate)" : "") : "GPU --"
+    if (metric === "mem") return memComp ? "Memory " + Model.formatPct(memComp.usedPct) + " used · " + Model.formatKiB(memComp.usedK) : "Memory --"
+    if (metric === "disk") return diskRates
+      ? "Drives " + Model.formatPct(diskRates.utilPct) + " busy · R " + Model.formatRate(diskRates.readBps) + " · W " + Model.formatRate(diskRates.writeBps)
+      : "Drives --"
+    if (metric === "net") return ifaceRates
+      ? "Network ↓ " + Model.formatRateUnit(ifaceRates.rxBps, rateUnit) + " · ↑ " + Model.formatRateUnit(ifaceRates.txBps, rateUnit)
+      : "Network --"
+    return "Quadrant"
   }
-  readonly property color mutedLabelColor: {
-    var c = Theme.mutedFor(String(root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground))
-    return c || Color.foreground
+
+  readonly property string slotTooltip: {
+    if (!streamLive) return "Quadrant: sampler offline"
+    if (!showMonitorFallback) return ""
+    return "Quadrant"
   }
-  // Single caption/glyph line. Vertical bars drop the glyph, so they
-  // keep the caption height. Network's two-line vertical form can be taller.
-  readonly property int lineBoxHeight: {
-    if (root.vertical) return pctSizer.implicitHeight
-    var g = Math.max(cpuGlyphSizer.implicitHeight, netGlyphSizer.implicitHeight)
-    return g > pctSizer.implicitHeight ? g : pctSizer.implicitHeight
+
+  // ---- sizing ----------------------------------------------------------
+  // Cell width is locked to glyph + "100%" so digits never resize the
+  // slot; "~" is reserved only when an Intel GPU can show it.
+  readonly property real labelGap: Style.space(3)
+  readonly property real segmentGap: Style.space(6)
+  readonly property real outerPad: Style.spaceReal(6)
+
+  TextMetrics { id: pctMetrics; font.family: button.fontFamily; font.pixelSize: Style.font.caption; text: "100%" }
+  TextMetrics { id: tildeMetrics; font.family: button.fontFamily; font.pixelSize: Style.font.caption; text: "~" }
+  TextMetrics { id: netMetrics; font.family: button.fontFamily; font.pixelSize: Style.font.caption; text: root.vertical ? "↓999T" : "↑ 999T  ↓ 999T" }
+  TextMetrics { id: glyphMetrics; font.family: button.fontFamily; font.pixelSize: root.glyphFontSize; text: "" }
+
+  function labelFor(metric) {
+    return root.vertical ? "" : Model.barLabelFor(root.barLabelsMode, metric)
   }
-  // Each cell is its own glyph (or letter) plus one reserved value slot.
-  function metricLabelWidthFor(metric) {
-    if (root.vertical || root.barLabelsMode === "none") return 0
-    if (metric === "cpu") return cpuGlyphSizer.implicitWidth
-    if (metric === "gpu") return gpuGlyphSizer.implicitWidth
-    if (metric === "mem") return memGlyphSizer.implicitWidth
-    if (metric === "disk") return diskGlyphSizer.implicitWidth
-    if (metric === "net") return netGlyphSizer.implicitWidth
-    return 0
+  function labelWidthFor(metric) {
+    var label = labelFor(metric)
+    if (label === "") return 0
+    glyphMetrics.text = label
+    return Math.ceil(glyphMetrics.advanceWidth)
   }
-  function metricValueWidthFor(metric) {
-    var w = pctSizer.implicitWidth
-    if (metric === "gpu" && root.reserveEstimatePrefix)
-      w += tildeSizer.implicitWidth
-    return Math.ceil(w)
-  }
-  function metricCellWidthFor(metric) {
-    var w = metricValueWidthFor(metric)
-    var lw = metricLabelWidthFor(metric)
-    if (lw > 0)
-      w += Style.space(Theme.metrics.barLabelGap) + lw
-    if (root.vertical && root.bar)
-      return Math.min(w, root.bar.barSize)
-    return w
-  }
-  readonly property real networkRateWidth: Math.ceil(netSizer.implicitWidth) + 1
-  readonly property real networkCellWidth: {
-    var w = root.networkRateWidth
-    var lw = metricLabelWidthFor("net")
-    if (lw > 0)
-      w += Style.space(Theme.metrics.barLabelGap) + lw
-    if (root.vertical)
-      return Math.min(w, root.verticalSlot)
-    return w
-  }
-  // Only an Intel GPU reporting frequency-derived load ever prefixes "~".
+  readonly property int lineBoxHeight: Math.ceil(Math.max(pctMetrics.height, root.vertical ? 0 : glyphMetrics.height))
   readonly property bool reserveEstimatePrefix: {
     if (!root.segmentEnabled("gpu") || !root.discreteGpuAvailable) return false
     return root.gpu && root.gpu.vendor === "intel"
   }
-  readonly property int verticalSlot: root.bar ? root.bar.barSize : Style.bar.sizeVertical
-
-  readonly property string tooltipLine: {
-    if (!streamLive) return "Quadrant: sampler offline"
-    var parts = []
-    if (segmentEnabled("cpu") && cpuPct)
-      parts.push(Model.cpuBarTooltip(cpuPct))
-    if (segmentEnabled("gpu") && discreteGpuAvailable && gpuDisplay)
-      parts.push("GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (freq)" : ""))
-    if (segmentEnabled("memory") && memComp)
-      parts.push("MEMORY " + Model.formatPct(memComp.usedPct))
-    if (segmentEnabled("disk") && diskAvailable && diskRates)
-      parts.push("DRIVES " + Model.formatPct(diskRates.utilPct)
-        + "  R " + Model.formatRate(diskRates.readBps)
-        + "  W " + Model.formatRate(diskRates.writeBps))
-    if (segmentEnabled("network") && ifaceRates)
-      parts.push("↑ " + Model.formatRate(ifaceRates.txBps) + " ↓ " + Model.formatRate(ifaceRates.rxBps))
-    return parts.length > 0 ? parts.join("  ·  ") : "Quadrant"
+  function metricCellWidthFor(metric) {
+    var w = Math.ceil(pctMetrics.advanceWidth)
+    if (metric === "gpu" && root.reserveEstimatePrefix) w += Math.ceil(tildeMetrics.advanceWidth)
+    var lw = labelWidthFor(metric)
+    if (lw > 0) w += labelGap + lw
+    if (root.vertical && root.bar) return Math.min(w, root.bar.barSize)
+    return w
   }
+  readonly property real networkRateWidth: Math.ceil(netMetrics.advanceWidth) + 1
+  readonly property real networkCellWidth: {
+    var w = root.networkRateWidth
+    var lw = labelWidthFor("net")
+    if (lw > 0) w += labelGap + lw
+    if (root.vertical) return Math.min(w, root.verticalSlot)
+    return w
+  }
+  readonly property int verticalSlot: root.bar ? root.bar.barSize : Style.bar.sizeVertical
 
   // ---- panel contract (Quattro bar-widget shape) -----------------------
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
@@ -234,31 +248,50 @@ BarWidget {
     if ("hostWidget" in target) target.hostWidget = root
   }
 
-  // Click on a segment: open the panel on that tab; clicking the slot
-  // elsewhere toggles the panel on the last-used tab. Segment MouseAreas
-  // sit above WidgetButton's own MouseArea; ignoreNextToggle drops the
-  // button press when both still fire.
-  property bool ignoreNextToggle: false
-
-  function noteSegmentPress() {
-    ignoreNextToggle = true
-  }
-
+  // A segment click opens the panel on that tab (or closes it when that tab
+  // is already showing); a click elsewhere in the slot toggles the panel on
+  // the last-used tab. Right-click opens btop, middle-click toggles.
   function segmentClicked(tab) {
-    ignoreNextToggle = true
     var p = panelLoader.item
-    if (!p) {
-      Qt.callLater(function () { root.ignoreNextToggle = false })
-      return
-    }
+    if (!p) return
     if (p.opened) {
       if (p.currentTab === tab) p.close()
       else p.currentTab = tab
     } else {
       p.showTab(tab)
     }
-    Qt.callLater(function () { root.ignoreNextToggle = false })
   }
+
+  function launchBtop() {
+    Util.execArgv(["omarchy-launch-or-focus-tui", "btop"])
+  }
+
+  property real wheelAccumulator: 0
+  function handleWheel(delta) {
+    var r = Util.wheelSteps(root.wheelAccumulator, delta)
+    root.wheelAccumulator = r.remainder
+    var p = panelLoader.item
+    if (!p || !p.opened || r.steps === 0) return
+    p.stepTab(r.steps > 0 ? -1 : 1)
+  }
+
+  // Segment cells are registered as click targets after the slot button
+  // so they sit above it in the bar's hit test (the bar walks targets
+  // newest first).
+  function registerCells() {
+    if (!root.bar || typeof root.bar.registerClickTarget !== "function") return
+    var cells = [cpuCell, gpuCell, memCell, diskCell, netCell]
+    for (var i = 0; i < cells.length; i++) {
+      if (typeof root.bar.unregisterClickTarget === "function") root.bar.unregisterClickTarget(cells[i])
+      root.bar.registerClickTarget(cells[i])
+    }
+  }
+  function unregisterCells() {
+    if (!root.bar || typeof root.bar.unregisterClickTarget !== "function") return
+    var cells = [cpuCell, gpuCell, memCell, diskCell, netCell]
+    for (var i = 0; i < cells.length; i++) root.bar.unregisterClickTarget(cells[i])
+  }
+  Component.onDestruction: unregisterCells()
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -277,163 +310,95 @@ BarWidget {
     }
   }
 
-  // ---- bar slot ----
+  // ---- bar slot ----------------------------------------------------------
   BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.showMonitorFallback ? Theme.barGlyphs.monitor : ""
+    text: root.showMonitorFallback ? Model.BAR_GLYPHS.monitor : ""
     hasVisualContent: true
     keepSpace: true
-    tooltipText: root.tooltipLine
-    // tooltipLine is rates/percentages, never process comm. The shell's
-    // WidgetButton tooltip Text is already PlainText.
-    // Empty-segment fallback is a compact status item. It keeps the shell's
-    // standard icon canvas/font while avoiding icon-slot padding.
+    tooltipText: root.slotTooltip
     slotSize: root.showMonitorFallback ? Style.bar.statusSlot : Style.bar.iconSlot
     fontSize: Style.bar.iconFont
     fixedWidth: root.vertical
                 ? -1
-                : (root.showMonitorFallback
-                   ? Style.bar.statusSlot
-                   : segGrid.implicitWidth + Style.spaceReal(Theme.metrics.barOuterPad) * 2)
+                : (root.showMonitorFallback ? Style.bar.statusSlot : segGrid.implicitWidth + root.outerPad * 2)
     fixedHeight: root.vertical
-                 ? (root.showMonitorFallback
-                    ? Style.bar.statusSlot
-                    : segGrid.implicitHeight + Style.spaceReal(Theme.metrics.barOuterPad) * 2)
+                 ? (root.showMonitorFallback ? Style.bar.statusSlot : segGrid.implicitHeight + root.outerPad * 2)
                  : -1
 
-    onPressed: function(buttonCode) {
-      if (buttonCode !== Qt.LeftButton) return
-      if (root.ignoreNextToggle) {
-        root.ignoreNextToggle = false
-        return
-      }
+    onPressed: function (buttonCode) {
+      if (buttonCode === Qt.RightButton) { root.launchBtop(); return }
       root.toggle()
     }
+    onWheelMoved: function (delta) { root.handleWheel(delta) }
+    onBarChanged: Qt.callLater(root.registerCells)
+    Component.onCompleted: Qt.callLater(root.registerCells)
 
-    // Shared sizers: cell width is locked to glyph + "100%" so digits
-    // never resize the slot. The "~" estimate prefix is reserved only
-    // when an Intel GPU can show it. Hidden, not Grid children.
-    Text {
-      id: pctSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: "100%"
-      font.family: button.fontFamily
-      font.pixelSize: Style.font.caption
-    }
-    Text {
-      id: tildeSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: "~"
-      font.family: button.fontFamily
-      font.pixelSize: Style.font.caption
-    }
-    Text {
-      id: cpuGlyphSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barLabelFor(root.barLabelsMode, "cpu")
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-    }
-    Text {
-      id: gpuGlyphSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barLabelFor(root.barLabelsMode, "gpu")
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-    }
-    Text {
-      id: memGlyphSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barLabelFor(root.barLabelsMode, "mem")
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-    }
-    Text {
-      id: diskGlyphSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barLabelFor(root.barLabelsMode, "disk")
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-    }
-    Text {
-      id: netGlyphSizer
-      visible: false
-      textFormat: Text.PlainText
-      text: Theme.barLabelFor(root.barLabelsMode, "net")
-      font.family: button.fontFamily
-      font.pixelSize: root.glyphFontSize
-    }
     Grid {
       id: segGrid
       z: 1
       visible: !root.showMonitorFallback
       anchors.centerIn: parent
       columns: root.vertical ? 1 : Math.max(1, root.visibleBarCells.length)
-      columnSpacing: Style.space(Theme.metrics.barSegmentGap)
-      rowSpacing: Style.space(Theme.metrics.barSegmentGap)
+      columnSpacing: root.segmentGap
+      rowSpacing: root.segmentGap
       verticalItemAlignment: Grid.AlignVCenter
       horizontalItemAlignment: Grid.AlignHCenter
 
       MetricCell {
+        id: cpuCell
         visible: root.segmentEnabled("cpu")
         tab: "cpu"
         metric: "cpu"
         valueText: root.cpuValueText
-        hot: root.cpuHot
+        valueColor: root.valueColorFor("cpu", root.cpuPct ? root.cpuPct.nonIdle : null, root.cpuHot)
       }
-
       MetricCell {
+        id: gpuCell
         visible: root.segmentEnabled("gpu") && root.discreteGpuAvailable
         tab: "gpu"
         metric: "gpu"
         valueText: root.gpuValueText
-        hot: root.gpuHot
+        valueColor: root.valueColorFor("gpu", root.gpuDisplay ? root.gpuDisplay.pct : null, root.gpuHot)
       }
-
       MetricCell {
+        id: memCell
         visible: root.segmentEnabled("memory")
         tab: "mem"
         metric: "mem"
         valueText: root.memValueText
-        hot: root.memHot
+        valueColor: root.valueColorFor("mem", root.memComp ? root.memComp.usedPct : null, root.memHot)
       }
-
       MetricCell {
+        id: diskCell
         visible: root.segmentEnabled("disk") && root.diskAvailable
         tab: "disk"
         metric: "disk"
         valueText: root.diskValueText
-        hot: root.diskHot
+        valueColor: root.valueColorFor("disk", root.diskRates ? root.diskRates.utilPct : null, root.diskHot)
       }
 
-      // ---- Network: glyph + inline rates; two-line only on vertical bars ----
+      // Network: glyph + inline rates; two lines on vertical bars.
       Item {
+        id: netCell
         visible: root.segmentEnabled("network")
         implicitWidth: root.networkCellWidth
         implicitHeight: root.vertical ? netCol.implicitHeight : root.lineBoxHeight
-
-        Text {
-          id: netSizer
-          visible: false
-          textFormat: Text.PlainText
-          text: root.vertical ? "↓999T" : "↑ 999T  ↓ 999T"
-          font.family: button.fontFamily
-          font.pixelSize: Style.font.caption
+        readonly property bool pressable: true
+        readonly property bool interactive: true
+        readonly property bool tooltipHovered: netHover.containsMouse
+        function triggerPress(buttonCode) {
+          if (buttonCode === Qt.RightButton) root.launchBtop()
+          else root.segmentClicked("net")
         }
 
         Text {
           id: netLabel
-          visible: !root.vertical && Theme.barLabelFor(root.barLabelsMode, "net") !== ""
+          visible: !root.vertical && root.labelFor("net") !== ""
           textFormat: Text.PlainText
-          text: Theme.barLabelFor(root.barLabelsMode, "net")
+          text: root.labelFor("net")
           color: root.mutedLabelColor
           font.family: button.fontFamily
           font.pixelSize: root.glyphFontSize
@@ -444,7 +409,7 @@ BarWidget {
         Column {
           id: netCol
           anchors.left: netLabel.visible ? netLabel.right : parent.left
-          anchors.leftMargin: netLabel.visible ? Style.space(Theme.metrics.barLabelGap) : 0
+          anchors.leftMargin: netLabel.visible ? root.labelGap : 0
           anchors.verticalCenter: parent.verticalCenter
           width: netLabel.visible ? root.networkRateWidth : parent.width
           spacing: 0
@@ -454,60 +419,68 @@ BarWidget {
             textFormat: Text.PlainText
             width: parent.width
             elide: Text.ElideRight
-            horizontalAlignment: Text.AlignLeft
-            text: "↑" + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.txBps) : "--")
-            color: button.foreground
+            text: "↑" + root.netUpText
+            color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
+            font.features: ({ "tnum": 1 })
           }
           Text {
             visible: !root.vertical
             textFormat: Text.PlainText
             width: parent.width
             elide: Text.ElideRight
-            horizontalAlignment: Text.AlignLeft
-            text: "↑ " + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.txBps) : "--")
-                 + "  ↓ " + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.rxBps) : "--")
-            color: button.foreground
+            text: "↑ " + root.netUpText + "  ↓ " + root.netDownText
+            color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
+            font.features: ({ "tnum": 1 })
           }
           Text {
             visible: root.vertical
             textFormat: Text.PlainText
             width: parent.width
             elide: Text.ElideRight
-            horizontalAlignment: Text.AlignLeft
-            text: "↓" + (root.ifaceRates ? Model.formatRateCompact(root.ifaceRates.rxBps) : "--")
-            color: button.foreground
+            text: "↓" + root.netDownText
+            color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
+            font.features: ({ "tnum": 1 })
           }
         }
 
         MouseArea {
+          id: netHover
           anchors.fill: parent
-          hoverEnabled: false
-          acceptedButtons: Qt.LeftButton
-          onPressed: root.noteSegmentPress()
-          onClicked: root.segmentClicked("net")
+          hoverEnabled: true
+          acceptedButtons: Qt.NoButton
+          onEntered: if (root.bar) root.bar.showTooltip(netCell, root.tooltipFor("net"))
+          onExited: if (root.bar) root.bar.hideTooltip(netCell)
         }
       }
     }
   }
 
-  // Metric cell: this cell's glyph/letter + a reserved percentage slot.
-  // The value hugs the icon; leftover slot width sits after the digits.
+  // Metric cell: this cell's glyph/letter plus a reserved value slot. It is
+  // a registered click target (triggerPress) and a tooltip target
+  // (tooltipHovered); the bar routes clicks and shows tooltips for it.
   component MetricCell: Item {
     id: cell
 
     property string tab: ""
     property string metric: ""
     property string valueText: "--"
-    property bool hot: false
+    property color valueColor: root.barFg
 
-    readonly property string label: root.vertical ? "" : Theme.barLabelFor(root.barLabelsMode, metric)
-    readonly property color valueColor: cell.hot ? root.hotTextColor : button.foreground
+    readonly property bool pressable: true
+    readonly property bool interactive: true
+    readonly property bool tooltipHovered: cellHover.containsMouse
+    readonly property string label: root.labelFor(metric)
+
+    function triggerPress(buttonCode) {
+      if (buttonCode === Qt.RightButton) root.launchBtop()
+      else root.segmentClicked(cell.tab)
+    }
 
     implicitWidth: root.metricCellWidthFor(metric)
     implicitHeight: root.lineBoxHeight
@@ -530,20 +503,23 @@ BarWidget {
       color: cell.valueColor
       font.family: button.fontFamily
       font.pixelSize: Style.font.caption
+      font.features: ({ "tnum": 1 })
       horizontalAlignment: Text.AlignLeft
       elide: Text.ElideRight
       anchors.verticalCenter: parent.verticalCenter
       anchors.left: labelText.visible ? labelText.right : parent.left
-      anchors.leftMargin: labelText.visible ? Style.space(Theme.metrics.barLabelGap) : 0
+      anchors.leftMargin: labelText.visible ? root.labelGap : 0
       anchors.right: parent.right
+      Behavior on color { ColorAnimation { duration: 320 } }
     }
 
     MouseArea {
+      id: cellHover
       anchors.fill: parent
-      hoverEnabled: false
-      acceptedButtons: Qt.LeftButton
-      onPressed: root.noteSegmentPress()
-      onClicked: root.segmentClicked(cell.tab)
+      hoverEnabled: true
+      acceptedButtons: Qt.NoButton
+      onEntered: if (root.bar) root.bar.showTooltip(cell, root.tooltipFor(cell.metric))
+      onExited: if (root.bar) root.bar.hideTooltip(cell)
     }
   }
 }

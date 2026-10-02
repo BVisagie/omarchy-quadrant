@@ -1,15 +1,17 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "lib/index.mjs" as Model
 import "tabs" as Tabs
+import "components" as Components
 
-// Quadrant detail panel: one KeyboardPanel with a tab strip. Keyboard
-// contract follows Quattro conventions — Tab keeps its shell meaning
-// (switch to the adjacent bar panel), so Quadrant's own tabs move with
-// Left/Right and 1-N (N = visible tabs); R refreshes the active tab; Esc closes.
+// Quadrant detail panel: one KeyboardPanel with a tab strip, a Show-in-bar
+// switch, a settings view behind the gear, and one cursor shared by the
+// keyboard and the mouse. Tab keeps its shell meaning (switch to the
+// adjacent bar panel); Quadrant's own tabs move with ←/→ and 1–N.
 Panel {
   id: root
   moduleName: "dev.bvisagie.quadrant"
@@ -21,9 +23,18 @@ Panel {
 
   readonly property int processCount: store ? store.processCount : 5
   readonly property int panelIntervalMs: store ? store.panelIntervalMs : 2000
+  readonly property color dim: Model.dimColor(String(Color.foreground), String(Color.background))
 
-  // Last-used tab survives close/reopen.
+  // Last-used tab survives close/reopen; the window choice and the settings
+  // view do not.
   property string currentTab: "cpu"
+  property bool longWindow: false
+  property bool settingsOpen: false
+
+  // Single cursor over the active tab's process rows, driven by ↑/↓ and
+  // by the mouse (ProcessList reports hover).
+  property int cursorIndex: -1
+  property bool cursorActive: false
 
   readonly property bool gpuAvailable: store ? store.discreteGpuAvailable === true : false
   readonly property var tabs: {
@@ -31,13 +42,22 @@ Panel {
     if (gpuAvailable) return all
     return all.filter(function (t) { return t !== "gpu" })
   }
-  readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "MEMORY", "disk": "DRIVES", "net": "NETWORK" })
+  readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "Memory", "disk": "Drives", "net": "Network" })
+  readonly property var tabOptions: {
+    var out = []
+    for (var i = 0; i < tabs.length; i++) out.push({ value: tabs[i], label: tabLabels[tabs[i]] || tabs[i] })
+    return out
+  }
   readonly property string barSegmentKey: Model.segmentKeyForTab(currentTab)
-  readonly property bool barSegmentEnabled: store && barSegmentKey !== ""
-                                            ? store.segmentEnabled(barSegmentKey) : false
+  readonly property bool barSegmentEnabled: store && barSegmentKey !== "" ? store.segmentEnabled(barSegmentKey) : false
 
   onTabsChanged: {
     if (tabs.indexOf(currentTab) < 0) currentTab = tabs[0]
+  }
+  onCurrentTabChanged: clearCursor()
+  onOpenedChanged: {
+    if (opened) refreshActiveTab()
+    else { settingsOpen = false; clearCursor() }
   }
 
   function open() { controller.show() }
@@ -49,14 +69,14 @@ Panel {
     var name = String(tab || "")
     if (tabs.indexOf(name) < 0) return
     currentTab = name
+    settingsOpen = false
     open()
   }
 
   function stepTab(direction) {
     var i = tabs.indexOf(currentTab)
     if (i < 0) { currentTab = tabs[0]; return }
-    var next = (i + direction + tabs.length) % tabs.length
-    currentTab = tabs[next]
+    currentTab = tabs[(i + direction + tabs.length) % tabs.length]
   }
 
   function selectTabIndex(i) {
@@ -69,13 +89,38 @@ Panel {
     return false
   }
 
-  function refreshActiveTab() {
+  function activeTabItem() {
     var map = { "cpu": cpuTab, "mem": memTab, "gpu": gpuTab, "net": netTab, "disk": diskTab }
-    var item = map[currentTab]
+    return map[currentTab] || null
+  }
+
+  function refreshActiveTab() {
+    var item = activeTabItem()
     if (item && item.refresh) item.refresh()
   }
 
-  onOpenedChanged: if (opened) refreshActiveTab()
+  function rowCount() {
+    var item = activeTabItem()
+    return item && item.rows ? item.rows.length : 0
+  }
+
+  function moveCursor(delta) {
+    var n = rowCount()
+    if (n === 0) { clearCursor(); return }
+    cursorActive = true
+    if (cursorIndex < 0) cursorIndex = delta > 0 ? 0 : n - 1
+    else cursorIndex = Math.max(0, Math.min(n - 1, cursorIndex + delta))
+  }
+
+  function clearCursor() {
+    cursorActive = false
+    cursorIndex = -1
+  }
+
+  function hoverRow(index, on) {
+    if (on) { cursorActive = true; cursorIndex = index }
+    else if (cursorIndex === index) clearCursor()
+  }
 
   IpcHandler {
     target: "dev.bvisagie.quadrant"
@@ -86,6 +131,7 @@ Panel {
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
+    function settings(): void { root.settingsOpen = true; root.open() }
     // Scriptable settings: `setBarSegment cpu false`, `set processCount 8`.
     function setBarSegment(name: string, enabled: bool): void {
       if (root.store) root.store.setBarSegment(name, enabled)
@@ -107,36 +153,46 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(420))
+    contentWidth: panel.fittedContentWidth(Style.space(440))
     contentHeight: {
       var sp = Style.space(10)
-      var natural = tabStrip.implicitHeight + tabSep.implicitHeight
-                    + bodyColumn.implicitHeight + hintText.implicitHeight
-                    + Style.space(8) + sp * 4
+      var natural = header.implicitHeight + headerSep.implicitHeight + bodyColumn.implicitHeight + sp * 2 + Style.space(6)
       return panel.fittedContentHeight(natural)
     }
+    Behavior on contentHeight { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      blocked: root.settingsOpen
       onCloseRequested: root.close()
-      onTabRequested: function(direction) { root.switchPanel(direction) }
-      onMoveRequested: function(dx, dy) {
+      onTabRequested: function (direction) { root.switchPanel(direction) }
+      onMoveRequested: function (dx, dy) {
         if (dx !== 0) root.stepTab(dx)
+        if (dy !== 0) root.moveCursor(dy)
       }
-      onTextKey: function(t) {
+      onTextKey: function (t) {
         if (t === "r" || t === "R") {
           if (root.store) {
             root.store.refreshSysInfo()
+            root.store.refreshDiskInfo()
             root.store.pollIgpu()
           }
           root.refreshActiveTab()
           return
         }
+        if (t === "h" || t === "H") { root.longWindow = !root.longWindow; return }
+        if (t === "s" || t === "S") { root.settingsOpen = !root.settingsOpen; return }
         if (t >= "1" && t <= "9") {
           var n = parseInt(t, 10)
-          if (n >= 1 && n <= root.tabs.length) root.selectTabIndex(n - 1)
+          if (n >= 1 && n <= root.tabs.length) { root.selectTabIndex(n - 1); root.settingsOpen = false }
         }
+      }
+
+      // Escape closes the settings view first, then the panel.
+      Keys.onEscapePressed: function (event) {
+        if (root.settingsOpen) { root.settingsOpen = false; event.accepted = true }
+        else event.accepted = false
       }
 
       ColumnLayout {
@@ -145,113 +201,59 @@ Panel {
         height: parent.height
         spacing: Style.space(10)
 
-        // ---- tab strip ----
+        // ---- header: tabs · show-in-bar · gear ----
         Item {
-          id: tabStrip
+          id: header
           Layout.fillWidth: true
-          implicitHeight: Math.max(tabRow.implicitHeight, barToggle.implicitHeight)
+          implicitHeight: Math.max(tabStrip.implicitHeight, gear.implicitHeight, barToggleRow.implicitHeight)
+
+          ButtonGroup {
+            id: tabStrip
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            options: root.tabOptions
+            value: root.settingsOpen ? "" : root.currentTab
+            fontSize: Style.font.caption
+            onChanged: function (value) { root.currentTab = value; root.settingsOpen = false }
+          }
 
           Row {
-            id: tabRow
-            anchors.left: parent.left
-            anchors.right: barToggle.left
-            anchors.rightMargin: Style.space(12)
+            id: barToggleRow
+            anchors.right: gear.left
+            anchors.rightMargin: Style.space(10)
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(14)
-            clip: true
+            spacing: Style.space(6)
+            visible: !root.settingsOpen && root.store && root.barSegmentKey !== ""
 
-            Repeater {
-              model: root.tabs
-
-              delegate: Item {
-                id: tabButton
-                required property string modelData
-                required property int index
-
-                readonly property bool current: root.currentTab === modelData
-
-                implicitWidth: tabLabel.implicitWidth
-                implicitHeight: tabLabel.implicitHeight + Style.space(4)
-
-                Text {
-                  id: tabLabel
-                  textFormat: Text.PlainText
-                  text: root.tabLabels[tabButton.modelData] || tabButton.modelData
-                  color: tabButton.current ? root.barForeground : Qt.darker(root.barForeground, 1.5)
-                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                  font.pixelSize: Style.font.body
-                  font.bold: tabButton.current
-                }
-
-                Rectangle {
-                  anchors.left: parent.left
-                  anchors.right: parent.right
-                  anchors.bottom: parent.bottom
-                  height: Style.space(2)
-                  radius: 1
-                  color: Color.accent
-                  visible: tabButton.current
-                }
-
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: root.currentTab = tabButton.modelData
-                }
-              }
+            Text {
+              textFormat: Text.PlainText
+              text: "in bar"
+              color: root.dim
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              anchors.verticalCenter: parent.verticalCenter
+            }
+            ToggleSwitch {
+              checked: root.barSegmentEnabled
+              trackHeight: Math.max(16, Math.round(Style.spacing.controlHeight * 0.5))
+              anchors.verticalCenter: parent.verticalCenter
+              onToggled: if (root.store) root.store.setBarSegment(root.barSegmentKey, !root.barSegmentEnabled)
             }
           }
 
-          MouseArea {
-            id: barToggle
+          PanelActionButton {
+            id: gear
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            width: barToggleRow.implicitWidth
-            height: barToggleRow.implicitHeight
-            implicitWidth: barToggleRow.implicitWidth
-            implicitHeight: barToggleRow.implicitHeight
-            visible: root.store && root.barSegmentKey !== ""
-            hoverEnabled: false
-            cursorShape: Qt.PointingHandCursor
-            acceptedButtons: Qt.LeftButton
-            onClicked: {
-              if (root.store) root.store.setBarSegment(root.barSegmentKey, !root.barSegmentEnabled)
-            }
-
-            Row {
-              id: barToggleRow
-              spacing: Style.space(6)
-
-              Rectangle {
-                width: Style.space(12)
-                height: Style.space(12)
-                radius: 2
-                anchors.verticalCenter: parent.verticalCenter
-                color: root.barSegmentEnabled
-                       ? Color.accent
-                       : "transparent"
-                border.width: 1
-                border.color: root.barSegmentEnabled
-                              ? Color.accent
-                              : Qt.darker(root.barForeground, 1.6)
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                text: "Show in bar"
-                color: root.barForeground
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.caption
-                anchors.verticalCenter: parent.verticalCenter
-              }
-            }
+            iconText: root.settingsOpen ? "󰅖" : "󰒓"
+            tooltipText: root.settingsOpen ? "Close settings (S)" : "Settings (S)"
+            onClicked: root.settingsOpen = !root.settingsOpen
           }
         }
 
         PanelSeparator {
-          id: tabSep
+          id: headerSep
           Layout.fillWidth: true
-          foreground: root.barForeground
         }
 
         Flickable {
@@ -266,17 +268,15 @@ Panel {
           contentWidth: width
           contentHeight: bodyColumn.implicitHeight
           interactive: contentHeight > height
+          ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
           Column {
             id: bodyColumn
             width: bodyFlick.width
             spacing: Style.space(10)
 
-            // Keep last-good metrics on screen, but never leave stale or failed
-            // async data looking live. GPU probe failures are distinct from a
-            // legitimate no-GPU result. A brief stream restart with last-good
-            // data already on screen is not an error — waiting is first-load
-            // only, and uses the muted caption color.
+            // Keep last-good metrics on screen, but never leave stale or
+            // failed async data looking live. Waiting is first-load only.
             Text {
               textFormat: Text.PlainText
               visible: {
@@ -289,25 +289,19 @@ Panel {
               text: {
                 if (!root.store) return ""
                 var messages = []
-                if (root.store.streamError !== "")
-                  messages.push(root.store.streamError)
-                else if (root.store.streamLive !== true && !root.store.sample)
-                  messages.push("Waiting for the system sampler…")
-                if (root.store.gpuDetectionError !== "")
-                  messages.push(root.store.gpuDetectionError)
-                if (root.store.diskInfoError !== "")
-                  messages.push(root.store.diskInfoError)
+                if (root.store.streamError !== "") messages.push(root.store.streamError)
+                else if (root.store.streamLive !== true && !root.store.sample) messages.push("Waiting for the system sampler…")
+                if (root.store.gpuDetectionError !== "") messages.push(root.store.gpuDetectionError)
+                if (root.store.diskInfoError !== "") messages.push(root.store.diskInfoError)
                 return messages.join(" · ")
               }
               color: {
                 if (!root.store) return Color.urgent
-                if (root.store.streamError !== ""
-                    || root.store.gpuDetectionError !== ""
-                    || root.store.diskInfoError !== "")
+                if (root.store.streamError !== "" || root.store.gpuDetectionError !== "" || root.store.diskInfoError !== "")
                   return Color.urgent
-                return Qt.darker(root.barForeground, 1.4)
+                return root.dim
               }
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: Style.font.family
               font.pixelSize: Style.font.caption
               width: parent.width
               wrapMode: Text.WordWrap
@@ -317,74 +311,40 @@ Panel {
               textFormat: Text.PlainText
               visible: root.store && root.store.gpuDeviceWarning !== ""
               text: root.store ? String(root.store.gpuDeviceWarning || "") : ""
-              color: Qt.darker(root.barForeground, 1.4)
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              color: root.dim
+              font.family: Style.font.family
               font.pixelSize: Style.font.caption
               width: parent.width
               wrapMode: Text.WordWrap
+            }
+
+            Components.SettingsView {
+              width: parent.width
+              visible: root.settingsOpen
+              store: root.store
             }
 
             // ---- tab content ----
             StackLayout {
               id: stack
               width: parent.width
-              // Children are always cpu/mem/gpu/net/disk in that order. Map by
-              // tab id rather than by the filtered `tabs` array — otherwise a
-              // no-GPU machine puts Network at index 2, which is GpuTab.
+              visible: !root.settingsOpen
+              // Children are always cpu/mem/gpu/net/disk in that order; map
+              // by tab id, not by the filtered `tabs` array.
               currentIndex: {
                 var map = { "cpu": 0, "mem": 1, "gpu": 2, "net": 3, "disk": 4 }
                 var i = map[root.currentTab]
                 return (i === undefined) ? 0 : i
               }
-              // StackLayout otherwise reports the tallest child as its implicit
-              // height. That made short tabs (notably GPU) inherit the CPU or
-              // Memory tab height and left a large blank gap above the footer.
-              implicitHeight: currentIndex >= 0 && children[currentIndex]
-                              ? children[currentIndex].implicitHeight : 0
+              implicitHeight: visible && currentIndex >= 0 && children[currentIndex] ? children[currentIndex].implicitHeight : 0
 
-              Tabs.CpuTab {
-                id: cpuTab
-                panel: root
-                model: root.store
-              }
-              Tabs.MemoryTab {
-                id: memTab
-                panel: root
-                model: root.store
-              }
-              Tabs.GpuTab {
-                id: gpuTab
-                panel: root
-                model: root.store
-              }
-              Tabs.NetworkTab {
-                id: netTab
-                panel: root
-                model: root.store
-              }
-              Tabs.DiskTab {
-                id: diskTab
-                panel: root
-                model: root.store
-              }
+              Tabs.CpuTab { id: cpuTab; panel: root; model: root.store }
+              Tabs.MemoryTab { id: memTab; panel: root; model: root.store }
+              Tabs.GpuTab { id: gpuTab; panel: root; model: root.store }
+              Tabs.NetworkTab { id: netTab; panel: root; model: root.store }
+              Tabs.DiskTab { id: diskTab; panel: root; model: root.store }
             }
           }
-        }
-
-        Text {
-          id: hintText
-          Layout.fillWidth: true
-          textFormat: Text.PlainText
-          text: "←/→ or 1-" + root.tabs.length + " switch tab · R refresh · Esc close"
-          color: Qt.darker(root.barForeground, 1.6)
-          font.family: root.bar ? root.bar.fontFamily : Style.font.family
-          font.pixelSize: Style.font.caption
-        }
-
-        Item {
-          Layout.fillWidth: true
-          Layout.preferredHeight: Style.space(8)
-          Layout.maximumHeight: Style.space(8)
         }
       }
     }

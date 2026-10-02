@@ -9,7 +9,6 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const Model = require("../../lib/index.mjs");
-const Theme = require("../../Theme.js");
 
 function fixture(name) {
   return fs.readFileSync(path.join(__dirname, "..", "fixtures", name), "utf8");

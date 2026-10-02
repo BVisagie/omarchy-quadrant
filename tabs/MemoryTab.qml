@@ -238,6 +238,9 @@ Item {
     Components.ProcessList {
       width: parent.width
       rows: root.rows
+      cursorIndex: root.panel ? root.panel.cursorIndex : -1
+      cursorActive: root.panel ? root.panel.cursorActive === true : false
+      onRowHovered: function (index, on) { if (root.panel && root.panel.hoverRow) root.panel.hoverRow(index, on) }
       valueHeader: "% OF RAM"
       emptyText: root.active ? "Sampling…" : "Open this tab to sample processes"
       errorText: root.errorText
