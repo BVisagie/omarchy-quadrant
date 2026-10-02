@@ -190,10 +190,13 @@ BarWidget {
   }
 
   // ---- sizing ----------------------------------------------------------
-  // Cell width is locked to glyph + "100%" so digits never resize the
-  // slot; "~" is reserved only when an Intel GPU can show it.
-  readonly property real labelGap: Style.space(3)
-  readonly property real segmentGap: Style.space(6)
+  // Cell width is locked to glyph + "99%", digits hugging their glyph, so
+  // values never resize the slot and a one-digit value leaves at most one
+  // digit of slack before the next cell (a full 100 % is rare enough to
+  // accept one momentary jump). "~" is reserved only when an Intel GPU can
+  // show it.
+  readonly property real labelGap: Style.space(2)
+  readonly property real segmentGap: Style.space(4)
   readonly property real outerPad: Style.spaceReal(6)
 
   // Widths come from FontMetrics.advanceWidth(): a pure measurement, so a
@@ -214,14 +217,14 @@ BarWidget {
     return root.gpu && root.gpu.vendor === "intel"
   }
   function metricCellWidthFor(metric) {
-    var w = Math.ceil(captionFm.advanceWidth("100%"))
+    var w = Math.ceil(captionFm.advanceWidth("99%"))
     if (metric === "gpu" && root.reserveEstimatePrefix) w += Math.ceil(captionFm.advanceWidth("~"))
     var lw = labelWidthFor(metric)
     if (lw > 0) w += labelGap + lw
     if (root.vertical && root.bar) return Math.min(w, root.bar.barSize)
     return w
   }
-  readonly property real networkRateWidth: Math.ceil(captionFm.advanceWidth(root.vertical ? "↓999T" : "↑ 999T  ↓ 999T")) + 1
+  readonly property real networkRateWidth: Math.ceil(captionFm.advanceWidth(root.vertical ? "↓999K" : "↓999K ↑999K")) + 1
   readonly property real networkCellWidth: {
     var w = root.networkRateWidth
     var lw = labelWidthFor("net")
@@ -414,12 +417,13 @@ BarWidget {
           width: netLabel.visible ? root.networkRateWidth : parent.width
           spacing: 0
 
+          // Down first: it is the number people glance at.
           Text {
             visible: root.vertical
             textFormat: Text.PlainText
             width: parent.width
             elide: Text.ElideRight
-            text: "↑" + root.netUpText
+            text: "↓" + root.netDownText
             color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
@@ -430,7 +434,7 @@ BarWidget {
             textFormat: Text.PlainText
             width: parent.width
             elide: Text.ElideRight
-            text: "↑ " + root.netUpText + "  ↓ " + root.netDownText
+            text: "↓" + root.netDownText + " ↑" + root.netUpText
             color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption
@@ -441,7 +445,7 @@ BarWidget {
             textFormat: Text.PlainText
             width: parent.width
             elide: Text.ElideRight
-            text: "↓" + root.netDownText
+            text: "↑" + root.netUpText
             color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
             font.pixelSize: Style.font.caption

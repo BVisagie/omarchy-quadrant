@@ -44,7 +44,7 @@ test("bar labels resolve glyphs, letters and none", () => {
 
 test("bar glyphs are the Nerd Font code points", () => {
   const cp = (s) => s.codePointAt(0);
-  assert.equal(cp(Model.BAR_GLYPHS.cpu), 0xF061A);
+  assert.equal(cp(Model.BAR_GLYPHS.cpu), 0xF4BC);
   assert.equal(cp(Model.BAR_GLYPHS.gpu), 0xF08AE);
   assert.equal(cp(Model.BAR_GLYPHS.mem), 0xEFC5);
   assert.equal(cp(Model.BAR_GLYPHS.disk), 0xF02CA);

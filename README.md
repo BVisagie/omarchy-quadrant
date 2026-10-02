@@ -100,7 +100,7 @@ behind. No sudo or pkexec is involved at any point.
 
 - **Segments**: CPU, GPU, memory, drives and network each pair a Nerd Font
   glyph (or `C`/`G`/`M`/`D`/`N` with `barLabels letter`) with a live value.
-  Network shows compact `↑`/`↓` rates. Vertical bars stack the segments
+  Network shows compact `↓`/`↑` rates, down first. Vertical bars stack the segments
   and drop the glyphs. Each segment toggles independently from its tab's
   **in bar** switch or the settings view; unchecking every segment leaves a
   compact system-monitor glyph.
