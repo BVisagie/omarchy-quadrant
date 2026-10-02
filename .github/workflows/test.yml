@@ -37,8 +37,8 @@ jobs:
         run: python3 -m pip install --quiet ruff
       - name: Lint python helpers
         run: |
-          ruff check --no-cache scripts/gpu-drm tests/py
-          python3 -m py_compile scripts/gpu-drm
+          ruff check --no-cache scripts/gpu-drm scripts/qproc.py tests/py
+          python3 -m py_compile scripts/gpu-drm scripts/qproc.py
       - name: Python helper tests
         run: python3 -m unittest discover -s tests/py -t . -v
 
@@ -83,18 +83,19 @@ jobs:
           export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/quadrant-ci}"
           mkdir -p "$XDG_RUNTIME_DIR"
           export QUADRANT_AWK="${{ matrix.awk }}"
-          ./scripts/process-cpu 3 | jq -e '.ok == true and .metric == "pcpu"'
-          ./scripts/process-memory 3 | jq -e '.ok == true and .metric == "rssKb"'
+          ./scripts/process-sample 3 | jq -e '.ok == true and .metric == "procs" and (.payload | fromjson | .procs > 0)'
+          sleep 1
+          ./scripts/process-sample 3 --window 30 | jq -e '.ok == true and (.payload | fromjson | (.cpu | length) > 0)'
           ./scripts/process-net eth0 | jq -e '.ok == true'
           ./scripts/gpu-stats list | jq -e '.ok == true'
           bash tests/intel-freq-paths.sh
           ./scripts/system-info | jq -e '.ok == true and .cpu and .mem and .host'
           ./scripts/disk-info | jq -e '.ok == true and .disks and .dfPayload and (.backing | type == "object")'
           # failure path: bad input must produce an ok:false envelope
-          if ./scripts/process-cpu nope | jq -e '.ok == false' >/dev/null; then
+          if ./scripts/process-sample nope | jq -e '.ok == false' >/dev/null; then
             echo "failure envelope OK"
           else
-            echo "process-cpu did not report failure correctly"
+            echo "process-sample did not report failure correctly"
             exit 1
           fi
           QUADRANT_STREAM_TICKS=2 ./scripts/quadrant-stream 500 | while IFS= read -r line; do

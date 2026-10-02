@@ -1488,3 +1488,48 @@ test("gpuVramPct understands stream, DRM and nvidia shapes", () => {
   assert.equal(Model.gpuVramPct({ busy: 3 }), null);
   assert.equal(Model.gpuVramPct(null), null);
 });
+
+// --------------------------------------------------------- process-sample
+
+test("parseProcessSample validates the merged sampler payload", () => {
+  const payload = JSON.stringify({
+    dt: 2.01, ncpu: 8, procs: 300, running: 2, threads: 1200, ioVisible: 120, ioHidden: 180,
+    cpu: [
+      { pid: 10, value: 12.5, core: 100, comm: "python3", exe: "python3.12", cmd: "python3 /opt/app/worker.py", script: "worker.py" },
+      { pid: -1, value: 1, comm: "bad" },
+      { pid: 11, value: "x", comm: "bad" },
+      "junk"
+    ],
+    mem: [{ pid: 20, value: 204800, kind: "pss", comm: "brave" }, { pid: 21, value: 1024, kind: "weird", comm: "x" }],
+    io: [{ pid: 30, value: 300, read: 100, write: 200, comm: "rsync" }]
+  });
+  const s = Model.parseProcessSample(payload);
+  assert.equal(s.ncpu, 8);
+  assert.equal(s.threads, 1200);
+  assert.equal(s.ioHidden, 180);
+  assert.equal(s.cpu.length, 1);
+  assert.equal(s.cpu[0].core, 100);
+  assert.equal(s.cpu[0].script, "worker.py");
+  assert.equal(s.mem[0].kind, "pss");
+  assert.equal(s.mem[1].kind, undefined);
+  assert.deepEqual([s.io[0].read, s.io[0].write], [100, 200]);
+  assert.equal(Model.parseProcessSample("nope"), null);
+  assert.equal(Model.parseProcessSample(null), null);
+  // Interpreter rows are named after their script and collapse per script.
+  const rows = Model.nameAndCollapse([
+    { pid: 10, value: 5, comm: "python3", exe: "python3.12", cmd: "", script: "worker.py" },
+    { pid: 12, value: 3, comm: "python3", exe: "python3.12", cmd: "", script: "worker.py" },
+    { pid: 13, value: 2, comm: "python3", exe: "python3.12", cmd: "", script: "other.py" },
+    { pid: 14, value: 1, comm: "node", exe: "node", cmd: "", script: "server.js" },
+    { pid: 15, value: 9, comm: "brave", exe: "brave", cmd: "", script: "" }
+  ], 10);
+  assert.deepEqual(rows.map((r) => [r.comm, r.value, r.pid]), [["Brave", 9, 15], ["worker.py", 8, 10], ["other.py", 2, 13], ["server.js", 1, 14]]);
+  assert.equal(Model.displayName("python3", "python3.12", "", "../evil"), "python3");
+  assert.equal(Model.displayName("brave", "brave", "", "x.py"), "Brave");
+  // io rows sum read and write per app.
+  const io = Model.nameAndCollapse([
+    { pid: 1, value: 30, read: 10, write: 20, comm: "rsync" },
+    { pid: 2, value: 5, read: 5, write: 0, comm: "rsync" }
+  ], 5);
+  assert.deepEqual([io[0].read, io[0].write, io[0].value], [15, 20, 35]);
+});

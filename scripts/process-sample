@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# process-sample — one-shot top-process sampler for the Quadrant panel.
+#
+# Runs scripts/qproc.py (one /proc walk: CPU, memory and own-process disk
+# I/O) and emits one JSON envelope on stdout:
+#   {"ok":true,"ts":<epoch>,"metric":"procs","payload":"<json object>"}
+# The helper's JSON travels as a single JSON string built with jq --arg, so
+# a hostile process name can never break the transport; parsing happens
+# in Model.js (node-tested). On any failure the envelope is {"ok":false,…}
+# and the exit code is non-zero — a failure must never look like "no
+# activity" to the caller.
+#
+# Usage: process-sample [row_count] [--window seconds]
+#   row_count  clamps to 1..10 (default 5)
+#   --window   longest gap between two runs that still yields rates
+#              (default 15; the store passes a multiple of its cadence)
+
+# shellcheck disable=SC2016  # jq programs are single-quoted on purpose
+set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+fail() {
+  local msg=$1 bin=""
+  if [[ -x /usr/bin/jq ]]; then bin=/usr/bin/jq
+  else bin=$(command -v jq) || bin=""
+  fi
+  if [[ -n $bin ]]; then
+    "$bin" -cn --arg e "$msg" '{ok:false, error:$e}'
+  else
+    printf '{"ok":false,"error":"helper unavailable"}\n'
+  fi
+  exit 1
+}
+
+# Prefer the distro path so a user-writable PATH entry cannot shadow the
+# helper. Fall back to command -v for non-standard prefixes (Nix, etc.).
+resolve_bin() {
+  local n=$1
+  [[ $n =~ ^[A-Za-z0-9._+-]+$ ]] || return 1
+  if [[ -x /usr/bin/$n ]]; then
+    printf '%s\n' "/usr/bin/$n"
+    return 0
+  fi
+  command -v "$n"
+}
+
+JQ=$(resolve_bin jq) || fail "jq not found"
+PY=$(resolve_bin python3) || fail "python3 not found"
+
+count=5
+window=15
+while (( $# > 0 )); do
+  case $1 in
+    --window)
+      shift
+      [[ ${1:-} =~ ^[0-9]+(\.[0-9]+)?$ ]] || fail "bad window '${1:-}'"
+      window=$1
+      ;;
+    *)
+      [[ $1 =~ ^[0-9]+$ ]] || fail "bad row count '$1'"
+      count=$1
+      ;;
+  esac
+  shift
+done
+(( count < 1 )) && count=1
+(( count > 10 )) && count=10
+
+if ! payload=$("$PY" "$SCRIPT_DIR/qproc.py" "$count" --window "$window"); then
+  fail "process sampler failed"
+fi
+
+"$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$payload" \
+  '{ok:true, ts:($ts|tonumber), metric:"procs", payload:$payload}'

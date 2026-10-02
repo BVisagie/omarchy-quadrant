@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "../Model.js" as Model
@@ -20,8 +19,18 @@ Item {
   readonly property var sysCpu: model && model.sysInfo ? model.sysInfo.cpu : null
   readonly property var cpuFreqMhz: model ? model.cpuFreqMhz : null
 
-  property var rows: []
-  property string errorText: ""
+  // Process rows come from the store's shared sampler (one /proc walk for
+  // every open panel); this tab only formats them.
+  readonly property var rows: {
+    var src = model ? model.cpuRows : []
+    var out = []
+    for (var i = 0; i < src.length; i++) {
+      out.push({ pid: src[i].pid, comm: src[i].comm,
+                 valueText: Model.formatPct(src[i].value, 1), sortKey: src[i].sortKey })
+    }
+    return out
+  }
+  readonly property string errorText: model ? model.procError : ""
 
   implicitWidth: 200
   implicitHeight: column.implicitHeight
@@ -34,12 +43,10 @@ Item {
 
   function refresh() {
     if (!active) return
-    // Hardware identity and iGPU live metrics are owned by the widget:
-    // system-info on startup / R, gpu-stats on igpuTimer. This cadence
-    // only refreshes the process roster.
-    if (proc.running) return
-    watchdog.restart()
-    proc.running = true
+    // Hardware identity and iGPU live metrics are owned by the store:
+    // system-info on startup / R, gpu-stats on its own timer. This only
+    // nudges the process sampler.
+    if (model) model.pollProcesses()
   }
 
   readonly property string cpuMeta: {
@@ -68,63 +75,6 @@ Item {
     if (cur === null && max === null) return ""
     if (max === null) return Model.formatMhz(cur)
     return Model.formatMhz(cur) + " / " + Model.formatMhz(max)
-  }
-
-  function apply(text) {
-    var env = Model.safeJson(text)
-    if (!env || env.ok !== true) {
-      // Helper failure is a visible error, never an empty "no activity" list.
-      errorText = "process sampler failed: " + ((env && env.error) ? String(env.error) : "bad output")
-      return
-    }
-    var limit = panel ? panel.processCount : 5
-    var parsed = Model.parseProcRows(env.payload, 32)
-    var collapsed = Model.nameAndCollapse(parsed, limit)
-    var mapped = []
-    for (var i = 0; i < collapsed.length; i++) {
-      mapped.push({
-        pid: collapsed[i].pid,
-        comm: collapsed[i].comm,
-        valueText: Model.formatPct(collapsed[i].value, 1),
-        sortKey: collapsed[i].value
-      })
-    }
-    rows = Model.mergeRoster(rows, mapped, limit)
-    errorText = ""
-  }
-
-  Process {
-    id: proc
-    command: [root.scriptPath("process-cpu"), String(root.panel ? root.panel.processCount : 5)]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.apply(text)
-    }
-    onExited: function(exitCode, exitStatus) {
-      watchdog.stop()
-      if (exitCode !== 0 && root.errorText === "")
-        root.errorText = "process sampler exited with code " + exitCode
-    }
-  }
-
-  Timer {
-    id: cadence
-    interval: root.panel ? root.panel.panelIntervalMs : 2000
-    repeat: true
-    running: root.active
-    onTriggered: root.refresh()
-  }
-
-  Timer {
-    id: watchdog
-    interval: Math.max(6000, (root.panel ? root.panel.panelIntervalMs : 2000) * 3)
-    repeat: false
-    onTriggered: {
-      if (proc.running) {
-        proc.signal(9)
-        root.errorText = "process sampler timed out"
-      }
-    }
   }
 
   Column {

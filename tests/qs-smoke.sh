@@ -62,7 +62,11 @@ w = sp["writes"][0]
 assert w["id"] == "dev.bvisagie.quadrant"
 assert w["settings"] == {"segments": ["cpu", "gpu", "memory"], "processCount": 8, "diskDevice": "nvme0n1"}, w
 v = a["viewers"]
-assert v == {"gpuSeg": 2, "gpuTab": 1, "cpuTab": 1, "open": 2, "discretePoll": v["discretePoll"]}, v
+assert v == {"gpuSeg": 2, "gpuTab": 1, "cpuTab": 1, "open": 2, "discretePoll": v["discretePoll"], "procWanted": True, "netWanted": True}, v
+p = a["procs"]
+assert p["error"] == "" and p["stats"]["procs"] > 0 and p["stats"]["threads"] > 0, p
+assert p["cpuRows"] > 0 and p["memRows"] > 0 and p["memKind"] in ("pss", "rss"), p
+assert p["netError"] == "" and p["netRows"] >= 1, p
 assert a["viewers-after"] == {"gpuSeg": 1, "gpuTab": 0, "open": 1}, a["viewers-after"]
 hist = json.load(open(sys.argv[3]))
 assert hist["v"] == 1 and len(hist["cpu"]) >= 1 and len(hist["mem"]) >= 1, hist.keys()

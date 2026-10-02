@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "../Model.js" as Model
@@ -23,113 +22,26 @@ Item {
   readonly property string interfaceError: model ? model.networkInterfaceError : ""
   readonly property bool interfaceValid: ifname !== "" && interfaceError === ""
 
-  property var rows: []
-  property string errorText: ""
-  property var prevSockets: null
-  property var prevIf: null
-  property real prevTs: 0
+  readonly property var rows: {
+    var src = model ? model.netRows : []
+    var out = []
+    for (var i = 0; i < src.length; i++) {
+      out.push({ pid: src[i].pid, comm: src[i].comm,
+                 valueText: "↓ " + Model.formatRate(src[i].rx) + "  ↑ " + Model.formatRate(src[i].tx),
+                 sortKey: src[i].sortKey })
+    }
+    return out
+  }
+  readonly property string errorText: model ? model.netError : ""
 
   implicitWidth: 200
   implicitHeight: column.implicitHeight
 
   onActiveChanged: if (active) refresh()
-  onIfnameChanged: {
-    prevSockets = null
-    prevIf = null
-    prevTs = 0
-    rows = []
-    if (active) refresh()
-  }
-  onInterfaceErrorChanged: {
-    if (interfaceError !== "") {
-      prevSockets = null
-      prevIf = null
-      prevTs = 0
-      rows = []
-      errorText = ""
-    } else if (active) {
-      refresh()
-    }
-  }
 
   function refresh() {
-    if (!active) return
-    if (!interfaceValid) return
-    if (proc.running) return
-    watchdog.restart()
-    proc.running = true
-  }
-
-  function apply(text) {
-    var env = Model.safeJson(text)
-    if (!env || env.ok !== true) {
-      errorText = "network sampler failed: " + ((env && env.error) ? String(env.error) : "bad output")
-      return
-    }
-    var sockets = Model.parseSs(env.payload)
-    var currIf = { rx: env.ifRx, tx: env.ifTx }
-    var dt = prevTs > 0 ? env.ts - prevTs : 0
-    var result = Model.computeNetAppRows(prevSockets, sockets, prevIf, currIf, dt, env.addrs)
-
-    var limit = panel ? panel.processCount : 5
-    var mapped = []
-    for (var i = 0; i < result.rows.length; i++) {
-      var r = result.rows[i]
-      mapped.push({
-        pid: r.pid,
-        comm: r.comm,
-        valueText: "↓ " + Model.formatRate(r.rxBps) + "  ↑ " + Model.formatRate(r.txBps),
-        sortKey: r.sortKey
-      })
-    }
-    // The catch-all row is keyed strictly on pid 0; a process literally
-    // named "Other traffic" keeps its own pid and cannot collide with it.
-    mapped.push({
-      pid: 0,
-      comm: "",
-      valueText: "↓ " + Model.formatRate(result.other.rxBps) + "  ↑ " + Model.formatRate(result.other.txBps),
-      sortKey: result.other.rxBps + result.other.txBps
-    })
-    rows = Model.mergeRoster(rows, mapped, limit + 1)
-
-    prevSockets = sockets
-    prevIf = currIf
-    prevTs = env.ts
-    errorText = ""
-  }
-
-  Process {
-    id: proc
-    command: [root.model ? root.model.localPath("scripts/process-net") : "process-net", root.ifname]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.apply(text)
-    }
-    onExited: function(exitCode, exitStatus) {
-      watchdog.stop()
-      if (exitCode !== 0 && root.errorText === "")
-        root.errorText = "network sampler exited with code " + exitCode
-    }
-  }
-
-  Timer {
-    id: cadence
-    interval: root.panel ? root.panel.panelIntervalMs : 2000
-    repeat: true
-    running: root.active && root.interfaceValid
-    onTriggered: root.refresh()
-  }
-
-  Timer {
-    id: watchdog
-    interval: Math.max(7000, (root.panel ? root.panel.panelIntervalMs : 2000) * 3)
-    repeat: false
-    onTriggered: {
-      if (proc.running) {
-        proc.signal(9)
-        root.errorText = "network sampler timed out"
-      }
-    }
+    if (!active || !interfaceValid) return
+    if (model) model.pollNet()
   }
 
   Column {

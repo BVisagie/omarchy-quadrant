@@ -139,7 +139,9 @@ Item {
   property int gpuSegmentViewers: 0
   property int gpuTabViewers: 0
   property int cpuTabViewers: 0
+  property int memTabViewers: 0
   property int diskTabViewers: 0
+  property int netTabViewers: 0
   property int openPanels: 0
 
   function setViewer(id, state) {
@@ -155,20 +157,24 @@ Item {
   }
 
   function recomputeViewers() {
-    var seg = 0, gpuTab = 0, cpuTab = 0, diskTab = 0, open = 0
+    var seg = 0, gpuTab = 0, cpuTab = 0, memTab = 0, diskTab = 0, netTab = 0, open = 0
     for (var k in viewers) {
       var v = viewers[k]
       if (!v) continue
       if (v.gpuSegment) seg++
       if (v.gpuTab) gpuTab++
       if (v.cpuTab) cpuTab++
+      if (v.memTab) memTab++
       if (v.diskTab) diskTab++
+      if (v.netTab) netTab++
       if (v.open) open++
     }
     gpuSegmentViewers = seg
     gpuTabViewers = gpuTab
     cpuTabViewers = cpuTab
+    memTabViewers = memTab
     diskTabViewers = diskTab
+    netTabViewers = netTab
     openPanels = open
   }
 
@@ -328,7 +334,13 @@ Item {
   }
 
   // History follows one interface and one disk; a switch starts fresh.
-  onEffectiveInterfaceChanged: { netHistory = []; netLong = []; ifaceRates = null }
+  onEffectiveInterfaceChanged: {
+    netHistory = []
+    netLong = []
+    ifaceRates = null
+    resetNetRows()
+    if (netSampleWanted) pollNet()
+  }
   onEffectiveDiskChanged: { diskHistory = []; diskLong = []; diskRates = null }
 
   // ---- stream wiring ---------------------------------------------------
@@ -770,6 +782,151 @@ Item {
       return [store.gpuStatsScript, "sample", store.gpu.vendor, store.gpu.path]
     }
     onResult: function (text) { store.applyDiscreteGpu(text) }
+  }
+
+  // ---- panel process samplers (on demand) ------------------------------
+  // One /proc walk feeds the CPU, Memory and Drives tabs while any of them
+  // is open on any monitor; process-net runs while a Network tab is open.
+  // Rows keep raw numbers; tabs format them.
+  property var procSample: null
+  property var cpuRows: []        // { pid, comm, value: machine %, core: one-core %, sortKey }
+  property var memRows: []        // { pid, comm, value: KiB, pct, kind, sortKey }
+  property var ioRows: []         // { pid, comm, read, write, value: B/s, sortKey }
+  property var procStats: null    // { procs, running, threads, ncpu, ioVisible, ioHidden, dt }
+  property string procError: ""
+  readonly property bool procSampleWanted: openPanels > 0 && (cpuTabViewers > 0 || memTabViewers > 0 || diskTabViewers > 0)
+  readonly property int procWindowS: Math.max(15, Math.ceil(panelIntervalMs * 3 / 1000))
+
+  function applyProcessSample(text) {
+    var env = Model.safeJson(text)
+    if (!env || env.ok !== true) {
+      procError = "process sampler failed: " + ((env && env.error) ? String(env.error) : "bad output")
+      return
+    }
+    var parsed = Model.parseProcessSample(env.payload)
+    if (!parsed) {
+      procError = "process sampler returned bad output"
+      return
+    }
+    procSample = parsed
+    procStats = {
+      procs: parsed.procs, running: parsed.running, threads: parsed.threads, ncpu: parsed.ncpu,
+      ioVisible: parsed.ioVisible, ioHidden: parsed.ioHidden, dt: parsed.dt
+    }
+    var limit = processCount
+    var totalK = sample ? sample.mem.tot : 0
+    var i, c
+    var cpuMapped = []
+    c = Model.nameAndCollapse(parsed.cpu, limit)
+    for (i = 0; i < c.length; i++)
+      cpuMapped.push({ pid: c[i].pid, comm: c[i].comm, value: c[i].value, core: c[i].core, sortKey: c[i].value })
+    // A sampler run without an interval (first run after a cold start)
+    // has no CPU rows; keep the roster rather than flashing it empty.
+    if (parsed.dt > 0 || cpuRows.length === 0) cpuRows = Model.mergeRoster(cpuRows, cpuMapped, limit)
+    var memMapped = []
+    c = Model.nameAndCollapse(parsed.mem, limit)
+    for (i = 0; i < c.length; i++)
+      memMapped.push({ pid: c[i].pid, comm: c[i].comm, value: c[i].value, kind: c[i].kind || "rss",
+                       pct: totalK > 0 ? 100 * c[i].value / totalK : null, sortKey: c[i].value })
+    memRows = Model.mergeRoster(memRows, memMapped, limit)
+    var ioMapped = []
+    c = Model.nameAndCollapse(parsed.io, limit)
+    for (i = 0; i < c.length; i++)
+      ioMapped.push({ pid: c[i].pid, comm: c[i].comm, read: c[i].read, write: c[i].write, value: c[i].value, sortKey: c[i].value })
+    if (parsed.dt > 0 || ioRows.length === 0) ioRows = Model.mergeRoster(ioRows, ioMapped, limit)
+    procError = ""
+  }
+
+  function pollProcesses() {
+    if (!procSampleWanted) return
+    procSampler.run()
+  }
+
+  Timer {
+    id: procTimer
+    interval: store.panelIntervalMs
+    repeat: true
+    running: store.procSampleWanted
+    onRunningChanged: if (running) store.pollProcesses()
+    onTriggered: store.pollProcesses()
+  }
+
+  Components.Sampler {
+    id: procSampler
+    command: [store.localPath("scripts/process-sample"), String(store.processCount), "--window", String(store.procWindowS)]
+    timeoutMs: Math.max(6000, store.panelIntervalMs * 3)
+    onResult: function (text) { store.applyProcessSample(text) }
+    onFailed: function (message) {
+      if (store.procError === "") store.procError = "process sampler " + message
+    }
+  }
+
+  property var netRows: []        // { pid, comm, rx, tx, value, sortKey }; pid 0 = Other traffic
+  property string netError: ""
+  property var netPrevSockets: null
+  property var netPrevIf: null
+  property real netPrevTs: 0
+  readonly property bool netSampleWanted: netTabViewers > 0 && effectiveInterface !== "" && networkInterfaceError === ""
+
+  function resetNetRows() {
+    netPrevSockets = null
+    netPrevIf = null
+    netPrevTs = 0
+    netRows = []
+    netError = ""
+  }
+
+  onNetworkInterfaceErrorChanged: if (networkInterfaceError !== "") resetNetRows()
+
+  function applyNetSample(text) {
+    var env = Model.safeJson(text)
+    if (!env || env.ok !== true) {
+      netError = "network sampler failed: " + ((env && env.error) ? String(env.error) : "bad output")
+      return
+    }
+    var sockets = Model.parseSs(env.payload)
+    var currIf = { rx: env.ifRx, tx: env.ifTx }
+    var dt = netPrevTs > 0 ? env.ts - netPrevTs : 0
+    var result = Model.computeNetAppRows(netPrevSockets, sockets, netPrevIf, currIf, dt, env.addrs)
+    var limit = processCount
+    var mapped = []
+    for (var i = 0; i < result.rows.length; i++) {
+      var r = result.rows[i]
+      mapped.push({ pid: r.pid, comm: r.comm, rx: r.rxBps, tx: r.txBps, value: r.rxBps + r.txBps, sortKey: r.sortKey })
+    }
+    // The catch-all row is keyed strictly on pid 0; a process literally
+    // named "Other traffic" keeps its own pid and cannot collide with it.
+    mapped.push({ pid: 0, comm: "", rx: result.other.rxBps, tx: result.other.txBps,
+                  value: result.other.rxBps + result.other.txBps, sortKey: result.other.rxBps + result.other.txBps })
+    netRows = Model.mergeRoster(netRows, mapped, limit + 1)
+    netPrevSockets = sockets
+    netPrevIf = currIf
+    netPrevTs = env.ts
+    netError = ""
+  }
+
+  function pollNet() {
+    if (!netSampleWanted) return
+    netSampler.run()
+  }
+
+  Timer {
+    id: netTimer
+    interval: store.panelIntervalMs
+    repeat: true
+    running: store.netSampleWanted
+    onRunningChanged: if (running) store.pollNet()
+    onTriggered: store.pollNet()
+  }
+
+  Components.Sampler {
+    id: netSampler
+    command: [store.localPath("scripts/process-net"), store.effectiveInterface]
+    timeoutMs: Math.max(7000, store.panelIntervalMs * 3)
+    onResult: function (text) { store.applyNetSample(text) }
+    onFailed: function (message) {
+      if (store.netError === "") store.netError = "network sampler " + message
+    }
   }
 
   // ---- long history + persistence --------------------------------------

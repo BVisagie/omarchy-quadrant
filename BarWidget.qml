@@ -87,7 +87,9 @@ BarWidget {
     gpuSegment: segmentEnabled("gpu") && discreteGpuAvailable,
     gpuTab: panelOpenOn("gpu"),
     cpuTab: panelOpenOn("cpu"),
+    memTab: panelOpenOn("mem"),
     diskTab: panelOpenOn("disk"),
+    netTab: panelOpenOn("net"),
     open: opened
   })
   onViewerStateChanged: pushViewer()

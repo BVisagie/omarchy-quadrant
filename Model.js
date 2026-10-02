@@ -1102,9 +1102,21 @@ function kworkerLabel(comm) {
   return "kworker"
 }
 
-function displayName(comm, exe, cmd) {
+var INTERPRETER_COMMS = {
+  python: true, python3: true, python2: true, node: true, nodejs: true, bun: true, deno: true,
+  ruby: true, perl: true, bash: true, sh: true, zsh: true, dash: true, fish: true, lua: true,
+  php: true, java: true, rscript: true
+}
+
+function displayName(comm, exe, cmd, script) {
   var raw = clipStr(collapseSpaces(comm), 64)
   if (!raw) return ""
+  // `python3 foo.py` is foo.py, not one of six "python3" rows.
+  var scriptName = clipStr(collapseSpaces(script), 64)
+  if (scriptName && /^[^\/\s]+$/.test(scriptName)) {
+    var ikey = raw.toLowerCase()
+    if (INTERPRETER_COMMS[ikey] || /^python3\.[0-9]+$/.test(ikey)) return scriptName
+  }
   if (/^kworker\//i.test(raw)) return kworkerLabel(raw)
   if (/^kswapd/i.test(raw)) return "kswapd"
   if (/^ksoftirqd/i.test(raw)) return "ksoftirqd"
@@ -1157,6 +1169,50 @@ function parseProcRows(text, maxRows) {
   return parsePs(text, cap)
 }
 
+// One process-sample payload (scripts/qproc.py) → validated lists.
+function parseProcessRowList(list, cap) {
+  var out = []
+  if (!Array.isArray(list)) return out
+  for (var i = 0; i < list.length && out.length < cap; i++) {
+    var e = list[i]
+    if (!e || typeof e !== "object") continue
+    var pid = num(e.pid, null)
+    var value = num(e.value, null)
+    if (pid === null || pid <= 0 || value === null || value < 0) continue
+    var row = {
+      pid: Math.round(pid),
+      value: value,
+      comm: clipStr(e.comm, 128),
+      exe: clipStr(e.exe, 64),
+      cmd: clipStr(e.cmd, 160),
+      script: clipStr(e.script, 64)
+    }
+    if (e.core !== undefined) row.core = Math.max(0, num(e.core, 0) || 0)
+    if (e.read !== undefined) row.read = Math.max(0, num(e.read, 0) || 0)
+    if (e.write !== undefined) row.write = Math.max(0, num(e.write, 0) || 0)
+    if (e.kind === "pss" || e.kind === "rss") row.kind = e.kind
+    out.push(row)
+  }
+  return out
+}
+
+function parseProcessSample(text) {
+  var data = typeof text === "string" ? safeJson(text) : (text && typeof text === "object" ? text : null)
+  if (!data) return null
+  return {
+    dt: Math.max(0, num(data.dt, 0) || 0),
+    ncpu: Math.max(1, Math.round(num(data.ncpu, 1) || 1)),
+    procs: Math.max(0, Math.round(num(data.procs, 0) || 0)),
+    running: Math.max(0, Math.round(num(data.running, 0) || 0)),
+    threads: Math.max(0, Math.round(num(data.threads, 0) || 0)),
+    ioVisible: Math.max(0, Math.round(num(data.ioVisible, 0) || 0)),
+    ioHidden: Math.max(0, Math.round(num(data.ioHidden, 0) || 0)),
+    cpu: parseProcessRowList(data.cpu, 32),
+    mem: parseProcessRowList(data.mem, 32),
+    io: parseProcessRowList(data.io, 32)
+  }
+}
+
 function nameAndCollapse(rows, maxRows) {
   var limit = Math.max(1, Math.round(num(maxRows, 5)))
   var list = Array.isArray(rows) ? rows : []
@@ -1166,15 +1222,19 @@ function nameAndCollapse(rows, maxRows) {
   for (i = 0; i < list.length; i++) {
     var r = list[i]
     if (!r) continue
-    var name = displayName(r.comm, r.exe, r.cmd)
+    var name = displayName(r.comm, r.exe, r.cmd, r.script)
     if (!name) continue
     var key = name.toLowerCase()
     if (!groups[key]) {
-      groups[key] = { pid: r.pid, comm: name, value: 0, n: 0 }
+      groups[key] = { pid: r.pid, comm: name, value: 0, n: 0, read: 0, write: 0, core: 0 }
       order.push(key)
     }
     var g = groups[key]
     g.value += num(r.value, 0) || 0
+    g.read += num(r.read, 0) || 0
+    g.write += num(r.write, 0) || 0
+    g.core += num(r.core, 0) || 0
+    if (r.kind) g.kind = g.kind === "rss" ? "rss" : String(r.kind)
     g.n += 1
     if (r.pid < g.pid) g.pid = r.pid
   }
@@ -2886,6 +2946,7 @@ if (typeof module !== "undefined" && module.exports) {
     parsePs: parsePs,
     displayName: displayName,
     parseProcRows: parseProcRows,
+    parseProcessSample: parseProcessSample,
     nameAndCollapse: nameAndCollapse,
     parseSs: parseSs,
     sumSocketsByPid: sumSocketsByPid,

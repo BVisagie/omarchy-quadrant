@@ -67,22 +67,43 @@ ShellRoot {
         writes: harness.writes
       })
       // viewers gate the pollers
-      store.setViewer("w1", { gpuSegment: true, gpuTab: false, cpuTab: true, diskTab: false, open: true })
+      store.setViewer("w1", { gpuSegment: true, gpuTab: false, cpuTab: true, memTab: true, diskTab: false, netTab: true, open: true })
       store.setViewer("w2", { gpuSegment: true, gpuTab: true, cpuTab: false, diskTab: false, open: true })
       harness.report("viewers", {
         gpuSeg: store.gpuSegmentViewers, gpuTab: store.gpuTabViewers,
         cpuTab: store.cpuTabViewers, open: store.openPanels,
-        discretePoll: store.discretePollWanted
+        discretePoll: store.discretePollWanted,
+        procWanted: store.procSampleWanted, netWanted: store.netSampleWanted
       })
       store.clearViewer("w2")
       harness.report("viewers-after", { gpuSeg: store.gpuSegmentViewers, gpuTab: store.gpuTabViewers, open: store.openPanels })
       saveWait.start()
+      procWait.start()
+    }
+  }
+
+  // Two process-sample runs are needed for rates: the first seeds the
+  // interval state, the second (one panelInterval later) yields rows.
+  Timer {
+    id: procWait
+    interval: 4600
+    repeat: false
+    onTriggered: {
+      harness.report("procs", {
+        error: store.procError,
+        stats: store.procStats,
+        cpuRows: store.cpuRows.length,
+        memRows: store.memRows.length,
+        memKind: store.memRows.length ? store.memRows[0].kind : null,
+        netError: store.netError,
+        netRows: store.netRows.length
+      })
     }
   }
 
   Timer {
     id: saveWait
-    interval: 2500
+    interval: 5200
     repeat: false
     onTriggered: {
       harness.report("saved", { dirty: store.historyDirty, path: store.historyPath })
