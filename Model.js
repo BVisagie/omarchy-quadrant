@@ -82,9 +82,125 @@ function normalizeSegments(list) {
   return out
 }
 
+// Accepts a real array (typed entry), a JSON-encoded array (what an
+// `omarchy bar set` without --json stored) or a comma list.
 function segmentsFromSetting(value) {
-  if (!Array.isArray(value)) return DEFAULT_BAR_SEGMENTS.slice()
-  return normalizeSegments(value)
+  if (Array.isArray(value)) return normalizeSegments(value)
+  if (typeof value === "string") {
+    var s = unquoteSetting(value)
+    if (s.charAt(0) === "[") {
+      var parsed = safeJsonValue(s)
+      if (Array.isArray(parsed)) return normalizeSegments(parsed)
+      return DEFAULT_BAR_SEGMENTS.slice()
+    }
+    if (s === "") return DEFAULT_BAR_SEGMENTS.slice()
+    return normalizeSegments(s.split(",").map(function (t) { return t.replace(/^\s+|\s+$/g, "") }))
+  }
+  return DEFAULT_BAR_SEGMENTS.slice()
+}
+
+function safeJsonValue(text) {
+  try { return JSON.parse(text) } catch (e) { return undefined }
+}
+
+// Strip one layer of wrapping quotes and surrounding whitespace.
+function unquoteSetting(value) {
+  var s = String(value === null || value === undefined ? "" : value)
+  s = s.replace(/^\s+|\s+$/g, "")
+  if (s.length >= 2 && s.charAt(0) === '"' && s.charAt(s.length - 1) === '"')
+    s = s.slice(1, -1).replace(/^\s+|\s+$/g, "")
+  return s
+}
+
+function parseIntSetting(value, fallback, lo, hi) {
+  var raw = typeof value === "string" ? unquoteSetting(value) : value
+  var n = num(raw, null)
+  if (n === null) n = fallback
+  return Math.round(clamp(n, lo, hi))
+}
+
+function parseEnumSetting(value, options, fallback) {
+  var s = unquoteSetting(value).toLowerCase()
+  return options.indexOf(s) >= 0 ? s : fallback
+}
+
+// ---- typed settings --------------------------------------------------
+// shell.json entries written before 1.0 hold strings for everything
+// (`"processCount": "8"`, `"diskDevice": "\"nvme0n1\""`,
+// `"segments": "[\"cpu\"]"`). readSettings accepts both those and typed
+// values, so an old entry keeps working and the first persist migrates it.
+var SETTING_DEFAULTS = {
+  segments: DEFAULT_BAR_SEGMENTS.slice(),
+  processCount: 5,
+  barIntervalMs: 1000,
+  panelIntervalMs: 2000,
+  networkInterface: "auto",
+  gpuDevice: "auto",
+  integratedGpuDevice: "auto",
+  diskDevice: "auto",
+  diskFallbackWithoutGpu: true,
+  barPalette: "theme",
+  barLabels: "glyph",
+  rateUnit: "bytes"
+}
+var BAR_PALETTES = ["theme", "heat", "vivid"]
+var BAR_LABEL_MODES = ["glyph", "letter", "none"]
+var RATE_UNITS = ["bytes", "bits"]
+
+function readSettings(raw) {
+  var r = raw && typeof raw === "object" ? raw : {}
+  var d = SETTING_DEFAULTS
+  return {
+    segments: segmentsFromSetting(r.segments),
+    processCount: parseIntSetting(r.processCount, d.processCount, 1, 10),
+    barIntervalMs: parseIntSetting(r.barIntervalMs, d.barIntervalMs, 250, 60000),
+    panelIntervalMs: parseIntSetting(r.panelIntervalMs, d.panelIntervalMs, 500, 60000),
+    networkInterface: normalizeDeviceSetting(r.networkInterface),
+    gpuDevice: normalizeDeviceSetting(r.gpuDevice),
+    integratedGpuDevice: normalizeIntegratedGpuDevice(r.integratedGpuDevice),
+    diskDevice: normalizeDeviceSetting(r.diskDevice),
+    diskFallbackWithoutGpu: parseBoolSetting(
+      typeof r.diskFallbackWithoutGpu === "string" ? unquoteSetting(r.diskFallbackWithoutGpu) : r.diskFallbackWithoutGpu,
+      d.diskFallbackWithoutGpu),
+    barPalette: parseEnumSetting(r.barPalette, BAR_PALETTES, d.barPalette),
+    barLabels: parseEnumSetting(r.barLabels, BAR_LABEL_MODES, d.barLabels),
+    rateUnit: parseEnumSetting(r.rateUnit, RATE_UNITS, d.rateUnit)
+  }
+}
+
+function settingEquals(a, b) {
+  if (Array.isArray(a) || Array.isArray(b)) return JSON.stringify(a) === JSON.stringify(b)
+  return a === b
+}
+
+// The entry to persist after applying `patch` to the current raw entry:
+// every known key normalised to its typed form, keys at their default
+// dropped, unknown keys the user added kept verbatim, `id` never included
+// (the shell writes it). Pass the result whole to updateEntryInline.
+function settingsPatch(raw, patch) {
+  var merged = {}
+  var k
+  var r = raw && typeof raw === "object" ? raw : {}
+  for (k in r) {
+    if (Object.prototype.hasOwnProperty.call(r, k) && k !== "id") merged[k] = r[k]
+  }
+  var p = patch && typeof patch === "object" ? patch : {}
+  for (k in p) {
+    if (Object.prototype.hasOwnProperty.call(p, k)) merged[k] = p[k]
+  }
+  var typed = readSettings(merged)
+  var out = {}
+  for (k in merged) {
+    if (!Object.prototype.hasOwnProperty.call(merged, k)) continue
+    if (Object.prototype.hasOwnProperty.call(SETTING_DEFAULTS, k)) continue
+    out[k] = merged[k]
+  }
+  for (k in SETTING_DEFAULTS) {
+    if (!Object.prototype.hasOwnProperty.call(SETTING_DEFAULTS, k)) continue
+    if (settingEquals(typed[k], SETTING_DEFAULTS[k])) continue
+    out[k] = typed[k]
+  }
+  return out
 }
 
 function toggleSegment(list, name, enabled) {
@@ -2565,6 +2681,12 @@ if (typeof module !== "undefined" && module.exports) {
     safeJson: safeJson,
     normalizeDeviceSetting: normalizeDeviceSetting,
     segmentKeyForTab: segmentKeyForTab,
+    readSettings: readSettings,
+    settingsPatch: settingsPatch,
+    unquoteSetting: unquoteSetting,
+    parseIntSetting: parseIntSetting,
+    parseEnumSetting: parseEnumSetting,
+    SETTING_DEFAULTS: SETTING_DEFAULTS,
     normalizeSegments: normalizeSegments,
     segmentsFromSetting: segmentsFromSetting,
     toggleSegment: toggleSegment,

@@ -18,8 +18,8 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
 
-  readonly property int processCount: Model.clamp(setting("processCount", 5), 1, 10)
-  readonly property int panelIntervalMs: Model.clamp(setting("panelIntervalMs", 2000), 500, 60000)
+  readonly property int processCount: hostWidget ? hostWidget.processCount : 5
+  readonly property int panelIntervalMs: hostWidget ? hostWidget.panelIntervalMs : 2000
 
   // Last-used tab survives close/reopen.
   property string currentTab: "cpu"

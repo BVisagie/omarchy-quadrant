@@ -14,34 +14,70 @@ BarWidget {
   id: root
   moduleName: "dev.bvisagie.quadrant"
 
-  // ---- settings (manifest barWidget.defaults mirrored as fallbacks) ----
-  property var localSegments: null
-  readonly property var segmentsSetting: {
-    if (Array.isArray(root.localSegments)) return root.localSegments
-    return Model.segmentsFromSetting(setting("segments", null))
+  // ---- settings ----
+  // The shell injects `settings` from the inline shell.json entry and
+  // patches it in place after every write. A change made from the panel
+  // is applied optimistically through `pendingSettings` and the override
+  // is dropped the moment the shell delivers the persisted entry, so the
+  // file stays the single source of truth (an `omarchy bar set` from a
+  // terminal takes effect immediately, too).
+  property var pendingSettings: null
+  readonly property var cfg: {
+    var merged = {}
+    var k
+    var raw = root.settings
+    if (raw && typeof raw === "object") for (k in raw) merged[k] = raw[k]
+    var pending = root.pendingSettings
+    if (pending && typeof pending === "object") for (k in pending) merged[k] = pending[k]
+    return Model.readSettings(merged)
   }
-  readonly property int barIntervalMs: Model.clamp(setting("barIntervalMs", 1000), 250, 60000)
-  readonly property int panelIntervalMs: Model.clamp(setting("panelIntervalMs", 2000), 500, 60000)
+  readonly property var segmentsSetting: cfg.segments
+  readonly property int barIntervalMs: cfg.barIntervalMs
+  readonly property int panelIntervalMs: cfg.panelIntervalMs
   readonly property int historyLimit: Math.ceil(60000 / barIntervalMs) + 1
-  readonly property int processCount: Model.clamp(setting("processCount", 5), 1, 10)
-  readonly property string networkInterface: Model.normalizeDeviceSetting(setting("networkInterface", "auto"))
-  readonly property string gpuDevice: Model.normalizeDeviceSetting(setting("gpuDevice", "auto"))
-  readonly property string integratedGpuDevice: Model.normalizeIntegratedGpuDevice(setting("integratedGpuDevice", "auto"))
-  property var localDiskFallback: null
-  readonly property bool diskFallbackWithoutGpu: {
-    if (root.localDiskFallback === true || root.localDiskFallback === false)
-      return root.localDiskFallback
-    return Model.parseBoolSetting(setting("diskFallbackWithoutGpu", true), true)
+  readonly property int processCount: cfg.processCount
+  readonly property string networkInterface: cfg.networkInterface
+  readonly property string gpuDevice: cfg.gpuDevice
+  readonly property string integratedGpuDevice: cfg.integratedGpuDevice
+  readonly property bool diskFallbackWithoutGpu: cfg.diskFallbackWithoutGpu
+  readonly property string diskDevice: cfg.diskDevice
+  readonly property string barPaletteMode: cfg.barPalette
+  readonly property string barLabelsMode: cfg.barLabels
+
+  // Persist a partial settings object. The shell's in-process writer
+  // replaces the whole inline entry, so the full typed entry is sent
+  // (Model.settingsPatch keeps unknown keys and drops defaults). Values
+  // are written typed; an older shell without the writer falls back to
+  // `omarchy bar set --json`, which also keeps the types.
+  function persistSettings(patch) {
+    if (!patch || typeof patch !== "object") return
+    var merged = {}
+    var k
+    if (root.pendingSettings) for (k in root.pendingSettings) merged[k] = root.pendingSettings[k]
+    for (k in patch) merged[k] = patch[k]
+    root.pendingSettings = merged
+    var next = Model.settingsPatch(root.settings, merged)
+    var shell = root.bar ? root.bar.shell : null
+    if (shell && typeof shell.updateEntryInline === "function") {
+      try {
+        shell.updateEntryInline(root.moduleName, next)
+        return
+      } catch (e) {
+        // fall through to the CLI path
+      }
+    }
+    if (!root.bar || typeof root.bar.run !== "function") return
+    var quote = (typeof Util !== "undefined" && Util.shellQuote)
+      ? Util.shellQuote : function (v) { return "'" + String(v).replace(/'/g, "'\\''") + "'" }
+    for (k in patch) {
+      if (!Object.prototype.hasOwnProperty.call(patch, k)) continue
+      if (!/^[A-Za-z][A-Za-z0-9]*$/.test(k)) continue
+      var value = Object.prototype.hasOwnProperty.call(next, k) ? next[k] : Model.SETTING_DEFAULTS[k]
+      root.bar.run("omarchy bar set " + quote(root.moduleName) + " " + k + " "
+                   + quote(JSON.stringify(value)) + " --json")
+    }
   }
-  readonly property string diskDevice: Model.normalizeDeviceSetting(setting("diskDevice", "auto"))
-  readonly property string barPaletteMode: {
-    var v = String(setting("barPalette", "theme")).toLowerCase()
-    return v === "vivid" ? "vivid" : "theme"
-  }
-  readonly property string barLabelsMode: {
-    var v = String(setting("barLabels", "glyph")).toLowerCase()
-    return (v === "letter" || v === "none") ? v : "glyph"
-  }
+
   // Bar glyphs are icons, not captions: they size with the shell's body
   // text so they read at the same weight as neighbouring bar widgets,
   // while the percentage stays at caption.
@@ -94,7 +130,6 @@ BarWidget {
   property var diskRates: null
   property var diskInfo: null
   property string diskInfoError: ""
-  property string selectedDiskName: ""
 
   // ---- GPU state ----
   property var rawGpus: []
@@ -212,7 +247,7 @@ BarWidget {
     var disks = diskInfo && diskInfo.disks ? diskInfo.disks : []
     var mounts = diskInfo && diskInfo.mounts ? diskInfo.mounts : []
     var backing = diskInfo && diskInfo.backing ? diskInfo.backing : {}
-    return Model.pickDisk(disks, mounts, rates, selectedDiskName || diskDevice, backing) || ""
+    return Model.pickDisk(disks, mounts, rates, diskDevice, backing) || ""
   }
   readonly property bool pinnedDisk: diskDevice !== "auto" && diskDevice !== ""
   readonly property string diskDeviceError: {
@@ -370,7 +405,10 @@ BarWidget {
   readonly property real openPanelIndicatorHeight: Math.max(Style.space(10), Math.round(indicatorSlot * 0.55))
 
   onBarChanged: injectPanel()
-  onSettingsChanged: injectPanel()
+  onSettingsChanged: {
+    pendingSettings = null
+    injectPanel()
+  }
 
   // ---- sampler wiring ----
   function handleSample(line) {
@@ -407,7 +445,7 @@ BarWidget {
       diskInfo && diskInfo.disks ? diskInfo.disks : [],
       diskInfo && diskInfo.mounts ? diskInfo.mounts : [],
       dRates,
-      selectedDiskName || diskDevice,
+      diskDevice,
       diskInfo && diskInfo.backing ? diskInfo.backing : {}
     )
     diskRates = null
@@ -550,57 +588,22 @@ BarWidget {
     reconcileGpuTopology()
   }
 
-  function persistSegments(list) {
-    if (!root.bar || typeof root.bar.run !== "function") return
-    var value = JSON.stringify(list)
-    if (typeof value !== "string" || value.charAt(0) !== "[") return
-    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
-    var quotedValue = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote(value) : ("'" + value.replace(/'/g, "'\\''") + "'")
-    root.bar.run("omarchy bar set " + quotedId + " segments " + quotedValue)
-  }
-
-  function persistBoolSetting(key, enabled) {
-    if (!root.bar || typeof root.bar.run !== "function") return
-    if (typeof key !== "string" || !/^[A-Za-z][A-Za-z0-9]*$/.test(key)) return
-    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
-    root.bar.run("omarchy bar set " + quotedId + " " + key + " " + (enabled ? "true" : "false"))
-  }
-
   function setBarSegment(name, enabled) {
     if (name === "disk" && root.gpuTopologyReady && !root.discreteGpuAvailable && !root.gpuListFailed) {
-      root.localDiskFallback = enabled === true
-      persistBoolSetting("diskFallbackWithoutGpu", enabled === true)
-      if (enabled !== true && root.segmentsSetting.indexOf("disk") !== -1) {
-        var withoutDisk = Model.toggleSegment(root.segmentsSetting, "disk", false)
-        root.localSegments = withoutDisk
-        persistSegments(withoutDisk)
-      }
+      var patch = { diskFallbackWithoutGpu: enabled === true }
+      if (enabled !== true && root.segmentsSetting.indexOf("disk") !== -1)
+        patch.segments = Model.toggleSegment(root.segmentsSetting, "disk", false)
+      persistSettings(patch)
       return
     }
-    var next = Model.toggleSegment(root.segmentsSetting, name, enabled)
-    root.localSegments = next
-    persistSegments(next)
-  }
-
-  function persistGpuDevice(card) {
-    if (!root.bar || typeof root.bar.run !== "function") return
-    if (typeof card !== "string" || !/^card[0-9]+$/.test(card)) return
-    var value = '"' + card + '"'
-    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
-    var quotedValue = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote(value) : ("'" + value + "'")
-    root.bar.run("omarchy bar set " + quotedId + " gpuDevice " + quotedValue)
+    persistSettings({ segments: Model.toggleSegment(root.segmentsSetting, name, enabled) })
   }
 
   function selectGpu(card) {
     var chosen = Model.pickGpu(discreteGpus, card)
     if (chosen) {
       gpu = chosen
-      persistGpuDevice(chosen.card)
+      persistSettings({ gpuDevice: chosen.card })
     }
   }
 
@@ -696,21 +699,9 @@ BarWidget {
     diskInfoProc.running = true
   }
 
-  function persistDiskDevice(name) {
-    if (!root.bar || typeof root.bar.run !== "function") return
-    if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+$/.test(name)) return
-    var value = '"' + name + '"'
-    var quotedId = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote("dev.bvisagie.quadrant") : "'dev.bvisagie.quadrant'"
-    var quotedValue = (typeof Util !== "undefined" && Util.shellQuote)
-      ? Util.shellQuote(value) : ("'" + value + "'")
-    root.bar.run("omarchy bar set " + quotedId + " diskDevice " + quotedValue)
-  }
-
   function selectDisk(name) {
     if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+$/.test(name)) return
-    selectedDiskName = name
-    persistDiskDevice(name)
+    persistSettings({ diskDevice: name })
     diskHistory = []
   }
 
