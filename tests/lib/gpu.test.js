@@ -253,3 +253,10 @@ test("gpuVramPct understands stream, DRM and nvidia shapes", () => {
   assert.equal(Model.gpuVramPct({ busy: 3 }), null);
   assert.equal(Model.gpuVramPct(null), null);
 });
+
+test("parseNvidiaApps reads pid, memory and comm rows", () => {
+  const rows = Model.parseNvidiaApps("1234\t512\tblender\n77\tx\tbad\n\n9\t0\t\n");
+  assert.deepEqual(rows, [{ pid: 1234, memUsedM: 512, comm: "blender" }, { pid: 9, memUsedM: 0, comm: "" }]);
+  assert.deepEqual(Model.parseNvidiaApps(""), []);
+  assert.deepEqual(Model.parseNvidiaApps(null), []);
+});

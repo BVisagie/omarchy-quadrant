@@ -2,13 +2,12 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../lib/index.mjs" as Model
-import "../Theme.js" as Theme
 import "../components" as Components
 
-// GPU tab. AMD and Intel data ride the 1 Hz stream (sysfs); NVIDIA data
-// comes from the widget's on-demand nvidia-smi sampler. Per-process GPU
-// attribution is deliberately out of scope for v1 (fdinfo/compute-apps
-// parsing lands behind a fixture-tested parser later).
+// GPU tab (dedicated cards only): identity, card picker, busy and VRAM
+// rings, busy/VRAM history, stat rows and the per-process roster. AMD and
+// Intel data ride the stream plus DRM fdinfo; NVIDIA comes from the
+// store's on-demand nvidia-smi poll.
 Item {
   id: root
 
@@ -16,21 +15,17 @@ Item {
   property var model: null
 
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "gpu"
+  readonly property bool longWindow: panel !== null && panel.longWindow === true
   readonly property var gpu: model ? model.gpu : null
   readonly property string vendor: gpu ? gpu.vendor : ""
-  // Unified live view: nvidia rows arrive via model.nvidiaGpu; amd/intel
-  // sysfs via the stream, with DRM fdinfo overlaid when sampled.
-  readonly property var live: {
-    if (!model) return null
-    if (vendor === "nvidia") return model.nvidiaGpu
-    if (model.discreteGpuLive) return model.discreteGpuLive
-    return model.sample ? model.sample.gpu : null
-  }
+  readonly property var live: model ? model.gpuLive : null
+  readonly property var display: model ? model.gpuDisplay : null
   readonly property string nvidiaError: model ? model.nvidiaError : ""
   readonly property var gpuInfo: {
     if (!model || !model.sysInfo || !model.sysInfo.gpusByCard || !gpu) return null
     return model.sysInfo.gpusByCard[gpu.card] || null
   }
+  readonly property var pal: Model.seriesPalette(String(Color.accent), String(Color.urgent), String(Color.foreground), String(Color.background))
 
   implicitWidth: 200
   implicitHeight: column.implicitHeight
@@ -38,13 +33,13 @@ Item {
   onActiveChanged: if (active) refresh()
 
   function refresh() {
-    // Stream-fed vendors need no panel sampler; NVIDIA and DRM polls
-    // run from the widget while this tab is open — nudge them.
-    if (model && model.refreshSysInfo) model.refreshSysInfo()
-    if (model && vendor === "nvidia" && model.pollNvidia) model.pollNvidia()
-    if (model && model.pollDiscreteGpu) model.pollDiscreteGpu()
+    if (!model) return
+    model.refreshSysInfo()
+    if (vendor === "nvidia") model.pollNvidia()
+    model.pollDiscreteGpu()
   }
 
+  // ---- identity ----------------------------------------------------------
   readonly property string gpuTitle: {
     if (vendor === "nvidia" && live && live.name) return Model.cleanGpuName(live.name)
     if (gpuInfo && gpuInfo.name) return Model.cleanGpuName(gpuInfo.name)
@@ -52,7 +47,6 @@ Item {
     if (vendor) return Model.gpuVendorLabel(vendor)
     return "GPU"
   }
-
   readonly property string gpuMeta: {
     var parts = []
     if (vendor) parts.push(Model.gpuVendorLabel(vendor))
@@ -60,44 +54,33 @@ Item {
     if (gpuInfo && gpuInfo.driver) parts.push(gpuInfo.driver)
     return parts.join(" · ")
   }
-
   readonly property string gpuDetail: {
     if (!live) return ""
     if (vendor === "nvidia") {
-      var nvidiaTotal = Model.nvidiaMiBToBytes(live.memTotalM)
-      if (nvidiaTotal === null) return ""
-      return Model.formatBytes(nvidiaTotal) + " VRAM"
+      var t = Model.nvidiaMiBToBytes(live.memTotalM)
+      return t === null ? "" : Model.formatBytes(t) + " VRAM"
     }
     if (live.vramTotal === null || live.vramTotal === undefined) return ""
     return Model.formatBytes(live.vramTotal) + " VRAM"
   }
-
-  function busyText() {
-    if (!live) return "--"
-    if (vendor === "nvidia")
-      return live.utilPct === null ? "--" : Model.formatPct(live.utilPct, 1)
-    if (live.busy !== null && live.busy !== undefined)
-      return Model.formatPct(live.busy, 1)
-    if (vendor === "intel" && live.freqCurMhz !== null && live.freqMaxMhz !== null && live.freqMaxMhz > 0)
-      return Model.formatPct(Model.clamp(100 * live.freqCurMhz / live.freqMaxMhz, 0, 100), 1)
-    return "--"
+  readonly property var cardOptions: {
+    var list = model && model.discreteGpus ? model.discreteGpus : []
+    var out = []
+    for (var i = 0; i < list.length; i++) {
+      var g = list[i]
+      var info = model && model.sysInfo && model.sysInfo.gpusByCard ? model.sysInfo.gpusByCard[g.card] : null
+      var name = info && info.name ? Model.cleanGpuName(info.name) : Model.gpuVendorLabel(g.vendor)
+      out.push({ value: g.card, label: name, tooltip: g.card + " · " + g.vendor })
+    }
+    return out
   }
 
-  readonly property bool busyIsEstimate: {
-    if (!live || vendor === "nvidia") return false
-    if (live.busy !== null && live.busy !== undefined) return live.busySource !== "drm" && live.busySource !== "sysfs"
-    return vendor === "intel"
+  // ---- live --------------------------------------------------------------
+  readonly property real vramPct: {
+    var p = Model.gpuVramPct(live)
+    return p === null ? -1 : p
   }
-
-  function vramFraction() {
-    if (!live) return 0
-    var used = vendor === "nvidia" ? live.memUsedM : live.vramUsed
-    var total = vendor === "nvidia" ? live.memTotalM : live.vramTotal
-    if (used === null || total === null || total <= 0) return 0
-    return Model.clamp(used / total, 0, 1)
-  }
-
-  function vramText() {
+  readonly property string vramText: {
     if (!live) return "--"
     if (vendor === "nvidia") {
       var used = Model.nvidiaMiBToBytes(live.memUsedM)
@@ -106,69 +89,53 @@ Item {
       return Model.formatBytes(used) + " of " + Model.formatBytes(total)
     }
     if (live.vramUsed === null || live.vramUsed === undefined) return "--"
-    if (live.vramTotal === null || live.vramTotal === undefined)
-      return Model.formatBytes(live.vramUsed)
+    if (live.vramTotal === null || live.vramTotal === undefined) return Model.formatBytes(live.vramUsed)
     return Model.formatBytes(live.vramUsed) + " of " + Model.formatBytes(live.vramTotal)
+  }
+  readonly property string tempText: {
+    if (!live || live.tempC === null || live.tempC === undefined) return "--"
+    var t = Model.formatTemp(live.tempC)
+    if (live.tempJunctionC !== null && live.tempJunctionC !== undefined) t += " · " + Model.formatTemp(live.tempJunctionC) + " junction"
+    return t
+  }
+  readonly property string clockText: {
+    if (!live) return "--"
+    if (vendor === "intel") return Model.formatMhz(live.freqCurMhz) + " / " + Model.formatMhz(live.freqMaxMhz)
+    return Model.formatGpuClock(live.clockMhz)
+  }
+
+  // ---- rows --------------------------------------------------------------
+  readonly property var rows: {
+    var src = model ? model.gpuRows : []
+    var out = []
+    for (var i = 0; i < src.length; i++) {
+      var r = src[i]
+      var text = root.vendor === "nvidia" ? Model.formatBytes(r.vram) : Model.formatPct(r.value, 1)
+      out.push({ pid: r.pid, comm: r.comm, valueText: text, sortKey: r.sortKey,
+                 hint: r.vram > 0 ? Model.formatBytes(r.vram) + " resident" : "" })
+    }
+    return out
   }
 
   Column {
     id: column
     width: root.width
-    spacing: Style.space(8)
+    spacing: Style.space(10)
 
-    Components.HardwareHero {
+    Components.Hero {
       width: parent.width
       visible: root.vendor !== ""
       title: root.gpuTitle
       meta: root.gpuMeta
       detail: root.gpuDetail
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
 
-    // Multi-GPU selector — only when more than one card was detected.
-    Row {
-      visible: root.model && root.model.discreteGpus && root.model.discreteGpus.length > 1
-      spacing: Style.space(6)
-
-      Text {
-        textFormat: Text.PlainText
-        text: "Card"
-        color: root.panel ? Qt.darker(root.panel.barForeground, 1.4) : "#cacccc"
-        font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.body
-        anchors.verticalCenter: parent.verticalCenter
-      }
-
-      Repeater {
-        model: root.model && root.model.discreteGpus ? root.model.discreteGpus : []
-
-        delegate: Rectangle {
-          required property var modelData
-          readonly property bool current: root.gpu && root.gpu.card === modelData.card
-          width: cardLabel.implicitWidth + Style.space(12)
-          height: cardLabel.implicitHeight + Style.space(6)
-          radius: Style.cornerRadius
-          color: current ? Style.selectedFillFor(root.panel ? root.panel.barForeground : "#cacccc", Color.accent)
-                         : Style.normalFillFor(root.panel ? root.panel.barForeground : "#cacccc", Color.accent)
-
-          Text {
-            id: cardLabel
-            textFormat: Text.PlainText
-            anchors.centerIn: parent
-            text: modelData.card + " · " + modelData.vendor
-            color: root.panel ? root.panel.barForeground : "#cacccc"
-            font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.caption
-          }
-
-          MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: if (root.model) root.model.selectGpu(modelData.card)
-          }
-        }
-      }
+    ButtonGroup {
+      visible: root.cardOptions.length > 1
+      options: root.cardOptions
+      value: root.gpu ? root.gpu.card : ""
+      fontSize: Style.font.caption
+      onChanged: function (value) { if (root.model) root.model.selectGpu(value) }
     }
 
     Text {
@@ -176,8 +143,8 @@ Item {
       visible: root.nvidiaError !== ""
       text: root.nvidiaError
       color: Color.urgent
-      font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-      font.pixelSize: Style.font.body
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
       width: parent.width
       wrapMode: Text.WordWrap
     }
@@ -185,119 +152,108 @@ Item {
     Row {
       width: parent.width
       spacing: Style.space(18)
-      visible: root.live !== null
 
       Components.RingGauge {
-        size: Style.space(Theme.metrics.largeRingSize)
-        thickness: Style.space(Theme.metrics.largeRingThickness)
-        fraction: {
-          if (!root.live) return 0
-          if (root.vendor === "nvidia")
-            return root.live.utilPct === null ? 0 : Model.clamp(root.live.utilPct / 100, 0, 1)
-          if (root.live.busy !== null && root.live.busy !== undefined)
-            return Model.clamp(root.live.busy / 100, 0, 1)
-          if (root.vendor === "intel" && root.live.freqCurMhz !== null && root.live.freqMaxMhz > 0)
-            return Model.clamp(root.live.freqCurMhz / root.live.freqMaxMhz, 0, 1)
-          return 0
-        }
-        color: Theme.series.gpu
-        centerText: root.busyText()
-        subText: root.busyIsEstimate ? "freq" : "busy"
-        foreground: root.panel ? root.panel.barForeground : "#cacccc"
-        fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+        size: Style.space(96)
+        fraction: root.display ? root.display.pct / 100 : 0
+        color: root.pal.primary
+        centerText: root.display ? (root.display.estimated ? "~" : "") + Model.formatPct(root.display.pct, 1) : "--"
+        subText: root.display && root.display.estimated ? "freq" : "busy"
         anchors.verticalCenter: parent.verticalCenter
       }
 
       Components.RingGauge {
-        visible: root.vramText() !== "--"
-        size: Style.space(Theme.metrics.largeRingSize)
-        thickness: Style.space(Theme.metrics.largeRingThickness)
-        fraction: root.vramFraction()
-        color: Theme.series.memCache
-        centerText: root.live && vramTotalKnown() ? Model.formatPct(root.vramFraction() * 100) : "--"
+        visible: root.vramPct >= 0
+        size: Style.space(96)
+        fraction: root.vramPct < 0 ? 0 : root.vramPct / 100
+        color: root.pal.secondary
+        centerText: root.vramPct < 0 ? "--" : Model.formatPct(root.vramPct)
         subText: root.live && root.live.memKind === "shared" ? "shared" : "VRAM"
-        foreground: root.panel ? root.panel.barForeground : "#cacccc"
-        fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
         anchors.verticalCenter: parent.verticalCenter
       }
     }
 
-    Components.StatRow {
+    Components.GraphBlock {
       width: parent.width
-      label: root.live && root.live.memKind === "shared" ? "Shared" : "VRAM"
-      visible: root.vramText() !== "--"
-      value: root.vramText()
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      title: "HISTORY"
+      finePoints: root.model ? root.model.gpuHistory : []
+      longPoints: root.model ? root.model.gpuLong : []
+      longWindow: root.longWindow
+      fixedMax: 100
+      fields: [
+        { key: "b", label: "busy", color: root.pal.primary },
+        { key: "v", label: "VRAM", color: root.pal.secondary }
+      ]
+      legend: [
+        { label: "busy", color: root.pal.primary, value: root.display ? Model.formatPct(root.display.pct) : "--" },
+        { label: "VRAM", color: root.pal.secondary, value: root.vramPct < 0 ? "--" : Model.formatPct(root.vramPct), visible: root.vramPct >= 0 }
+      ]
+      onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
     }
 
-    Components.StatRow {
+    Column {
       width: parent.width
-      label: "Temperature"
-      value: root.live ? Model.formatTemp(root.live.tempC) : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-    }
+      spacing: Style.space(6)
 
-    Components.StatRow {
-      width: parent.width
-      label: "Power"
-      visible: root.vendor !== "intel"
-      value: root.live && root.live.powerW !== null ? Model.formatWatts(root.live.powerW) : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-    }
-
-    Components.StatRow {
-      width: parent.width
-      label: root.vendor === "intel" ? "Frequency" : "Core clock"
-      value: {
-        if (!root.live) return "--"
-        if (root.vendor === "intel")
-          return Model.formatMhz(root.live.freqCurMhz) + " / " + Model.formatMhz(root.live.freqMaxMhz)
-        return Model.formatGpuClock(root.live.clockMhz)
+      Components.StatRow {
+        width: parent.width
+        visible: root.vramText !== "--"
+        label: root.live && root.live.memKind === "shared" ? "Shared" : "VRAM"
+        value: root.vramText
       }
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-    }
-
-    Components.StatRow {
-      width: parent.width
-      visible: root.vendor === "amd" && root.live && root.live.memBusy !== null && root.live.memBusy !== undefined
-      label: "Memory busy"
-      value: root.live ? Model.formatPct(root.live.memBusy, 1) : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-    }
-
-    Repeater {
-      model: root.live && root.live.engines ? root.live.engines : []
-
-      delegate: Components.StatRow {
-        required property var modelData
-        width: column.width
-        label: String(modelData.id || "")
-        value: Model.formatPct(modelData.busy, 1)
-        foreground: root.panel ? root.panel.barForeground : "#cacccc"
-        fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      Components.StatRow {
+        width: parent.width
+        label: "Temperature"
+        value: root.tempText
       }
+      Components.StatRow {
+        width: parent.width
+        visible: root.vendor !== "intel"
+        label: "Power"
+        value: root.live && root.live.powerW !== null && root.live.powerW !== undefined ? Model.formatWatts(root.live.powerW) : "--"
+      }
+      Components.StatRow {
+        width: parent.width
+        label: root.vendor === "intel" ? "Frequency" : "Core clock"
+        value: root.clockText
+      }
+      Components.StatRow {
+        width: parent.width
+        visible: root.vendor === "amd" && root.live && root.live.memBusy !== null && root.live.memBusy !== undefined
+        label: "Memory busy"
+        value: root.live ? Model.formatPct(root.live.memBusy, 1) : "--"
+      }
+      Repeater {
+        model: root.live && root.live.engines ? root.live.engines : []
+        delegate: Components.StatRow {
+          required property var modelData
+          width: column.width
+          label: String(modelData.id || "")
+          value: Model.formatPct(modelData.busy, 1)
+        }
+      }
+    }
+
+    PanelSeparator { }
+
+    Components.ProcessList {
+      width: parent.width
+      rows: root.rows
+      valueHeader: root.vendor === "nvidia" ? "VRAM" : "GPU"
+      showSparkline: false
+      emptyText: root.active ? "No process is using the GPU" : "Open this tab to sample processes"
+      errorText: ""
     }
 
     Text {
       textFormat: Text.PlainText
-      visible: root.vendor === "intel" && root.busyIsEstimate
-      text: "Intel busy % is a frequency ratio until DRM fdinfo returns a sample."
-      color: root.panel ? Qt.darker(root.panel.barForeground, 1.5) : "#cacccc"
-      font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      visible: root.vendor === "nvidia" && root.rows.length > 0
+      text: "NVIDIA reports per-process memory only; busy time is per card."
+      color: root.pal.dim
+      font.family: Style.font.family
       font.pixelSize: Style.font.caption
       width: parent.width
       wrapMode: Text.WordWrap
     }
-  }
-
-  function vramTotalKnown() {
-    if (!live) return false
-    var total = vendor === "nvidia" ? live.memTotalM : live.vramTotal
-    return total !== null && total > 0
   }
 }

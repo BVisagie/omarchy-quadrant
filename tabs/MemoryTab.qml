@@ -2,11 +2,11 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../lib/index.mjs" as Model
-import "../Theme.js" as Theme
 import "../components" as Components
 
-// Memory tab: RAM composition ring + PSI pressure ring, breakdown rows,
-// swap totals and rates, and the top-by-RSS process roster.
+// Memory tab: usable RAM and DIMM identity, used and pressure rings, a
+// used-memory history framed on its own range, the composition bar, swap,
+// and the top-by-PSS roster.
 Item {
   id: root
 
@@ -14,22 +14,17 @@ Item {
   property var model: null
 
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "mem"
+  readonly property bool longWindow: panel !== null && panel.longWindow === true
   readonly property var sample: model ? model.sample : null
   readonly property var comp: model ? model.memComp : null
   readonly property var swap: sample ? Model.swapUsage(sample.mem) : null
   readonly property var swapRate: model ? model.swapRate : null
   readonly property var sysMem: model && model.sysInfo ? model.sysInfo.mem : null
-
-  readonly property var rows: {
-    var src = model ? model.memRows : []
-    var out = []
-    for (var i = 0; i < src.length; i++) {
-      out.push({ pid: src[i].pid, comm: src[i].comm,
-                 valueText: src[i].pct === null ? "--" : Model.formatPct(src[i].pct, 1), sortKey: src[i].sortKey })
-    }
-    return out
-  }
-  readonly property string errorText: model ? model.procError : ""
+  readonly property var psi: sample ? sample.psi : null
+  readonly property var pal: Model.seriesPalette(String(Color.accent), String(Color.urgent), String(Color.foreground), String(Color.background))
+  // The pressure ring spans 0–25 %: PSI "some" above that is already a
+  // machine that stalls constantly, and a 0–100 ring never moved.
+  readonly property real pressureCeiling: 25
 
   implicitWidth: 200
   implicitHeight: column.implicitHeight
@@ -37,30 +32,20 @@ Item {
   onActiveChanged: if (active) refresh()
 
   function refresh() {
-    if (!active) return
-    if (model) model.pollProcesses()
+    if (active && model) model.pollProcesses()
   }
 
-  readonly property string memTitle: {
-    if (comp) return Model.formatKiB(comp.totalK) + " usable"
-    return "Memory"
-  }
+  readonly property string memTitle: comp ? Model.formatKiB(comp.totalK) + " usable" : "Memory"
+  readonly property string memMeta: sysMem && sysMem.ram && sysMem.ram.label ? sysMem.ram.label : ""
+  readonly property string memDetail: comp ? Model.formatKiB(comp.usedK) + " used" : ""
 
-  readonly property string memMeta: {
-    var m = sysMem
-    if (m && m.ram && m.ram.label) return m.ram.label
-    return ""
-  }
-
-  readonly property color memTrack: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
   readonly property var compositionSegments: {
     var c = root.comp
     if (!c || !(c.totalK > 0)) return []
     return [
-      { fraction: c.appsK / c.totalK, color: Theme.series.memApps },
-      { fraction: c.cacheK / c.totalK, color: Theme.series.memCache },
-      { fraction: c.kernelK / c.totalK, color: Theme.series.memKernel },
-      { fraction: c.freeK / c.totalK, color: root.memTrack }
+      { fraction: c.appsK / c.totalK, color: root.pal.primary },
+      { fraction: c.cacheK / c.totalK, color: root.pal.secondary },
+      { fraction: c.kernelK / c.totalK, color: root.pal.tertiary }
     ]
   }
 
@@ -94,150 +79,110 @@ Item {
     return out
   }
 
+  readonly property var rows: {
+    var src = model ? model.memRows : []
+    var out = []
+    for (var i = 0; i < src.length; i++) {
+      out.push({ pid: src[i].pid, comm: src[i].comm, history: src[i].history,
+                 valueText: src[i].pct === null ? "--" : Model.formatPct(src[i].pct, 1), sortKey: src[i].sortKey,
+                 hint: Model.formatKiB(src[i].value) + (src[i].kind === "pss" ? " proportional" : " resident") })
+    }
+    return out
+  }
+  readonly property string errorText: model ? model.procError : ""
+
   Column {
     id: column
     width: root.width
-    spacing: Style.space(8)
+    spacing: Style.space(10)
 
-    Components.HardwareHero {
+    Components.Hero {
       width: parent.width
       title: root.memTitle
       meta: root.memMeta
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      detail: root.memDetail
     }
 
-    Item {
-      id: memoryOverview
+    Row {
       width: parent.width
-      readonly property int ringGap: Style.space(18)
-      readonly property int legendMinWidth: Style.space(8) + Style.space(6) * 2
-                                            + legendLabelSizer.implicitWidth
-                                            + legendValueSizer.implicitWidth
-      readonly property int ringRowWidth: pressureRing.width + ramRing.width + ringGap
-      readonly property bool legendBeside: width - ringRowWidth - ringGap >= legendMinWidth
-      implicitHeight: legendBeside
-                      ? Math.max(memoryRings.implicitHeight, memoryLegend.implicitHeight)
-                      : memoryRings.implicitHeight + Style.space(8) + memoryLegend.implicitHeight
+      spacing: Style.space(18)
 
-      Text {
-        id: legendLabelSizer
-        visible: false
-        textFormat: Text.PlainText
-        text: "Applications"
-        font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-      Text {
-        id: legendValueSizer
-        visible: false
-        textFormat: Text.PlainText
-        text: "999.9 GiB"
-        font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.caption
+      Components.RingGauge {
+        size: Style.space(96)
+        fraction: root.comp && root.comp.usedPct !== null && root.comp.usedPct !== undefined
+                  ? Model.clamp(root.comp.usedPct / 100, 0, 1) : 0
+        color: root.pal.primary
+        centerText: root.comp ? Model.formatPct(root.comp.usedPct) : "--"
+        subText: "used"
+        anchors.verticalCenter: parent.verticalCenter
       }
 
-      Row {
-        id: memoryRings
-        spacing: memoryOverview.ringGap
-        anchors.left: parent.left
-        anchors.top: parent.top
-
-        Components.RingGauge {
-          id: ramRing
-          size: Style.space(Theme.metrics.largeRingSize)
-          thickness: Style.space(Theme.metrics.largeRingThickness)
-          readonly property var c: root.comp
-          fraction: c && c.usedPct !== null && c.usedPct !== undefined
-                    ? Model.clamp(c.usedPct / 100, 0, 1) : 0
-          color: Theme.series.memApps
-          centerText: c ? Model.formatPct(c.usedPct) : "--"
-          subText: "used"
-          foreground: root.panel ? root.panel.barForeground : "#cacccc"
-          fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-        }
-
-        Components.RingGauge {
-          id: pressureRing
-          // PSI memory "some" avg10 as pressure; absent PSI reads as no data.
-          size: Style.space(Theme.metrics.largeRingSize)
-          thickness: Style.space(Theme.metrics.largeRingThickness)
-          readonly property var psi: root.sample ? root.sample.psi : null
-          fraction: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Math.min(1, psi.ms10 / 100) : 0
-          color: Theme.series.swap
-          centerText: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Model.formatPct(psi.ms10, 1) : "--"
-          subText: "pressure"
-          foreground: root.panel ? root.panel.barForeground : "#cacccc"
-          fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-        }
+      Components.RingGauge {
+        size: Style.space(96)
+        fraction: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined
+                  ? Math.min(1, root.psi.ms10 / root.pressureCeiling) : 0
+        color: root.pal.hot
+        centerText: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined ? Model.formatPct(root.psi.ms10, 1) : "--"
+        subText: "pressure"
+        anchors.verticalCenter: parent.verticalCenter
       }
 
       Column {
-        id: memoryLegend
+        width: Math.max(0, parent.width - Style.space(96) * 2 - parent.spacing * 2)
         spacing: Style.space(4)
-        width: memoryOverview.legendBeside
-               ? Math.max(0, memoryOverview.width - memoryOverview.ringRowWidth - memoryOverview.ringGap)
-               : memoryOverview.width
-        x: memoryOverview.legendBeside ? memoryOverview.ringRowWidth + memoryOverview.ringGap : 0
-        y: memoryOverview.legendBeside
-           ? Math.max(0, (memoryOverview.height - implicitHeight) / 2)
-           : memoryRings.height + Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
 
         Components.CompositionBar {
           width: parent.width
           segments: root.compositionSegments
         }
-
         Text {
           textFormat: Text.PlainText
           text: "Cache can be reclaimed. Used cannot."
-          color: root.panel ? Qt.darker(root.panel.barForeground, 1.5) : "#cacccc"
-          font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+          color: root.pal.dim
+          font.family: Style.font.family
           font.pixelSize: Style.font.caption
           width: parent.width
           wrapMode: Text.WordWrap
         }
-
         Repeater {
           model: [
-            { label: "Applications", color: Theme.series.memApps, kib: root.comp ? root.comp.appsK : null },
-            { label: "Cache", color: Theme.series.memCache, kib: root.comp ? root.comp.cacheK : null },
-            { label: "Kernel", color: Theme.series.memKernel, kib: root.comp ? root.comp.kernelK : null },
-            { label: "Free", color: root.memTrack, kib: root.comp ? root.comp.freeK : null }
+            { label: "Applications", color: root.pal.primary, value: root.comp ? Model.formatKiB(root.comp.appsK) : "--" },
+            { label: "Cache", color: root.pal.secondary, value: root.comp ? Model.formatKiB(root.comp.cacheK) : "--" },
+            { label: "Kernel", color: root.pal.tertiary, value: root.comp ? Model.formatKiB(root.comp.kernelK) : "--" },
+            { label: "Free", color: root.pal.track, value: root.comp ? Model.formatKiB(root.comp.freeK) : "--" }
           ]
-
-          delegate: Row {
+          delegate: Item {
             required property var modelData
-            width: memoryLegend.width
-            spacing: Style.space(6)
-
+            width: parent.width
+            implicitHeight: legendLabel.implicitHeight
             Rectangle {
+              id: swatch
               width: Style.space(8)
               height: Style.space(8)
-              radius: 2
+              radius: Style.space(2)
               color: parent.modelData.color
               anchors.verticalCenter: parent.verticalCenter
             }
-
             Text {
+              id: legendLabel
               textFormat: Text.PlainText
               text: parent.modelData.label
-              color: root.panel ? root.panel.barForeground : "#cacccc"
-              font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+              color: root.pal.dim
+              font.family: Style.font.family
               font.pixelSize: Style.font.caption
-              elide: Text.ElideRight
-              width: Math.max(0, parent.width - Style.space(8) - parent.spacing * 2 - legendValue.implicitWidth)
+              anchors.left: swatch.right
+              anchors.leftMargin: Style.space(5)
               anchors.verticalCenter: parent.verticalCenter
             }
-
             Text {
-              id: legendValue
               textFormat: Text.PlainText
-              text: parent.modelData.kib === null ? "--" : Model.formatKiB(parent.modelData.kib)
-              color: root.panel ? root.panel.barForeground : "#cacccc"
-              font.family: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+              text: parent.modelData.value
+              color: Color.foreground
+              font.family: Style.font.family
               font.pixelSize: Style.font.caption
-              horizontalAlignment: Text.AlignRight
+              font.features: ({ "tnum": 1 })
+              anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
             }
           }
@@ -245,49 +190,50 @@ Item {
       }
     }
 
-    PanelSeparator {
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-    }
-
-    Components.StatRow {
+    Components.GraphBlock {
       width: parent.width
-      label: "Swap"
-      value: {
-        if (!root.swap) return "--"
-        if (root.swap.totalK <= 0) return "none"
-        return Model.formatKiB(root.swap.usedK) + " of " + Model.formatKiB(root.swap.totalK)
-      }
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      title: "USED"
+      finePoints: root.model ? root.model.memHistory : []
+      longPoints: root.model ? root.model.memLong : []
+      longWindow: root.longWindow
+      band: true
+      fixedMax: 100
+      formatValue: function (v) { return Model.formatPct(v, 1) }
+      fields: [{ key: "u", label: "used", color: root.pal.primary }]
+      legend: [
+        { label: "used", color: root.pal.primary, value: root.comp ? Model.formatPct(root.comp.usedPct, 1) : "--" },
+        { label: "pressure", color: root.pal.hot, value: root.psi && root.psi.ms10 !== null ? Model.formatPct(root.psi.ms10, 1) + " some" : "--" }
+      ]
+      onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
     }
 
-    Components.StatRow {
+    Column {
       width: parent.width
-      label: "Swap in/out"
-      visible: root.swap !== null && root.swap.totalK > 0
-      value: root.swapRate
-             ? Model.formatRate(root.swapRate.inKBs * 1024) + " / " + Model.formatRate(root.swapRate.outKBs * 1024)
-             : "--"
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
-    }
+      spacing: Style.space(6)
 
-    Repeater {
-      model: root.swapDeviceRows
-
-      delegate: Components.StatRow {
-        required property var modelData
-        width: column.width
-        label: String(modelData.label || "Swap")
-        value: String(modelData.value || "--")
-        foreground: root.panel ? root.panel.barForeground : "#cacccc"
-        fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
+      Components.StatRow {
+        width: parent.width
+        label: "Swap"
+        value: root.swap ? Model.formatKiB(root.swap.usedK) + " of " + Model.formatKiB(root.swap.totalK) : "--"
+      }
+      Components.StatRow {
+        width: parent.width
+        visible: root.swap && root.swap.totalK > 0
+        label: "Swap in/out"
+        value: root.swapRate ? Model.formatRate(root.swapRate.inKBs * 1024) + " / " + Model.formatRate(root.swapRate.outKBs * 1024) : "--"
+      }
+      Repeater {
+        model: root.swapDeviceRows
+        delegate: Components.StatRow {
+          required property var modelData
+          width: column.width
+          label: modelData.label
+          value: modelData.value
+        }
       }
     }
 
-    PanelSeparator {
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-    }
+    PanelSeparator { }
 
     Components.ProcessList {
       width: parent.width
@@ -295,8 +241,6 @@ Item {
       valueHeader: "% OF RAM"
       emptyText: root.active ? "Sampling…" : "Open this tab to sample processes"
       errorText: root.errorText
-      foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }
   }
 }

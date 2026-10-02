@@ -11,7 +11,7 @@ Output shape:
   {"ok":true,"tsNs":..,"slot":"..",
    "engines":[{"pid":123,"client":"0000:00:02.0/7","name":"render","ns":..,
                "cycles":null,"total":null,"capacity":1}, ...],
-   "clients":[{"pid":123,"client":"0000:00:02.0/7","dedicated":..,"shared":..}],
+   "clients":[{"pid":123,"comm":"Hyprland","client":"0000:00:02.0/7","dedicated":..,"shared":..}],
    "rc6":[{"id":"/sys/.../rc6_residency_ms","card":"card1","ms":..}],
    "memDedicated":..,"memShared":..}
 
@@ -140,10 +140,19 @@ def parse_fdinfo(text: str) -> dict | None:
     }
 
 
+def read_comm(proc: str, pid: str) -> str:
+    try:
+        with open(os.path.join(proc, pid, "comm"), "r", errors="ignore") as fh:
+            return fh.read(256).strip().replace("\n", " ")[:128]
+    except OSError:
+        return ""
+
+
 def snap_fdinfo(want_slot: str) -> dict:
     engines: list[dict] = []
     clients: list[dict] = []
     seen: set[str] = set()
+    comms: dict[str, str] = {}
     dedicated = 0
     shared = 0
     proc = proc_root()
@@ -187,9 +196,12 @@ def snap_fdinfo(want_slot: str) -> dict:
             pid_n = int(pid)
             dedicated += parsed["dedicated"]
             shared += parsed["shared"]
+            if pid not in comms:
+                comms[pid] = read_comm(proc, pid)
             if len(clients) < MAX_CLIENT_ROWS:
                 clients.append({
                     "pid": pid_n,
+                    "comm": comms[pid],
                     "client": key,
                     "dedicated": parsed["dedicated"],
                     "shared": parsed["shared"],

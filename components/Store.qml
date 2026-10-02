@@ -227,6 +227,30 @@ Item {
   property var discreteDrmPrev: null
   property var discreteDrmSnap: null
   property var gpuProcessRows: []
+  property var nvidiaApps: []
+  // Per-process GPU rows for the GPU tab: DRM busy share + resident
+  // memory (AMD/Intel) or compute-app memory (NVIDIA, memory only).
+  readonly property var gpuRows: {
+    var raw = []
+    var i
+    if (nvidiaSelected) {
+      for (i = 0; i < nvidiaApps.length; i++)
+        raw.push({ pid: nvidiaApps[i].pid, comm: nvidiaApps[i].comm, value: 0,
+                   vram: Model.nvidiaMiBToBytes(nvidiaApps[i].memUsedM) || 0 })
+    } else {
+      for (i = 0; i < gpuProcessRows.length; i++)
+        raw.push({ pid: gpuProcessRows[i].pid, comm: gpuProcessRows[i].comm, value: gpuProcessRows[i].busy,
+                   vram: gpuProcessRows[i].dedicated + gpuProcessRows[i].shared })
+    }
+    var collapsed = Model.nameAndCollapse(raw.map(function (r) {
+      return { pid: r.pid, comm: r.comm, exe: "", cmd: "", script: "", value: r.value, read: r.vram }
+    }), processCount)
+    var out = []
+    for (i = 0; i < collapsed.length; i++)
+      out.push({ pid: collapsed[i].pid, comm: collapsed[i].comm, value: collapsed[i].value,
+                 vram: collapsed[i].read, sortKey: collapsed[i].value * 1e12 + collapsed[i].read })
+    return out
+  }
   property var igpuDrmPrev: null
   property string gpuDetectionError: ""
   property string gpuDeviceWarning: ""
@@ -525,6 +549,7 @@ Item {
     discreteDrmPrev = null
     discreteDrmSnap = null
     gpuProcessRows = []
+    nvidiaApps = []
     nvidiaGpu = null
     nvidiaError = ""
     gpuHistory = []
@@ -662,6 +687,7 @@ Item {
     }
     var rows = Model.parseNvidiaCsv(data.payload)
     nvidiaGpu = rows.length > 0 ? rows[0] : null
+    nvidiaApps = Model.parseNvidiaApps(data.apps)
     nvidiaError = ""
   }
 

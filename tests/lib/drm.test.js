@@ -78,8 +78,8 @@ test("drmProcessRows attributes engine time and memory per pid", () => {
       { client: "s/3", pid: 30, name: "render", ns: 0 }
     ],
     clients: [
-      { pid: 10, client: "s/1", dedicated: 100, shared: 0 },
-      { pid: 20, client: "s/2", dedicated: 50, shared: 5 },
+      { pid: 10, client: "s/1", dedicated: 100, shared: 0, comm: "game" },
+      { pid: 20, client: "s/2", dedicated: 50, shared: 5, comm: "Hyprland" },
       { pid: 30, client: "s/3", dedicated: 0, shared: 0 },
       { pid: 40, client: "s/4", dedicated: 7, shared: 0 }
     ],
@@ -93,6 +93,7 @@ test("drmProcessRows attributes engine time and memory per pid", () => {
   assert.equal(Math.round(rows[1].busy), 20);
   assert.equal(rows[2].busy, 0);
   assert.equal(rows[2].dedicated, 7);
+  assert.deepEqual(rows.map((r) => r.comm), ["Hyprland", "game", ""]);
   assert.deepEqual(Model.drmProcessRows(prev, null), []);
   // Card-level busy is the summed render time: 80%.
   assert.equal(Math.round(Model.drmBusyPercent(prev, curr)), 80);

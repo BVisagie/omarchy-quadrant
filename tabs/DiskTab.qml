@@ -95,7 +95,7 @@ Item {
     width: root.width
     spacing: Style.space(8)
 
-    Components.HardwareHero {
+    Components.Hero {
       width: parent.width
       visible: root.diskName !== "" || root.diskTitle !== "Storage"
       title: root.diskTitle

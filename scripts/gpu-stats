@@ -295,8 +295,23 @@ cmd_sample_nvidia() {
     fail "nvidia-smi failed or timed out"
   fi
   [[ -n $payload ]] || fail "nvidia-smi returned no rows"
-  "$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$payload" \
-    '{ok:true, ts:($ts|tonumber), vendor:"nvidia", payload:$payload}'
+  # Per-process VRAM (compute apps). nvidia-smi gives pid and memory only;
+  # comm comes from /proc with builtin reads, so a hostile name travels as
+  # a jq --arg string like everything else.
+  local apps="" line pid mem comm
+  if apps_raw=$("$TIMEOUT_BIN" 2 "$SMI" "${select[@]}" \
+      --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2>/dev/null | "$AWK_BIN" 'NR <= 32'); then
+    while IFS= read -r line; do
+      pid=${line%%,*}; pid=${pid//[[:space:]]/}
+      mem=${line#*,}; mem=${mem//[[:space:]]/}
+      [[ $pid =~ ^[0-9]+$ && $mem =~ ^[0-9]+$ ]] || continue
+      comm=""
+      [[ -r /proc/$pid/comm ]] && IFS= read -r comm < "/proc/$pid/comm"
+      apps+="$pid"$'\t'"$mem"$'\t'"${comm//$'\t'/ }"$'\n'
+    done <<< "$apps_raw"
+  fi
+  "$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$payload" --arg apps "$apps" \
+    '{ok:true, ts:($ts|tonumber), vendor:"nvidia", payload:$payload, apps:$apps}'
 }
 
 case ${1:-} in
