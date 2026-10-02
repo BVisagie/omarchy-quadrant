@@ -190,17 +190,16 @@ BarWidget {
   }
 
   // ---- sizing ----------------------------------------------------------
-  // Cell width is locked to glyph + "99%", digits hugging their glyph, so
-  // values never resize the slot and a one-digit value leaves at most one
-  // digit of slack before the next cell (a full 100 % is rare enough to
-  // accept one momentary jump). "~" is reserved only when an Intel GPU can
-  // show it.
-  readonly property real labelGap: Style.space(2)
-  readonly property real segmentGap: Style.space(4)
+  // Cells size to their content with one constant gap between them, so a
+  // one-digit value never leaves a hole before the next glyph. The slot
+  // itself stays at a fixed width — the sum of every visible cell at its
+  // widest ("99%") — so neighbouring bar widgets never move; the slack
+  // collects at the end of the slot, and a cell that changes digit count
+  // slides its neighbours smoothly.
+  readonly property real labelGap: Style.space(3)
+  readonly property real segmentGap: Style.space(8)
   readonly property real outerPad: Style.spaceReal(6)
 
-  // Widths come from FontMetrics.advanceWidth(): a pure measurement, so a
-  // binding that reads it never re-triggers itself (TextMetrics did).
   FontMetrics { id: captionFm; font.family: button.fontFamily; font.pixelSize: Style.font.caption }
   FontMetrics { id: glyphFm; font.family: button.fontFamily; font.pixelSize: root.glyphFontSize }
 
@@ -216,21 +215,29 @@ BarWidget {
     if (!root.segmentEnabled("gpu") || !root.discreteGpuAvailable) return false
     return root.gpu && root.gpu.vendor === "intel"
   }
-  function metricCellWidthFor(metric) {
+  // Widest a cell can get; the slot reserves this much per visible cell.
+  function metricReserveFor(metric) {
     var w = Math.ceil(captionFm.advanceWidth("99%"))
     if (metric === "gpu" && root.reserveEstimatePrefix) w += Math.ceil(captionFm.advanceWidth("~"))
     var lw = labelWidthFor(metric)
     if (lw > 0) w += labelGap + lw
-    if (root.vertical && root.bar) return Math.min(w, root.bar.barSize)
     return w
   }
-  readonly property real networkRateWidth: Math.ceil(captionFm.advanceWidth(root.vertical ? "↓999K" : "↓999K ↑999K")) + 1
-  readonly property real networkCellWidth: {
-    var w = root.networkRateWidth
+  readonly property real networkRateReserve: Math.ceil(captionFm.advanceWidth(root.vertical ? "↓999K" : "↓999K ↑999K")) + 1
+  readonly property real networkReserve: {
+    var w = root.networkRateReserve
     var lw = labelWidthFor("net")
     if (lw > 0) w += labelGap + lw
-    if (root.vertical) return Math.min(w, root.verticalSlot)
     return w
+  }
+  readonly property real reservedWidth: {
+    var cells = root.visibleBarCells
+    var w = 0
+    for (var i = 0; i < cells.length; i++) {
+      if (i > 0) w += segmentGap
+      w += cells[i] === "net" ? networkReserve : metricReserveFor(cells[i])
+    }
+    return Math.ceil(w)
   }
   readonly property int verticalSlot: root.bar ? root.bar.barSize : Style.bar.sizeVertical
 
@@ -326,7 +333,7 @@ BarWidget {
     fontSize: Style.bar.iconFont
     fixedWidth: root.vertical
                 ? -1
-                : (root.showMonitorFallback ? Style.bar.statusSlot : segGrid.implicitWidth + root.outerPad * 2)
+                : (root.showMonitorFallback ? Style.bar.statusSlot : root.reservedWidth + root.outerPad * 2)
     fixedHeight: root.vertical
                  ? (root.showMonitorFallback ? Style.bar.statusSlot : segGrid.implicitHeight + root.outerPad * 2)
                  : -1
@@ -343,12 +350,20 @@ BarWidget {
       id: segGrid
       z: 1
       visible: !root.showMonitorFallback
-      anchors.centerIn: parent
+      // Horizontal bars pack cells from the left so the slack sits at the
+      // end of the slot; vertical bars centre the stack in the strip.
+      anchors.left: root.vertical ? undefined : parent.left
+      anchors.leftMargin: root.vertical ? 0 : root.outerPad
+      anchors.verticalCenter: root.vertical ? undefined : parent.verticalCenter
+      anchors.horizontalCenter: root.vertical ? parent.horizontalCenter : undefined
+      anchors.top: root.vertical ? parent.top : undefined
+      anchors.topMargin: root.vertical ? root.outerPad : 0
       columns: root.vertical ? 1 : Math.max(1, root.visibleBarCells.length)
       columnSpacing: root.segmentGap
       rowSpacing: root.segmentGap
       verticalItemAlignment: Grid.AlignVCenter
-      horizontalItemAlignment: Grid.AlignHCenter
+      horizontalItemAlignment: Grid.AlignLeft
+      move: Transition { NumberAnimation { properties: "x,y"; duration: 160; easing.type: Easing.OutCubic } }
 
       MetricCell {
         id: cpuCell
@@ -387,7 +402,12 @@ BarWidget {
       Item {
         id: netCell
         visible: root.segmentEnabled("network")
-        implicitWidth: root.networkCellWidth
+        implicitWidth: {
+          var w = Math.ceil(netCol.implicitWidth)
+          if (netLabel.visible) w += root.labelGap + Math.ceil(netLabel.implicitWidth)
+          if (root.vertical) return Math.min(w, root.verticalSlot)
+          return w
+        }
         implicitHeight: root.vertical ? netCol.implicitHeight : root.lineBoxHeight
         readonly property bool pressable: true
         readonly property bool interactive: true
@@ -414,7 +434,7 @@ BarWidget {
           anchors.left: netLabel.visible ? netLabel.right : parent.left
           anchors.leftMargin: netLabel.visible ? root.labelGap : 0
           anchors.verticalCenter: parent.verticalCenter
-          width: netLabel.visible ? root.networkRateWidth : parent.width
+          width: root.vertical ? parent.width : implicitWidth
           spacing: 0
 
           // Down first: it is the number people glance at.
@@ -432,8 +452,6 @@ BarWidget {
           Text {
             visible: !root.vertical
             textFormat: Text.PlainText
-            width: parent.width
-            elide: Text.ElideRight
             text: "↓" + root.netDownText + " ↑" + root.netUpText
             color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
@@ -465,7 +483,7 @@ BarWidget {
     }
   }
 
-  // Metric cell: this cell's glyph/letter plus a reserved value slot. It is
+  // Metric cell: this cell's glyph/letter plus its value, sized to content. It is
   // a registered click target (triggerPress) and a tooltip target
   // (tooltipHovered); the bar routes clicks and shows tooltips for it.
   component MetricCell: Item {
@@ -486,7 +504,12 @@ BarWidget {
       else root.segmentClicked(cell.tab)
     }
 
-    implicitWidth: root.metricCellWidthFor(metric)
+    implicitWidth: {
+      var w = Math.ceil(valueLabel.implicitWidth)
+      if (labelText.visible) w += root.labelGap + Math.ceil(labelText.implicitWidth)
+      if (root.vertical && root.bar) return Math.min(w, root.bar.barSize)
+      return w
+    }
     implicitHeight: root.lineBoxHeight
 
     Text {
@@ -502,18 +525,16 @@ BarWidget {
     }
 
     Text {
+      id: valueLabel
       textFormat: Text.PlainText
       text: cell.valueText
       color: cell.valueColor
       font.family: button.fontFamily
       font.pixelSize: Style.font.caption
       font.features: ({ "tnum": 1 })
-      horizontalAlignment: Text.AlignLeft
-      elide: Text.ElideRight
       anchors.verticalCenter: parent.verticalCenter
       anchors.left: labelText.visible ? labelText.right : parent.left
       anchors.leftMargin: labelText.visible ? root.labelGap : 0
-      anchors.right: parent.right
       Behavior on color { ColorAnimation { duration: 320 } }
     }
 
