@@ -70,7 +70,10 @@ BarWidget {
     injectPanel()
   }
   Component.onCompleted: resolveStore()
-  Component.onDestruction: if (store) store.clearViewer(viewerId)
+  Component.onDestruction: {
+    if (store) store.clearViewer(viewerId)
+    unregisterCells()
+  }
 
   // ---- settings + viewer state → store ---------------------------------
   function pushSettings() {
@@ -291,7 +294,6 @@ BarWidget {
     var cells = [cpuCell, gpuCell, memCell, diskCell, netCell]
     for (var i = 0; i < cells.length; i++) root.bar.unregisterClickTarget(cells[i])
   }
-  Component.onDestruction: unregisterCells()
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
