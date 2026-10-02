@@ -31,7 +31,9 @@ trap 'rm -rf "$importdir"' EXIT
 ln -s "$shell_dir" "$importdir/qs"
 
 files=()
-while IFS= read -r f; do files+=("$f"); done < <(find . -path ./.git -prune -o -name '*.qml' -print | sort)
+# tests/qs holds headless harnesses that run from a copied tree (their
+# imports resolve there, not here), so they are linted by running them.
+while IFS= read -r f; do files+=("$f"); done < <(find . \( -path ./.git -o -path ./tests/qs \) -prune -o -name '*.qml' -print | sort)
 
 "$lint" -W 0 \
   --unqualified disable \

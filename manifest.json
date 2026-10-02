@@ -7,10 +7,12 @@
   "license": "MIT",
   "description": "Unified system monitor for the Quattro bar: CPU, GPU, memory, network, and an optional disk segment, with a tabbed detail panel.",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "service"
   ],
   "entryPoints": {
-    "barWidget": "BarWidget.qml"
+    "barWidget": "BarWidget.qml",
+    "service": "Service.qml"
   },
   "barWidget": {
     "displayName": "Quadrant",

@@ -2671,6 +2671,167 @@ function pushTimedWindow(history, point, timestamp, windowSeconds, maxLen) {
   return next
 }
 
+// ---------------------------------------------------------- long history
+//
+// Mean buckets `bucketSeconds` wide, kept for `windowSeconds`. Every
+// numeric field of `point` is averaged inside its bucket; `t` is the
+// bucket start and `n` the sample count. A null field is skipped, so a
+// bucket only carries the keys that had data. Gaps are left as missing
+// buckets, never interpolated — graphs read the t spacing.
+function hasOwn(o, k) {
+  return Object.prototype.hasOwnProperty.call(o, k)
+}
+
+function pushBucket(history, point, timestamp, bucketSeconds, windowSeconds) {
+  var ts = num(timestamp, null)
+  var next = Array.isArray(history) ? history.slice() : []
+  if (ts === null) return next
+  var width = Math.max(1, num(bucketSeconds, 10))
+  var span = Math.max(width, num(windowSeconds, 3600))
+  var start = Math.floor(ts / width) * width
+  if (next.length > 0 && num(next[next.length - 1].t, start) > start) next = []
+  var last = next.length > 0 ? next[next.length - 1] : null
+  var key
+  var src = point && typeof point === "object" ? point : {}
+  if (last && num(last.t, null) === start) {
+    var merged = {}
+    var n = Math.max(1, num(last.n, 1))
+    for (key in last) if (hasOwn(last, key)) merged[key] = last[key]
+    for (key in src) {
+      if (!hasOwn(src, key)) continue
+      var v = num(src[key], null)
+      if (v === null) continue
+      var prev = num(last[key], null)
+      merged[key] = prev === null ? v : (prev * n + v) / (n + 1)
+    }
+    merged.n = n + 1
+    merged.t = start
+    next[next.length - 1] = merged
+  } else {
+    var fresh = { t: start, n: 1 }
+    for (key in src) {
+      if (!hasOwn(src, key)) continue
+      var val = num(src[key], null)
+      if (val !== null) fresh[key] = val
+    }
+    next.push(fresh)
+  }
+  var cutoff = start - span
+  while (next.length > 0 && num(next[0].t, start) <= cutoff) next.shift()
+  var limit = Math.ceil(span / width) + 2
+  while (next.length > limit) next.shift()
+  return next
+}
+
+// Buckets from a previous run, prepended to what the live run has already
+// collected. Only buckets older than the first live bucket survive, so the
+// live data is never overwritten by stale averages.
+function mergeBuckets(older, newer) {
+  var live = Array.isArray(newer) ? newer : []
+  var old = Array.isArray(older) ? older : []
+  if (old.length === 0) return live.slice()
+  var firstLive = live.length > 0 ? num(live[0].t, null) : null
+  var out = []
+  for (var i = 0; i < old.length; i++) {
+    if (firstLive !== null && num(old[i].t, firstLive) >= firstLive) break
+    out.push(old[i])
+  }
+  return out.concat(live)
+}
+
+var HISTORY_FILE_VERSION = 1
+var HISTORY_SERIES = ["cpu", "mem", "gpu", "net", "disk"]
+
+// One persisted series: only objects with a finite `t` inside the window
+// and finite numeric fields survive; order by t, duplicate t keeps the
+// later entry, length capped to the window.
+function sanitizeBuckets(list, nowTs, windowSeconds, bucketSeconds) {
+  if (!Array.isArray(list)) return []
+  var now = num(nowTs, null)
+  if (now === null) return []
+  var span = Math.max(1, num(windowSeconds, 3600))
+  var width = Math.max(1, num(bucketSeconds, 10))
+  var byT = {}
+  var ts = []
+  for (var i = 0; i < list.length && i < 4096; i++) {
+    var e = list[i]
+    if (!e || typeof e !== "object") continue
+    var t = num(e.t, null)
+    if (t === null || t < now - span || t > now + 60) continue
+    var clean = { t: t, n: Math.max(1, Math.round(num(e.n, 1) || 1)) }
+    for (var k in e) {
+      if (!hasOwn(e, k) || k === "t" || k === "n") continue
+      if (!/^[a-z][a-zA-Z0-9]{0,15}$/.test(k)) continue
+      var v = num(e[k], null)
+      if (v === null) continue
+      clean[k] = v
+    }
+    if (!hasOwn(byT, String(t))) ts.push(t)
+    byT[String(t)] = clean
+  }
+  ts.sort(function (a, b) { return a - b })
+  var out = []
+  for (var j = 0; j < ts.length; j++) out.push(byT[String(ts[j])])
+  var limit = Math.ceil(span / width) + 2
+  while (out.length > limit) out.shift()
+  return out
+}
+
+// Parsed history file → { series: {cpu,mem,gpu,net,disk}, tags: {gpu,iface,disk} }
+// or null when the file is not ours. Tags say which card / interface /
+// disk the gpu, net and disk series were recorded for; the store only
+// reuses a series whose tag still matches.
+function loadHistoryFile(data, nowTs, windowSeconds, bucketSeconds) {
+  if (!data || typeof data !== "object") return null
+  if (data.v !== HISTORY_FILE_VERSION) return null
+  var series = {}
+  var any = false
+  for (var i = 0; i < HISTORY_SERIES.length; i++) {
+    var name = HISTORY_SERIES[i]
+    series[name] = sanitizeBuckets(data[name], nowTs, windowSeconds, bucketSeconds)
+    if (series[name].length > 0) any = true
+  }
+  var tags = data.tags && typeof data.tags === "object" ? data.tags : {}
+  return {
+    series: series,
+    tags: {
+      gpu: clipStr(tags.gpu, 32),
+      iface: clipStr(tags.iface, 64),
+      disk: clipStr(tags.disk, 64)
+    },
+    any: any
+  }
+}
+
+function historyFilePayload(series, tags, nowTs) {
+  var out = { v: HISTORY_FILE_VERSION, saved: num(nowTs, 0), tags: {} }
+  var t = tags && typeof tags === "object" ? tags : {}
+  out.tags.gpu = clipStr(t.gpu, 32)
+  out.tags.iface = clipStr(t.iface, 64)
+  out.tags.disk = clipStr(t.disk, 64)
+  var src = series && typeof series === "object" ? series : {}
+  for (var i = 0; i < HISTORY_SERIES.length; i++) {
+    var name = HISTORY_SERIES[i]
+    out[name] = Array.isArray(src[name]) ? src[name] : []
+  }
+  return out
+}
+
+// VRAM in use as a percentage for any live GPU shape we know (stream
+// sysfs, DRM overlay, nvidia-smi rows); null when either side is unknown.
+function gpuVramPct(live) {
+  if (!live || typeof live !== "object") return null
+  var used = num(live.vramUsed, null)
+  var total = num(live.vramTotal, null)
+  if (used === null || total === null) {
+    var mu = num(live.memUsedM, null)
+    var mt = num(live.memTotalM, null)
+    if (mu !== null && mt !== null) { used = mu; total = mt }
+  }
+  if (used === null || total === null || !(total > 0)) return null
+  return clamp(100 * used / total, 0, 100)
+}
+
 // ------------------------------------------------------- node test shim
 // QML ignores this branch (`module` is undefined there); node uses it.
 
@@ -2682,6 +2843,7 @@ if (typeof module !== "undefined" && module.exports) {
     normalizeDeviceSetting: normalizeDeviceSetting,
     segmentKeyForTab: segmentKeyForTab,
     readSettings: readSettings,
+    safeJsonValue: safeJsonValue,
     settingsPatch: settingsPatch,
     unquoteSetting: unquoteSetting,
     parseIntSetting: parseIntSetting,
@@ -2780,6 +2942,12 @@ if (typeof module !== "undefined" && module.exports) {
     formatLoad: formatLoad,
     formatUptime: formatUptime,
     pushCapped: pushCapped,
-    pushTimedWindow: pushTimedWindow
+    pushTimedWindow: pushTimedWindow,
+    pushBucket: pushBucket,
+    mergeBuckets: mergeBuckets,
+    sanitizeBuckets: sanitizeBuckets,
+    loadHistoryFile: loadHistoryFile,
+    historyFilePayload: historyFilePayload,
+    gpuVramPct: gpuVramPct
   }
 }

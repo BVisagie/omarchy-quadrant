@@ -102,3 +102,5 @@ jobs:
           done
       - name: Stream fork budget (${{ matrix.awk }})
         run: bash tests/stream-forks.sh
+      - name: Store smoke test (skips without quickshell)
+        run: bash tests/qs-smoke.sh

@@ -17,14 +17,15 @@ Panel {
 
   property var anchorItem: null
   property var hostWidget: null
+  readonly property var store: hostWidget ? hostWidget.store : null
 
-  readonly property int processCount: hostWidget ? hostWidget.processCount : 5
-  readonly property int panelIntervalMs: hostWidget ? hostWidget.panelIntervalMs : 2000
+  readonly property int processCount: store ? store.processCount : 5
+  readonly property int panelIntervalMs: store ? store.panelIntervalMs : 2000
 
   // Last-used tab survives close/reopen.
   property string currentTab: "cpu"
 
-  readonly property bool gpuAvailable: hostWidget ? hostWidget.discreteGpuAvailable === true : false
+  readonly property bool gpuAvailable: store ? store.discreteGpuAvailable === true : false
   readonly property var tabs: {
     var all = ["cpu", "gpu", "mem", "disk", "net"]
     if (gpuAvailable) return all
@@ -32,8 +33,8 @@ Panel {
   }
   readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "MEMORY", "disk": "DRIVES", "net": "NETWORK" })
   readonly property string barSegmentKey: Model.segmentKeyForTab(currentTab)
-  readonly property bool barSegmentEnabled: hostWidget && barSegmentKey !== ""
-                                            ? hostWidget.segmentEnabled(barSegmentKey) : false
+  readonly property bool barSegmentEnabled: store && barSegmentKey !== ""
+                                            ? store.segmentEnabled(barSegmentKey) : false
 
   onTabsChanged: {
     if (tabs.indexOf(currentTab) < 0) currentTab = tabs[0]
@@ -79,12 +80,24 @@ Panel {
   IpcHandler {
     target: "dev.bvisagie.quadrant"
 
-    function showTab(tab: string) { root.showTab(tab) }
-    function open() { root.open() }
-    function close() { root.close() }
-    function show() { root.open() }
-    function hide() { root.close() }
-    function toggle() { root.toggle() }
+    function showTab(tab: string): void { root.showTab(tab) }
+    function open(): void { root.open() }
+    function close(): void { root.close() }
+    function show(): void { root.open() }
+    function hide(): void { root.close() }
+    function toggle(): void { root.toggle() }
+    // Scriptable settings: `setBarSegment cpu false`, `set processCount 8`.
+    function setBarSegment(name: string, enabled: bool): void {
+      if (root.store) root.store.setBarSegment(name, enabled)
+    }
+    function set(key: string, valueJson: string): void {
+      if (!root.store) return
+      var value = Model.safeJsonValue(valueJson)
+      if (value === undefined) return
+      var patch = {}
+      patch[key] = value
+      root.store.persistSettings(patch)
+    }
   }
 
   KeyboardPanel {
@@ -113,10 +126,10 @@ Panel {
       }
       onTextKey: function(t) {
         if (t === "r" || t === "R") {
-          if (root.hostWidget && typeof root.hostWidget.refreshSysInfo === "function")
-            root.hostWidget.refreshSysInfo()
-          if (root.hostWidget && typeof root.hostWidget.pollIgpu === "function")
-            root.hostWidget.pollIgpu()
+          if (root.store) {
+            root.store.refreshSysInfo()
+            root.store.pollIgpu()
+          }
           root.refreshActiveTab()
           return
         }
@@ -197,13 +210,12 @@ Panel {
             height: barToggleRow.implicitHeight
             implicitWidth: barToggleRow.implicitWidth
             implicitHeight: barToggleRow.implicitHeight
-            visible: root.hostWidget && root.barSegmentKey !== ""
+            visible: root.store && root.barSegmentKey !== ""
             hoverEnabled: false
             cursorShape: Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton
             onClicked: {
-              if (root.hostWidget && root.hostWidget.setBarSegment)
-                root.hostWidget.setBarSegment(root.barSegmentKey, !root.barSegmentEnabled)
+              if (root.store) root.store.setBarSegment(root.barSegmentKey, !root.barSegmentEnabled)
             }
 
             Row {
@@ -268,30 +280,30 @@ Panel {
             Text {
               textFormat: Text.PlainText
               visible: {
-                if (!root.hostWidget) return false
-                if (root.hostWidget.gpuDetectionError !== "") return true
-                if (root.hostWidget.diskInfoError !== "") return true
-                if (root.hostWidget.streamError !== "") return true
-                return root.hostWidget.streamLive !== true && !root.hostWidget.sample
+                if (!root.store) return false
+                if (root.store.gpuDetectionError !== "") return true
+                if (root.store.diskInfoError !== "") return true
+                if (root.store.streamError !== "") return true
+                return root.store.streamLive !== true && !root.store.sample
               }
               text: {
-                if (!root.hostWidget) return ""
+                if (!root.store) return ""
                 var messages = []
-                if (root.hostWidget.streamError !== "")
-                  messages.push(root.hostWidget.streamError)
-                else if (root.hostWidget.streamLive !== true && !root.hostWidget.sample)
+                if (root.store.streamError !== "")
+                  messages.push(root.store.streamError)
+                else if (root.store.streamLive !== true && !root.store.sample)
                   messages.push("Waiting for the system sampler…")
-                if (root.hostWidget.gpuDetectionError !== "")
-                  messages.push(root.hostWidget.gpuDetectionError)
-                if (root.hostWidget.diskInfoError !== "")
-                  messages.push(root.hostWidget.diskInfoError)
+                if (root.store.gpuDetectionError !== "")
+                  messages.push(root.store.gpuDetectionError)
+                if (root.store.diskInfoError !== "")
+                  messages.push(root.store.diskInfoError)
                 return messages.join(" · ")
               }
               color: {
-                if (!root.hostWidget) return Color.urgent
-                if (root.hostWidget.streamError !== ""
-                    || root.hostWidget.gpuDetectionError !== ""
-                    || root.hostWidget.diskInfoError !== "")
+                if (!root.store) return Color.urgent
+                if (root.store.streamError !== ""
+                    || root.store.gpuDetectionError !== ""
+                    || root.store.diskInfoError !== "")
                   return Color.urgent
                 return Qt.darker(root.barForeground, 1.4)
               }
@@ -303,8 +315,8 @@ Panel {
 
             Text {
               textFormat: Text.PlainText
-              visible: root.hostWidget && root.hostWidget.gpuDeviceWarning !== ""
-              text: root.hostWidget ? String(root.hostWidget.gpuDeviceWarning || "") : ""
+              visible: root.store && root.store.gpuDeviceWarning !== ""
+              text: root.store ? String(root.store.gpuDeviceWarning || "") : ""
               color: Qt.darker(root.barForeground, 1.4)
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.caption
@@ -333,27 +345,27 @@ Panel {
               Tabs.CpuTab {
                 id: cpuTab
                 panel: root
-                model: root.hostWidget
+                model: root.store
               }
               Tabs.MemoryTab {
                 id: memTab
                 panel: root
-                model: root.hostWidget
+                model: root.store
               }
               Tabs.GpuTab {
                 id: gpuTab
                 panel: root
-                model: root.hostWidget
+                model: root.store
               }
               Tabs.NetworkTab {
                 id: netTab
                 panel: root
-                model: root.hostWidget
+                model: root.store
               }
               Tabs.DiskTab {
                 id: diskTab
                 panel: root
-                model: root.hostWidget
+                model: root.store
               }
             }
           }
