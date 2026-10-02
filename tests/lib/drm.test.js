@@ -125,3 +125,24 @@ test("mergeGpuLive overlays DRM busy without clobbering AMD sysfs busy", () => {
   assert.equal(intel.busySource, "drm");
   assert.equal(intel.memKind, "shared");
 });
+
+test("DRM rates accept intervals up to the configured cadence window", () => {
+  const prev = Model.parseDrmSnapshot({
+    ok: true, tsNs: 1e9, engines: [{ client: "s/1", pid: 7, name: "render", ns: 0 }],
+    clients: [{ pid: 7, client: "s/1", dedicated: 4096, shared: 0, comm: "game" }], rc6: []
+  });
+  const at = (sec) => Model.parseDrmSnapshot({
+    ok: true, tsNs: 1e9 + sec * 1e9, engines: [{ client: "s/1", pid: 7, name: "render", ns: sec * 5e8 }],
+    clients: [{ pid: 7, client: "s/1", dedicated: 4096, shared: 0, comm: "game" }], rc6: []
+  });
+  // The old fixed 10 s ceiling: 10.01 s yielded nothing even though both samples were valid.
+  assert.deepEqual(Model.drmProcessRows(prev, at(10.01)), []);
+  assert.equal(Model.drmBusyPercent(prev, at(10.01)), null);
+  // With the panel cadence window (3 × 10 s panel refresh) the same pair works.
+  assert.equal(Math.round(Model.drmProcessRows(prev, at(10.01), 30)[0].busy), 50);
+  assert.equal(Math.round(Model.drmBusyPercent(prev, at(10.01), 30)), 50);
+  assert.equal(Math.round(Model.drmBusyPercent(prev, at(2), 30)), 50);
+  // Beyond the window it is still refused; garbage windows fall back to 10 s.
+  assert.equal(Model.drmBusyPercent(prev, at(31), 30), null);
+  assert.equal(Model.drmMaxIntervalNs("nope"), 10e9);
+});

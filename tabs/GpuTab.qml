@@ -179,6 +179,7 @@ Item {
       finePoints: root.model ? root.model.gpuHistory : []
       longPoints: root.model ? root.model.gpuLong : []
       longWindow: root.longWindow
+      sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
       fixedMax: 100
       fields: [
         { key: "b", label: "busy", color: root.pal.primary },

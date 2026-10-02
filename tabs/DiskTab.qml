@@ -144,6 +144,7 @@ Item {
       finePoints: root.model ? root.model.diskHistory : []
       longPoints: root.model ? root.model.diskLong : []
       longWindow: root.longWindow
+      sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
       formatValue: function (v) { return Model.formatRate(v) }
       fields: [
         { key: "r", label: "read", color: root.pal.primary },

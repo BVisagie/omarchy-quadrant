@@ -23,6 +23,8 @@ Column {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property real graphHeight: Style.space(88)
+  // Seconds between fine samples (the stream cadence); sets the gap threshold.
+  property real sampleSeconds: 1
 
   signal toggleWindow()
 
@@ -79,7 +81,7 @@ Column {
     points: root.points
     fields: root.fields
     windowSeconds: root.windowSeconds
-    gapSeconds: root.longWindow ? 45 : 8
+    gapSeconds: Model.graphGapSeconds(root.sampleSeconds, root.longWindow)
     stacked: root.stacked
     fixedMax: root.fixedMax
     band: root.band

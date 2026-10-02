@@ -119,6 +119,7 @@ Item {
       finePoints: root.model ? root.model.cpuHistory : []
       longPoints: root.model ? root.model.cpuLong : []
       longWindow: root.longWindow
+      sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
       stacked: true
       fixedMax: 100
       fields: [

@@ -129,6 +129,7 @@ Item {
       finePoints: root.model ? root.model.netHistory : []
       longPoints: root.model ? root.model.netLong : []
       longWindow: root.longWindow
+      sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
       formatValue: function (v) { return root.rate(v) }
       fields: [
         { key: "rx", label: "down", color: root.pal.primary },

@@ -196,6 +196,7 @@ Item {
       finePoints: root.model ? root.model.memHistory : []
       longPoints: root.model ? root.model.memLong : []
       longWindow: root.longWindow
+      sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
       band: true
       fixedMax: 100
       formatValue: function (v) { return Model.formatPct(v, 1) }

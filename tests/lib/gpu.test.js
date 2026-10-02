@@ -259,3 +259,21 @@ test("parseNvidiaApps reads pid, memory and comm rows", () => {
   assert.deepEqual(Model.parseNvidiaApps(""), []);
   assert.deepEqual(Model.parseNvidiaApps(null), []);
 });
+
+test("rankGpuRows ranks by busy then memory before applying the limit", () => {
+  // NVIDIA rows carry no busy figure: the biggest memory user must survive a limit of 1.
+  const rows = Model.rankGpuRows([
+    { pid: 100, comm: "small", value: 0, vram: 1 * 1024 * 1024 },
+    { pid: 999, comm: "blender", value: 0, vram: 8000 * 1024 * 1024 }
+  ], 1);
+  assert.deepEqual(rows.map((r) => r.pid), [999]);
+  // Same app collapses before ranking; busy beats memory.
+  const drm = Model.rankGpuRows([
+    { pid: 10, comm: "Hyprland", value: 3, vram: 10 },
+    { pid: 11, comm: "Hyprland", value: 2, vram: 10 },
+    { pid: 20, comm: "game", value: 4, vram: 999 },
+    { pid: 30, comm: "idle", value: 0, vram: 5000 }
+  ], 2);
+  assert.deepEqual(drm.map((r) => [r.comm, r.value, r.vram]), [["Hyprland", 5, 20], ["game", 4, 999]]);
+  assert.deepEqual(Model.rankGpuRows(null, 3), []);
+});

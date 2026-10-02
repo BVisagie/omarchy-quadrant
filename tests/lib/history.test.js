@@ -92,3 +92,11 @@ test("loadHistoryFile validates a persisted file", () => {
   // Round trip.
   assert.deepEqual(Model.loadHistoryFile(JSON.parse(JSON.stringify(payload)), 100, 3600, 10).series.cpu, [{ t: 1, n: 1, u: 2 }]);
 });
+
+test("graphGapSeconds scales with the stream cadence", () => {
+  assert.equal(Model.graphGapSeconds(1, false), 8);
+  assert.equal(Model.graphGapSeconds(10, false), 26);      // 10 s bar refresh: consecutive points stay joined
+  assert.equal(Model.graphGapSeconds(1, true), 45);
+  assert.equal(Model.graphGapSeconds(60, true), 151);
+  assert.equal(Model.graphGapSeconds("x", false), 8);
+});

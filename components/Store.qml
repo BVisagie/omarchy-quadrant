@@ -242,15 +242,9 @@ Item {
         raw.push({ pid: gpuProcessRows[i].pid, comm: gpuProcessRows[i].comm, value: gpuProcessRows[i].busy,
                    vram: gpuProcessRows[i].dedicated + gpuProcessRows[i].shared })
     }
-    var collapsed = Model.nameAndCollapse(raw.map(function (r) {
-      return { pid: r.pid, comm: r.comm, exe: "", cmd: "", script: "", value: r.value, read: r.vram }
-    }), processCount)
-    var out = []
-    for (i = 0; i < collapsed.length; i++)
-      out.push({ pid: collapsed[i].pid, comm: collapsed[i].comm, value: collapsed[i].value,
-                 vram: collapsed[i].read, sortKey: collapsed[i].value * 1e12 + collapsed[i].read })
-    return out
+    return Model.rankGpuRows(raw, processCount)
   }
+
   property var igpuDrmPrev: null
   property string gpuDetectionError: ""
   property string gpuDeviceWarning: ""
@@ -429,10 +423,24 @@ Item {
     historyDirty = true
   }
 
+  // When the on-demand GPU poll last returned a sample. The stream carries
+  // AMD busy itself; NVIDIA and DRM readings only count as fresh for a few
+  // cadences after their poll, so history gets a gap — not a flat line of
+  // the last cached value — once nobody is looking at the GPU.
+  property double gpuSampleAtMs: 0
+  readonly property bool gpuStreamFresh: {
+    var g = sample ? sample.gpu : null
+    return !!(g && g.busy !== null && g.busy !== undefined)
+  }
+  readonly property bool gpuPollFresh: gpuSampleAtMs > 0 && (Date.now() - gpuSampleAtMs) <= Math.max(6000, panelIntervalMs * 3)
+
   function recordGpuHistory(ts) {
     var disp = gpuDisplay
     if (!disp || !gpu) return
-    var point = { b: disp.pct, v: Model.gpuVramPct(gpuLive) }
+    var fresh = gpuStreamFresh || (Date.now() - gpuSampleAtMs) <= Math.max(6000, panelIntervalMs * 3)
+    if (!fresh) return
+    var vramSource = gpuStreamFresh && sample.gpu && sample.gpu.vramTotal ? sample.gpu : gpuLive
+    var point = { b: disp.pct, v: Model.gpuVramPct(vramSource) }
     gpuHistory = Model.pushTimedWindow(gpuHistory, point, ts, 60, historyLimit)
     gpuLong = Model.pushBucket(adoptLoaded("gpu", gpu.card), point, ts, longBucketS, longWindowS)
   }
@@ -551,6 +559,7 @@ Item {
     gpuProcessRows = []
     nvidiaApps = []
     nvidiaGpu = null
+    gpuSampleAtMs = 0
     nvidiaError = ""
     gpuHistory = []
     gpuLong = []
@@ -723,6 +732,7 @@ Item {
     nvidiaGpu = rows.length > 0 ? rows[0] : null
     nvidiaApps = Model.parseNvidiaApps(data.apps)
     nvidiaError = ""
+    gpuSampleAtMs = Date.now()
   }
 
   function pollNvidia() {
@@ -752,12 +762,12 @@ Item {
   function applyDrmOverlay(data, which, live) {
     var prev = which === "igpu" ? igpuDrmPrev : discreteDrmPrev
     var snap = Model.parseDrmSnapshot(data && data.drm)
-    var busy = Model.drmBusyPercent(prev, snap)
+    var busy = Model.drmBusyPercent(prev, snap, procWindowS)
     if (snap) {
       if (which === "igpu") {
         igpuDrmPrev = snap
       } else {
-        gpuProcessRows = Model.drmProcessRows(prev, snap)
+        gpuProcessRows = Model.drmProcessRows(prev, snap, procWindowS)
         discreteDrmPrev = snap
         discreteDrmSnap = snap
       }
@@ -819,6 +829,7 @@ Item {
     else if (data.vendor === "amd") live = Model.normalizeAmdGpu(Model.parseKeyValues(data.payload))
     if (!live) live = { kind: data.vendor || "" }
     discreteGpuLive = applyDrmOverlay(data, "discrete", live)
+    gpuSampleAtMs = Date.now()
   }
 
   function pollDiscreteGpu() {
