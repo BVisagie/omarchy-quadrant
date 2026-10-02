@@ -57,6 +57,7 @@ jobs:
       - name: shellcheck
         run: |
           for f in scripts/*; do
+            [[ -f $f ]] || continue
             head=$(head -n1 "$f")
             case $head in
               *python*) continue ;;
@@ -66,6 +67,7 @@ jobs:
       - name: bash syntax
         run: |
           for f in scripts/*; do
+            [[ -f $f ]] || continue
             head=$(head -n1 "$f")
             case $head in
               *python*) continue ;;

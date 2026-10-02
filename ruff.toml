@@ -1,0 +1,10 @@
+# Lint rules for the python helpers (scripts/gpu-drm, scripts/qproc.py, tests/py).
+# Errors and warnings only; import ordering and modernisation suggestions are
+# not gates. The helpers must run on the python3 Omarchy ships, so no
+# version-specific rewrites either.
+line-length = 120
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "W", "B"]
+ignore = ["E501"]

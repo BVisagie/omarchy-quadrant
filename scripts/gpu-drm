@@ -317,4 +317,4 @@ if __name__ == "__main__":
     except Exception as exc:  # noqa: BLE001 — helper must never crash the widget
         json.dump({"ok": False, "error": str(exc)[:120]}, sys.stdout, separators=(",", ":"))
         print()
-        raise SystemExit(1)
+        raise SystemExit(1) from None
