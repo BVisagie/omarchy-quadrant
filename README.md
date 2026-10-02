@@ -177,6 +177,13 @@ time any setting is saved.
 | `barLabels` | `"glyph"` | `glyph`, `letter`, or `none` |
 | `rateUnit` | `"bytes"` | Network rates in `bytes` (KiB/s, binary) or `bits` (Mb/s, decimal) |
 
+Every value is validated on read, whatever wrote it: numbers are clamped
+to the ranges above, enumerations fall back to their default, device names
+must look like a device (an interface name of at most 15 characters, a
+`cardN`, a sysfs block name) or they become `auto`, unknown segment names
+are dropped, and a write may only touch the keys listed here. The helper
+scripts check their arguments again before touching anything.
+
 ## What it measures (and what it does not)
 
 - **CPU**: user (incl. nice) and system (incl. irq/softirq) are stacked in

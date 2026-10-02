@@ -152,3 +152,40 @@ test("visibleBarCells maps enabled segments to painted cells", () => {
   assert.deepEqual(Model.visibleBarCells([], true, true), []);
   assert.deepEqual(Model.visibleBarCells(null, true, true), []);
 });
+
+test("device-name settings are shape-checked and fall back to auto", () => {
+  const r = (o) => Model.readSettings(o);
+  assert.equal(r({ networkInterface: "wlan0" }).networkInterface, "wlan0");
+  assert.equal(r({ networkInterface: '"enp8s0"' }).networkInterface, "enp8s0");
+  assert.equal(r({ networkInterface: "../../etc" }).networkInterface, "auto");
+  assert.equal(r({ networkInterface: "a name with spaces" }).networkInterface, "auto");
+  assert.equal(r({ networkInterface: "x".repeat(16) }).networkInterface, "auto");
+  assert.equal(r({ networkInterface: "lo" }).networkInterface, "auto");
+  assert.equal(r({ networkInterface: "$(id)" }).networkInterface, "auto");
+  assert.equal(r({ gpuDevice: "card1" }).gpuDevice, "card1");
+  assert.equal(r({ gpuDevice: "card1; rm -rf /" }).gpuDevice, "auto");
+  assert.equal(r({ gpuDevice: "/sys/class/drm/card1" }).gpuDevice, "auto");
+  assert.equal(r({ diskDevice: "nvme0n1" }).diskDevice, "nvme0n1");
+  assert.equal(r({ diskDevice: "md0" }).diskDevice, "md0");
+  assert.equal(r({ diskDevice: "../sda" }).diskDevice, "auto");
+  assert.equal(r({ diskDevice: "sd a" }).diskDevice, "auto");
+  assert.equal(r({ integratedGpuDevice: "none" }).integratedGpuDevice, "none");
+  assert.equal(r({ integratedGpuDevice: "card99999999" }).integratedGpuDevice, "auto");
+});
+
+test("numbers clamp and enums fall back whatever wrote them", () => {
+  const r = Model.readSettings({ processCount: 0, barIntervalMs: "1", panelIntervalMs: 1e9, barPalette: "rainbow", rateUnit: "nibbles" });
+  assert.equal(r.processCount, 1);
+  assert.equal(r.barIntervalMs, 250);
+  assert.equal(r.panelIntervalMs, 60000);
+  assert.equal(r.barPalette, "theme");
+  assert.equal(r.rateUnit, "bytes");
+  assert.equal(Model.readSettings({ processCount: 7.6 }).processCount, 8);
+  assert.equal(Model.readSettings({ processCount: NaN }).processCount, 5);
+});
+
+test("a settings patch may only write known keys", () => {
+  const next = Model.settingsPatch({ myNote: "keep" }, { processCount: 7, evil: "x", __proto__: { a: 1 } });
+  assert.deepEqual(next, { myNote: "keep", processCount: 7 });
+  assert.equal("evil" in next, false);
+});

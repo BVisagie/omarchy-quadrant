@@ -77,7 +77,9 @@ Item {
     var merged = {}
     var k
     if (pendingSettings) for (k in pendingSettings) merged[k] = pendingSettings[k]
-    for (k in patch) merged[k] = patch[k]
+    for (k in patch) {
+      if (Object.prototype.hasOwnProperty.call(Model.SETTING_DEFAULTS, k)) merged[k] = patch[k]
+    }
     pendingSettings = merged
     pendingSettingsTimer.restart()
     var next = Model.settingsPatch(settingsRaw, merged)
