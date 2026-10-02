@@ -26,6 +26,7 @@ minute or the last hour of history, and the processes behind the numbers.
 </p>
 <p align="center">
   <img src="docs/screenshots/network.png" alt="Network tab" width="420">
+  <img src="docs/screenshots/settings.png" alt="Settings view" width="420">
 </p>
 
 Built against the documented Quattro plugin contract. Supports **Omarchy
