@@ -9,7 +9,7 @@ import "../Theme.js" as Theme
 // Icon/friendly-name matching is EXACT-MATCH ONLY against the normalized
 // desktop-entry id, Name, Icon, and StartupWMClass — substring matching
 // would let a process borrow another app's identity. When a desktop entry
-// matches, its Name is shown; otherwise the resolved comm from Model.js.
+// matches, its Name is shown; otherwise the resolved comm from lib/processes.mjs.
 // Every label is PlainText because process names are attacker-controlled.
 Column {
   id: root

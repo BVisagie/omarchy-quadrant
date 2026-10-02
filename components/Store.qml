@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import "../Model.js" as Model
+import "../lib/index.mjs" as Model
 import "." as Components
 
 // Quadrant's single data store. The shell creates one as the plugin's
@@ -13,7 +13,7 @@ import "." as Components
 // The store never touches the bar: widgets push their settings and tell
 // it which tabs and segments are being looked at (setViewer), and it
 // scales the on-demand samplers to that. All derivations are pure
-// functions in Model.js; this file is wiring and state.
+// functions under lib/; this file is wiring and state.
 Item {
   id: store
 

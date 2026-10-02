@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Ui
 import qs.Commons
-import "Model.js" as Model
+import "lib/index.mjs" as Model
 import "Theme.js" as Theme
 import "components" as Components
 

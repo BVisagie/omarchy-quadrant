@@ -19,7 +19,7 @@ export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-$state}
 # Quickshell resolves relative imports inside its config folder only, so
 # the harness runs from a copy of the plugin tree with the smoke test as
 # its shell.qml.
-cp -r components scripts Model.js Theme.js "$work/tree/"
+cp -r components scripts lib Theme.js "$work/tree/"
 cp tests/qs/store-smoke.qml "$work/tree/shell.qml"
 
 run_once() {

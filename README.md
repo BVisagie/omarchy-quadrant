@@ -315,7 +315,7 @@ before it is opened.
 ## Development
 
 ```sh
-node --test tests/model.test.js          # pure-logic tests
+node --test tests/lib/*.test.js          # pure-logic tests, one file per lib module
 bash tests/intel-freq-paths.sh           # Intel sysfs path lookup
 shellcheck -x scripts/*                  # bash helpers only; skip python shebangs
 mawk -f tests/check-plaintext.awk BarWidget.qml Panel.qml tabs/*.qml components/*.qml

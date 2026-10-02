@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "Model.js" as Model
+import "lib/index.mjs" as Model
 import "tabs" as Tabs
 
 // Quadrant detail panel: one KeyboardPanel with a tab strip. Keyboard

@@ -19,7 +19,7 @@ jobs:
       - name: Manifest parses
         run: jq -e '.id and .kinds and .entryPoints.barWidget and .barWidget.schema' manifest.json
       - name: Model tests
-        run: node --test tests/model.test.js
+        run: node --test tests/lib/*.test.js
       - name: qmllint gate
         # Needs qmllint plus an Omarchy shell to resolve qs.* imports; the
         # script skips cleanly elsewhere, so this documents the local gate
