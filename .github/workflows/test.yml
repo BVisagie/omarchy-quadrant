@@ -26,6 +26,22 @@ jobs:
         # and fails the moment a runner with the shell is attached.
         run: bash tests/qmllint.sh
 
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+      - name: Install ruff
+        run: python3 -m pip install --quiet ruff
+      - name: Lint python helpers
+        run: |
+          ruff check --no-cache scripts/gpu-drm tests/py
+          python3 -m py_compile scripts/gpu-drm
+      - name: Python helper tests
+        run: python3 -m unittest discover -s tests/py -t . -v
+
   scripts:
     runs-on: ubuntu-latest
     strategy:

@@ -1436,13 +1436,29 @@ function parseDrmSnapshot(data) {
     if (!e || typeof e !== "object") continue
     var name = clipStr(e.name, 32)
     if (!name) continue
+    var pid = num(e.pid, null)
     engines.push({
       client: clipStr(e.client, 64),
+      pid: pid !== null && pid > 0 ? Math.round(pid) : null,
       name: name,
       ns: num(e.ns, null),
       cycles: num(e.cycles, null),
       total: num(e.total, null),
-      capacity: num(e.capacity, 1) || 1
+      capacity: Math.max(1, num(e.capacity, 1) || 1)
+    })
+  }
+  var clients = []
+  var cl = Array.isArray(data.clients) ? data.clients : []
+  for (i = 0; i < cl.length && clients.length < 256; i++) {
+    var c = cl[i]
+    if (!c || typeof c !== "object") continue
+    var cpid = num(c.pid, null)
+    if (cpid === null || cpid <= 0) continue
+    clients.push({
+      pid: Math.round(cpid),
+      client: clipStr(c.client, 64),
+      dedicated: Math.max(0, num(c.dedicated, 0) || 0),
+      shared: Math.max(0, num(c.shared, 0) || 0)
     })
   }
   var rc6 = []
@@ -1451,19 +1467,23 @@ function parseDrmSnapshot(data) {
     if (!rc[i] || typeof rc[i] !== "object") continue
     var ms = num(rc[i].ms, null)
     if (ms === null || ms < 0) continue
-    rc6.push({ id: clipStr(rc[i].id, 128), ms: ms })
+    rc6.push({ id: clipStr(rc[i].id, 128), card: clipStr(rc[i].card, 16), ms: ms })
   }
   return {
     tsNs: tsNs,
     slot: clipStr(data.slot, 32),
     engines: engines,
+    clients: clients,
     rc6: rc6,
     memDedicated: Math.max(0, num(data.memDedicated, 0) || 0),
     memShared: Math.max(0, num(data.memShared, 0) || 0)
   }
 }
 
-function drmBusyFromEngines(prev, curr, dtNs) {
+// Busy nanoseconds per engine name over one interval, divided by the
+// engine's capacity so a multi-instance engine (two video decoders) tops
+// out at 100%. `filterPid` restricts the sum to one process.
+function drmEngineBusyNs(prev, curr, dtNs, filterPid) {
   var before = {}
   var i
   for (i = 0; i < prev.engines.length; i++) {
@@ -1474,33 +1494,84 @@ function drmBusyFromEngines(prev, curr, dtNs) {
   var saw = false
   for (i = 0; i < curr.engines.length; i++) {
     var c = curr.engines[i]
+    if (filterPid !== undefined && filterPid !== null && c.pid !== filterPid) continue
     saw = true
     var prevE = before[c.client + "\t" + c.name]
-    var delta = 0
+    var cap = c.capacity > 0 ? c.capacity : 1
     if (c.ns !== null) {
       var prevNs = prevE && prevE.ns !== null ? prevE.ns : c.ns
-      delta = c.ns - prevNs
-      if (delta > 0) totals[c.name] = (totals[c.name] || 0) + delta
+      var delta = c.ns - prevNs
+      if (delta > 0) totals[c.name] = (totals[c.name] || 0) + delta / cap
     } else if (c.cycles !== null && c.total !== null && prevE && prevE.cycles !== null && prevE.total !== null) {
       var dBusy = c.cycles - prevE.cycles
       var dTotal = c.total - prevE.total
       if (dBusy > 0 && dTotal > 0) {
-        var cap = c.capacity > 0 ? c.capacity : 1
-        totals[c.name] = (totals[c.name] || 0) + (dBusy / dTotal) * cap * dtNs
+        totals[c.name] = (totals[c.name] || 0) + (dBusy / dTotal) * dtNs
       }
     }
   }
-  if (!saw) return null
+  return saw ? totals : null
+}
+
+function drmBusyFromTotals(totals, dtNs) {
   var names = Object.keys(totals)
   if (names.length === 0) return 0
   var preferred = []
   var all = []
-  for (i = 0; i < names.length; i++) {
+  for (var i = 0; i < names.length; i++) {
     all.push(totals[names[i]])
     if (drmEnginePreferred(names[i])) preferred.push(totals[names[i]])
   }
   var chosen = preferred.length ? Math.max.apply(null, preferred) : Math.max.apply(null, all)
   return clamp(100 * chosen / dtNs, 0, 100)
+}
+
+// Per-process GPU rows from two snapshots: busy % of the preferred engine
+// (render/gfx/compute, else the busiest) plus resident memory from the
+// current snapshot. Processes with no engine time and no memory are
+// dropped; the rest are sorted by busy, then memory.
+function drmProcessRows(prev, curr) {
+  if (!prev || !curr) return []
+  var dtNs = curr.tsNs - prev.tsNs
+  if (!(dtNs >= 4e8 && dtNs <= 1e10)) return []
+  var pids = {}
+  var order = []
+  var i
+  function slot(pid) {
+    if (!pids[pid]) {
+      pids[pid] = { pid: pid, busy: 0, dedicated: 0, shared: 0 }
+      order.push(pid)
+    }
+    return pids[pid]
+  }
+  for (i = 0; i < curr.clients.length; i++) {
+    var c = curr.clients[i]
+    var row = slot(c.pid)
+    row.dedicated += c.dedicated
+    row.shared += c.shared
+  }
+  for (i = 0; i < curr.engines.length; i++) {
+    if (curr.engines[i].pid !== null) slot(curr.engines[i].pid)
+  }
+  var out = []
+  for (i = 0; i < order.length; i++) {
+    var r = pids[order[i]]
+    var totals = drmEngineBusyNs(prev, curr, dtNs, r.pid)
+    r.busy = totals ? drmBusyFromTotals(totals, dtNs) : 0
+    if (r.busy > 0 || r.dedicated > 0 || r.shared > 0) out.push(r)
+  }
+  out.sort(function (a, b) {
+    if (b.busy !== a.busy) return b.busy - a.busy
+    if (b.dedicated !== a.dedicated) return b.dedicated - a.dedicated
+    return a.pid - b.pid
+  })
+  return out.slice(0, 32)
+}
+
+function drmBusyFromEngines(prev, curr, dtNs) {
+  var totals = drmEngineBusyNs(prev, curr, dtNs, null)
+  if (!totals) return null
+  return drmBusyFromTotals(totals, dtNs)
 }
 
 function drmBusyFromRc6(prev, curr, dtNs) {
@@ -2542,6 +2613,7 @@ if (typeof module !== "undefined" && module.exports) {
     normalizeAmdGpu: normalizeAmdGpu,
     normalizeIntelGpu: normalizeIntelGpu,
     parseDrmSnapshot: parseDrmSnapshot,
+    drmProcessRows: drmProcessRows,
     drmBusyPercent: drmBusyPercent,
     drmMemoryKind: drmMemoryKind,
     mergeGpuLive: mergeGpuLive,

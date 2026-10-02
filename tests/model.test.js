@@ -793,6 +793,65 @@ test("drmBusyPercent prefers render/gfx/compute engine time", () => {
   assert.equal(Model.drmMemoryKind(curr), "shared");
 });
 
+test("drmBusyPercent divides engine time by capacity", () => {
+  const prev = Model.parseDrmSnapshot({
+    ok: true, tsNs: 1e9, engines: [{ client: "1", pid: 7, name: "video", ns: 0, capacity: 2 }],
+    rc6: [], memDedicated: 0, memShared: 0
+  });
+  const curr = Model.parseDrmSnapshot({
+    ok: true, tsNs: 2e9, engines: [{ client: "1", pid: 7, name: "video", ns: 1e9, capacity: 2 }],
+    rc6: [], memDedicated: 0, memShared: 0
+  });
+  // Two decoders, one second of summed time → 50%, not a clamped 100%.
+  assert.equal(Math.round(Model.drmBusyPercent(prev, curr)), 50);
+});
+
+test("drmProcessRows attributes engine time and memory per pid", () => {
+  const prev = Model.parseDrmSnapshot({
+    ok: true, tsNs: 1e9,
+    engines: [
+      { client: "s/1", pid: 10, name: "render", ns: 0 },
+      { client: "s/2", pid: 20, name: "render", ns: 0 },
+      { client: "s/2", pid: 20, name: "video", ns: 0 },
+      { client: "s/3", pid: 30, name: "render", ns: 0 }
+    ],
+    clients: [
+      { pid: 10, client: "s/1", dedicated: 100, shared: 0 },
+      { pid: 20, client: "s/2", dedicated: 50, shared: 5 },
+      { pid: 30, client: "s/3", dedicated: 0, shared: 0 },
+      { pid: 40, client: "s/4", dedicated: 7, shared: 0 }
+    ],
+    rc6: [], memDedicated: 150, memShared: 5
+  });
+  const curr = Model.parseDrmSnapshot({
+    ok: true, tsNs: 2e9,
+    engines: [
+      { client: "s/1", pid: 10, name: "render", ns: 2e8 },
+      { client: "s/2", pid: 20, name: "render", ns: 6e8 },
+      { client: "s/2", pid: 20, name: "video", ns: 9e8 },
+      { client: "s/3", pid: 30, name: "render", ns: 0 }
+    ],
+    clients: [
+      { pid: 10, client: "s/1", dedicated: 100, shared: 0 },
+      { pid: 20, client: "s/2", dedicated: 50, shared: 5 },
+      { pid: 30, client: "s/3", dedicated: 0, shared: 0 },
+      { pid: 40, client: "s/4", dedicated: 7, shared: 0 }
+    ],
+    rc6: [], memDedicated: 157, memShared: 5
+  });
+  const rows = Model.drmProcessRows(prev, curr);
+  // pid 30 did nothing and holds nothing; it is dropped.
+  assert.deepEqual(rows.map((r) => r.pid), [20, 10, 40]);
+  assert.equal(Math.round(rows[0].busy), 60);   // render wins over video
+  assert.equal(rows[0].dedicated, 50);
+  assert.equal(Math.round(rows[1].busy), 20);
+  assert.equal(rows[2].busy, 0);
+  assert.equal(rows[2].dedicated, 7);
+  assert.deepEqual(Model.drmProcessRows(prev, null), []);
+  // Card-level busy is the summed render time: 80%.
+  assert.equal(Math.round(Model.drmBusyPercent(prev, curr)), 80);
+});
+
 test("drmBusyPercent falls back to RC6 when engines are missing", () => {
   const prev = Model.parseDrmSnapshot({
     ok: true, tsNs: 1e9, engines: [],

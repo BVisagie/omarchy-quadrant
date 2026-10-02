@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
-"""One-shot DRM fdinfo + RC6 snapshot for Quadrant.
+"""One-shot DRM fdinfo + idle-residency snapshot for Quadrant.
 
-Prints a single JSON object. Scripts ship counters; Model.js computes
-busy percent from consecutive snapshots. Optional --slot filters to one
-PCI device (0000:00:02.0). Failures are ok:false, never a fake 0.
+Prints a single JSON object. Scripts ship counters; Model.js computes busy
+percent (per card and per process) from consecutive snapshots. Optional
+--slot filters to one PCI device (0000:00:02.0): fdinfo rows by their
+drm-pdev, idle residency by the card that sits on that slot. Failures are
+ok:false, never a fake 0.
+
+Output shape:
+  {"ok":true,"tsNs":..,"slot":"..",
+   "engines":[{"pid":123,"client":"0000:00:02.0/7","name":"render","ns":..,
+               "cycles":null,"total":null,"capacity":1}, ...],
+   "clients":[{"pid":123,"client":"0000:00:02.0/7","dedicated":..,"shared":..}],
+   "rc6":[{"id":"/sys/.../rc6_residency_ms","card":"card1","ms":..}],
+   "memDedicated":..,"memShared":..}
+
+A DRM file shared by several processes (fork, inherited fd) carries one
+drm-client-id; it is attributed once, to the first pid that reports it.
+QUADRANT_PROC_PATH / QUADRANT_SYS_PATH override /proc and /sys for tests.
 """
 from __future__ import annotations
 
@@ -14,7 +28,8 @@ import sys
 import time
 
 
-PREFERRED = ("render", "gfx", "compute")
+MAX_ENGINE_ROWS = 512
+MAX_CLIENT_ROWS = 256
 
 
 def proc_root() -> str:
@@ -48,10 +63,17 @@ def parse_size(value: str) -> int | None:
     return int(n * mul)
 
 
+def _digits(val: str) -> int | None:
+    digits = "".join(c for c in val if c.isdigit())
+    return int(digits) if digits else None
+
+
 def parse_fdinfo(text: str) -> dict | None:
+    """Parse one fdinfo file. Returns None when it is not a DRM client."""
     slot = ""
     client = ""
     engines: list[dict] = []
+    capacity: dict[str, int] = {}
     dedicated = 0
     shared = 0
     saw_drm = False
@@ -68,40 +90,47 @@ def parse_fdinfo(text: str) -> dict | None:
             client = val
             saw_drm = True
         elif key.startswith("drm-engine-capacity-"):
-            continue
+            name = key[len("drm-engine-capacity-") :]
+            n = _digits(val)
+            if name and n:
+                capacity[name] = n
         elif key.startswith("drm-engine-"):
             name = key[len("drm-engine-") :]
-            digits = "".join(c for c in val if c.isdigit())
-            if name and digits:
-                engines.append({"name": name, "ns": int(digits), "cycles": None, "total": None, "capacity": 1})
+            n = _digits(val)
+            if name and n is not None:
+                engines.append({"name": name, "ns": n, "cycles": None, "total": None, "capacity": 1})
                 saw_drm = True
         elif key.startswith("drm-cycles-"):
             name = key[len("drm-cycles-") :]
-            digits = "".join(c for c in val if c.isdigit())
-            if name and digits:
-                engines.append({"name": name, "ns": None, "cycles": int(digits), "total": None, "capacity": 1})
+            n = _digits(val)
+            if name and n is not None:
+                engines.append({"name": name, "ns": None, "cycles": n, "total": None, "capacity": 1})
                 saw_drm = True
         elif key.startswith("drm-total-cycles-"):
             name = key[len("drm-total-cycles-") :]
-            digits = "".join(c for c in val if c.isdigit())
-            if name and digits:
+            n = _digits(val)
+            if name and n is not None:
                 for eng in engines:
                     if eng["name"] == name and eng["cycles"] is not None:
-                        eng["total"] = int(digits)
-        elif key.startswith("drm-engine-capacity-"):
-            pass
-        elif key in ("drm-resident-vram", "drm-memory-vram", "drm-resident-local"):
+                        eng["total"] = n
+        elif key.startswith(("drm-resident-vram", "drm-memory-vram", "drm-resident-local")):
+            # amdgpu: drm-memory-vram; xe: drm-resident-vram0 / vram1 per region.
             n = parse_size(val)
             if n:
                 dedicated += n
                 saw_drm = True
-        elif key in ("drm-resident-gtt", "drm-memory-gtt", "drm-resident-system"):
+        elif key.startswith(("drm-resident-gtt", "drm-memory-gtt", "drm-resident-system")):
             n = parse_size(val)
             if n:
                 shared += n
                 saw_drm = True
     if not saw_drm:
         return None
+    # Capacity lines can precede or follow the engine line they describe.
+    for eng in engines:
+        cap = capacity.get(eng["name"])
+        if cap and cap > 0:
+            eng["capacity"] = cap
     return {
         "slot": slot,
         "client": client,
@@ -113,17 +142,16 @@ def parse_fdinfo(text: str) -> dict | None:
 
 def snap_fdinfo(want_slot: str) -> dict:
     engines: list[dict] = []
-    clients: set[str] = set()
+    clients: list[dict] = []
+    seen: set[str] = set()
     dedicated = 0
     shared = 0
     proc = proc_root()
     try:
-        pids = os.listdir(proc)
+        pids = sorted((p for p in os.listdir(proc) if p.isdigit()), key=int)
     except OSError:
-        return {"engines": [], "dedicated": 0, "shared": 0}
+        return {"engines": [], "clients": [], "dedicated": 0, "shared": 0}
     for pid in pids:
-        if not pid.isdigit():
-            continue
         fd_dir = os.path.join(proc, pid, "fd")
         info_dir = os.path.join(proc, pid, "fdinfo")
         try:
@@ -147,55 +175,102 @@ def snap_fdinfo(want_slot: str) -> dict:
             slot = parsed["slot"]
             if want_slot and slot and slot != want_slot:
                 continue
-            key = "%s:%s:%s" % (pid, parsed["client"] or fd, slot)
-            if key in clients:
+            # One DRM client id per open file: a file inherited across fork
+            # shows up under every holder but must be counted once.
+            if parsed["client"]:
+                key = "%s/%s" % (slot, parsed["client"])
+            else:
+                key = "%s/%s:%s" % (slot, pid, fd)
+            if key in seen:
                 continue
-            clients.add(key)
+            seen.add(key)
+            pid_n = int(pid)
             dedicated += parsed["dedicated"]
             shared += parsed["shared"]
+            if len(clients) < MAX_CLIENT_ROWS:
+                clients.append({
+                    "pid": pid_n,
+                    "client": key,
+                    "dedicated": parsed["dedicated"],
+                    "shared": parsed["shared"],
+                })
             for eng in parsed["engines"]:
                 row = dict(eng)
+                row["pid"] = pid_n
                 row["client"] = key
                 engines.append(row)
-            if len(engines) >= 256:
-                return {"engines": engines, "dedicated": dedicated, "shared": shared}
-    return {"engines": engines, "dedicated": dedicated, "shared": shared}
+            if len(engines) >= MAX_ENGINE_ROWS:
+                return {"engines": engines, "clients": clients, "dedicated": dedicated, "shared": shared}
+    return {"engines": engines, "clients": clients, "dedicated": dedicated, "shared": shared}
 
 
-def snap_rc6() -> list[dict]:
+def card_slot(card_dir: str) -> str:
+    """PCI slot of a /sys/class/drm/cardN directory, or ""."""
+    try:
+        with open(os.path.join(card_dir, "device", "uevent"), "r", encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                if line.startswith("PCI_SLOT_NAME="):
+                    return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    try:
+        target = os.readlink(os.path.join(card_dir, "device"))
+    except OSError:
+        return ""
+    return os.path.basename(target.rstrip("/"))
+
+
+def _read_int(path: str) -> int | None:
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return int(fh.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def snap_rc6(want_slot: str) -> list[dict]:
+    """Idle residency counters (ms) for the selected card.
+
+    i915 exposes rc6_residency_ms; xe exposes gtidle/idle_residency_ms.
+    Both grow while the GPU is idle, so Model.js treats them alike. Only
+    the card on --slot is reported, so a hybrid machine's iGPU can never
+    stand in for a discrete card's idle time.
+    """
     out: list[dict] = []
-    sysfs = sys_root()
-    roots = [
-        os.path.join(sysfs, "class", "drm"),
-    ]
+    root = os.path.join(sys_root(), "class", "drm")
+    try:
+        cards = sorted(c for c in os.listdir(root) if c.startswith("card") and "-" not in c)
+    except OSError:
+        return out
     seen: set[str] = set()
-    for root in roots:
-        try:
-            cards = os.listdir(root)
-        except OSError:
-            continue
-        for card in cards:
-            if not card.startswith("card") or "-" in card:
+    for card in cards:
+        card_dir = os.path.join(root, card)
+        if want_slot:
+            if card_slot(card_dir) != want_slot:
                 continue
-            for rel in (
-                os.path.join(card, "gt", "gt0", "rc6_residency_ms"),
-                os.path.join(card, "gt", "gt1", "rc6_residency_ms"),
-                os.path.join(card, "gt", "rc6_residency_ms"),
-                os.path.join(card, "device", "drm", card, "gt", "gt0", "rc6_residency_ms"),
-            ):
-                path = os.path.join(root, rel)
-                if path in seen or not os.path.isfile(path):
-                    continue
+        candidates = [
+            os.path.join(card_dir, "gt", "gt0", "rc6_residency_ms"),
+            os.path.join(card_dir, "gt", "gt1", "rc6_residency_ms"),
+            os.path.join(card_dir, "gt", "rc6_residency_ms"),
+            os.path.join(card_dir, "device", "drm", card, "gt", "gt0", "rc6_residency_ms"),
+            os.path.join(card_dir, "gt", "gt0", "gtidle", "idle_residency_ms"),
+            os.path.join(card_dir, "gt", "gt1", "gtidle", "idle_residency_ms"),
+        ]
+        for tile in ("tile0", "tile1"):
+            for gt in ("gt0", "gt1"):
+                candidates.append(os.path.join(card_dir, "device", tile, gt, "gtidle", "idle_residency_ms"))
+        for path in candidates:
+            if path in seen or not os.path.isfile(path):
+                continue
+            seen.add(path)
+            if path.endswith("rc6_residency_ms"):
                 enable = path.replace("rc6_residency_ms", "rc6_enable")
-                try:
-                    if os.path.isfile(enable):
-                        if int(open(enable, "r", encoding="utf-8").read().strip() or "1") == 0:
-                            continue
-                    ms = int(open(path, "r", encoding="utf-8").read().strip())
-                except (OSError, ValueError):
+                if os.path.isfile(enable) and (_read_int(enable) or 0) == 0:
                     continue
-                seen.add(path)
-                out.append({"id": path, "ms": ms})
+            ms = _read_int(path)
+            if ms is None:
+                continue
+            out.append({"id": path, "card": card, "ms": ms})
     return out
 
 
@@ -213,8 +288,9 @@ def main() -> int:
         "ok": True,
         "tsNs": time.monotonic_ns(),
         "slot": slot,
-        "engines": snap["engines"][:256],
-        "rc6": snap_rc6(),
+        "engines": snap["engines"][:MAX_ENGINE_ROWS],
+        "clients": snap["clients"][:MAX_CLIENT_ROWS],
+        "rc6": snap_rc6(slot),
         "memDedicated": snap["dedicated"],
         "memShared": snap["shared"],
     }
