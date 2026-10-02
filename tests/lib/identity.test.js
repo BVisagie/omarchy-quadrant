@@ -103,3 +103,35 @@ test("parseSystemInfo drops hostile and malformed GPU entries", () => {
   assert.equal(info.mem.swaps[0].kind, "file");      // unknown kind coerced
   assert.equal(info.mem.zram.length, 0);             // sda is not zramN
 });
+
+test("parseSystemNet joins sysfs identity with ip -j addr", () => {
+  const ip = JSON.stringify([
+    { ifname: "enp8s0", addr_info: [
+      { family: "inet", local: "192.168.1.201", prefixlen: 24, scope: "global" },
+      { family: "inet6", local: "fe80::1", prefixlen: 64, scope: "link" },
+      { family: "inet6", local: "2001:db8::5", prefixlen: 64, scope: "global" }
+    ] },
+    { ifname: "bad name", addr_info: [{ local: "1.2.3.4", scope: "global" }] },
+    "junk"
+  ]);
+  const net = Model.parseSystemNet({
+    interfaces: [
+      { name: "enp8s0", speedMbps: 1000, mac: "04:42:1a:95:b2:f4", operstate: "up", wireless: false, virtual: false },
+      { name: "wlo1", speedMbps: -1, mac: "zz", operstate: "down", wireless: true },
+      { name: "docker0", speedMbps: null, virtual: true },
+      { name: "../evil" }
+    ],
+    ipPayload: ip
+  });
+  assert.deepEqual(net.interfaces.map((i) => i.name), ["enp8s0", "wlo1", "docker0"]);
+  assert.deepEqual(net.byName.enp8s0.addrs, ["192.168.1.201/24", "2001:db8::5/64"]);
+  assert.equal(net.byName.wlo1.speedMbps, null);
+  assert.equal(net.byName.wlo1.mac, "");
+  assert.equal(Model.interfaceSummary(net.byName.enp8s0), "Ethernet · 1 Gbit/s · 192.168.1.201 · 2001:db8::5");
+  assert.equal(Model.interfaceSummary(net.byName.wlo1), "Wi-Fi");
+  assert.equal(Model.interfaceSummary(net.byName.docker0), "Virtual");
+  assert.equal(Model.interfaceSummary(null), "");
+  assert.deepEqual(Model.parseSystemNet(null), { interfaces: [], byName: {} });
+  assert.deepEqual(Model.parseIpAddrJson("{not json"), {});
+  assert.equal(Model.parseSystemInfo({ ok: true, net: { interfaces: [{ name: "x" }] } }).net.interfaces.length, 1);
+});

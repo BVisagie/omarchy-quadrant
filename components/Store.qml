@@ -663,6 +663,40 @@ Item {
     diskInfoProc.run()
   }
 
+  // While a Drives tab is open only df and the NVMe temperatures are
+  // re-read; the device walk stays a startup / R job.
+  function applyDiskUsage(text) {
+    var usage = Model.parseDiskUsage(Model.safeJson(text))
+    if (!usage) return
+    if (diskInfo) diskInfo = Model.mergeDiskUsage(diskInfo, usage)
+  }
+
+  function pollDiskUsage() {
+    if (diskTabViewers === 0) return
+    if (!diskInfo) { diskInfoProc.run(); return }
+    diskUsageProc.run()
+  }
+
+  Timer {
+    id: diskUsageTimer
+    interval: store.panelIntervalMs
+    repeat: true
+    running: store.diskTabViewers > 0
+    onRunningChanged: if (running) store.pollDiskUsage()
+    onTriggered: store.pollDiskUsage()
+  }
+
+  Components.Sampler {
+    id: diskUsageProc
+    command: [store.diskInfoScript, "usage"]
+    onResult: function (text) { store.applyDiskUsage(text) }
+  }
+
+  function selectInterface(name) {
+    if (typeof name !== "string" || !/^[A-Za-z0-9._@:+-]+$/.test(name)) return
+    persistSettings({ networkInterface: name })
+  }
+
   function selectDisk(name) {
     if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+$/.test(name)) return
     persistSettings({ diskDevice: name })

@@ -171,3 +171,18 @@ test("pickDisk keeps a multi-parent RAID device selectable", () => {
   assert.equal(Model.pickDisk(info.disks, info.mounts, rates, "md0", info.backing), "md0");
   assert.equal(Model.pickDisk(info.disks, [], rates, "auto", info.backing), "nvme0n1");
 });
+
+test("parseDiskUsage and mergeDiskUsage refresh mounts and temperatures only", () => {
+  const info = Model.parseDiskInfo(JSON.parse(fixture("disk-info-basic.json")));
+  const usage = Model.parseDiskUsage({ ok: true, usage: true, temps: { nvme0n1: 51, "bad name": 1, nvme1n1: "x" }, dfPayload: fixture("df-basic.txt") });
+  assert.deepEqual(usage.temps, { nvme0n1: 51 });
+  assert.ok(usage.mounts.length > 0);
+  const merged = Model.mergeDiskUsage(info, usage);
+  assert.equal(merged.disks.length, info.disks.length);
+  const d = merged.disks.find((x) => x.name === "nvme0n1");
+  if (d) assert.equal(d.tempC, 51);
+  assert.deepEqual(merged.backing, info.backing);
+  assert.equal(Model.parseDiskUsage({ ok: false }), null);
+  assert.equal(Model.mergeDiskUsage(null, usage), null);
+  assert.equal(Model.mergeDiskUsage(info, null), info);
+});

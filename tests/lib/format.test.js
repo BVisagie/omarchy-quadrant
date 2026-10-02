@@ -65,3 +65,12 @@ test("formatRateCompact stays within four glyphs plus a unit", () => {
   assert.equal(Model.formatRateCompact(null), "--");
   assert.equal(Model.formatRateCompact(-1), "--");
 });
+
+test("formatRateUnit shows bytes with binary units and bits with decimal units", () => {
+  assert.equal(Model.formatRateUnit(1536, "bytes"), "1.5 KiB/s");
+  assert.equal(Model.formatRateUnit(1250, "bits"), "10 kb/s");
+  assert.equal(Model.formatRateUnit(125000000, "bits"), "1 Gb/s");
+  assert.equal(Model.formatRateUnit(137500, "bits"), "1.1 Mb/s");
+  assert.equal(Model.formatRateUnit(null, "bits"), "--");
+  assert.equal(Model.formatRateUnit(5, "nope"), "5 B/s");
+});

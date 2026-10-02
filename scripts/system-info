@@ -458,6 +458,53 @@ if [[ -r /run/udev/data/+dmi:id ]]; then
   fi
 fi
 
+# --- Network interfaces ------------------------------------------------------
+# Identity only (link speed, wireless, MAC, operstate); rates come from the
+# stream. Addresses come from one `ip -j addr` run, shipped as a JSON
+# string and parsed in lib/identity.mjs.
+
+net_fields=()
+net_count=0
+for ndev in /sys/class/net/*; do
+  [[ -d $ndev ]] || continue
+  nname=${ndev##*/}
+  [[ $nname =~ ^[A-Za-z0-9._@:+-]+$ ]] || continue
+  [[ $nname == lo ]] && continue
+  nspeed=""
+  read_line_file "$ndev/speed" nspeed
+  [[ $nspeed =~ ^-?[0-9]+$ ]] || nspeed=""
+  nmac=""
+  read_line_file "$ndev/address" nmac
+  [[ $nmac =~ ^[0-9a-fA-F:]+$ ]] || nmac=""
+  nstate=""
+  read_line_file "$ndev/operstate" nstate
+  [[ $nstate =~ ^[a-z]+$ ]] || nstate=""
+  nwireless=0
+  [[ -d $ndev/wireless ]] && nwireless=1
+  nvirtual=0
+  [[ -L $ndev && $(readlink -f "$ndev") == /sys/devices/virtual/* ]] && nvirtual=1
+  net_fields+=("$nname" "$nspeed" "$nmac" "$nstate" "$nwireless" "$nvirtual")
+  net_count=$(( net_count + 1 ))
+  (( net_count >= 32 )) && break
+done
+if (( ${#net_fields[@]} == 0 )); then
+  net_json='[]'
+else
+  net_json=$("$JQ" -cn --args '
+    [range(0; ($ARGS.positional | length); 6) as $i |
+      { name: $ARGS.positional[$i],
+        speedMbps: (if $ARGS.positional[$i + 1] == "" then null else ($ARGS.positional[$i + 1] | tonumber) end),
+        mac: $ARGS.positional[$i + 2],
+        operstate: $ARGS.positional[$i + 3],
+        wireless: ($ARGS.positional[$i + 4] == "1"),
+        virtual: ($ARGS.positional[$i + 5] == "1") }]' "${net_fields[@]}")
+fi
+ipPayload=""
+if IP_BIN=$(resolve_bin ip); then
+  ipPayload=$("$IP_BIN" -j addr show 2>/dev/null) || ipPayload=""
+  if (( ${#ipPayload} > 65536 )); then ipPayload=""; fi
+fi
+
 # --- Host ------------------------------------------------------------------
 
 kernel="" sysVendor="" productName=""
@@ -480,6 +527,8 @@ read_line_file /sys/class/dmi/id/product_name productName
   --argjson swaps "$swap_json" \
   --argjson zram "$zram_json" \
   --arg udevPayload "$udevPayload" \
+  --argjson net "$net_json" \
+  --arg ipPayload "$ipPayload" \
   --arg kernel "$kernel" \
   --arg sysVendor "$sysVendor" \
   --arg productName "$productName" \
@@ -499,6 +548,7 @@ read_line_file /sys/class/dmi/id/product_name productName
     gpus: $gpus,
     lspciPayload: $lspciPayload,
     mem: { swaps: $swaps, zram: $zram, udevPayload: $udevPayload },
+    net: { interfaces: $net, ipPayload: $ipPayload },
     host: {
       kernel: (if $kernel == "" then null else $kernel end),
       sysVendor: (if $sysVendor == "" then null else $sysVendor end),
