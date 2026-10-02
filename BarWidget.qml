@@ -476,8 +476,18 @@ BarWidget {
       if (reference > 0 && Date.now() - reference <= interval) return
       root.streamLive = false
       root.streamError = "System sampler stopped producing data; restarting"
-      streamProc.signal(9)
+      // SIGTERM lets the sampler's EXIT trap remove its FIFO directory;
+      // SIGKILL follows only if it is truly wedged.
+      streamProc.signal(15)
+      streamKillTimer.restart()
     }
+  }
+
+  Timer {
+    id: streamKillTimer
+    interval: 1500
+    repeat: false
+    onTriggered: if (streamProc.running) streamProc.signal(9)
   }
 
   Timer {

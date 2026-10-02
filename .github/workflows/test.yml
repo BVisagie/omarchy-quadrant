@@ -81,6 +81,8 @@ jobs:
             echo "process-cpu did not report failure correctly"
             exit 1
           fi
-          timeout 3 ./scripts/quadrant-stream 500 | head -n 2 | while IFS= read -r line; do
+          QUADRANT_STREAM_TICKS=2 ./scripts/quadrant-stream 500 | while IFS= read -r line; do
             echo "$line" | jq -e '.v == 1 and .cpu and .mem and .net and has("cf") and has("disk")'
           done
+      - name: Stream fork budget (${{ matrix.awk }})
+        run: bash tests/stream-forks.sh
