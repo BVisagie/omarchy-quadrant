@@ -325,24 +325,24 @@ Panel {
             }
 
             // ---- tab content ----
-            StackLayout {
+            // A plain container, not a StackLayout: a Layout keeps the height
+            // of its tallest child, which left short tabs with a blank
+            // bottom. Only the current tab is visible; all stay alive so
+            // their rosters keep their sticky order.
+            Item {
               id: stack
               width: parent.width
               visible: !root.settingsOpen
-              // Children are always cpu/mem/gpu/net/disk in that order; map
-              // by tab id, not by the filtered `tabs` array.
-              currentIndex: {
-                var map = { "cpu": 0, "mem": 1, "gpu": 2, "net": 3, "disk": 4 }
-                var i = map[root.currentTab]
-                return (i === undefined) ? 0 : i
+              implicitHeight: {
+                var item = root.activeTabItem()
+                return visible && item ? item.implicitHeight : 0
               }
-              implicitHeight: visible && currentIndex >= 0 && children[currentIndex] ? children[currentIndex].implicitHeight : 0
 
-              Tabs.CpuTab { id: cpuTab; panel: root; model: root.store }
-              Tabs.MemoryTab { id: memTab; panel: root; model: root.store }
-              Tabs.GpuTab { id: gpuTab; panel: root; model: root.store }
-              Tabs.NetworkTab { id: netTab; panel: root; model: root.store }
-              Tabs.DiskTab { id: diskTab; panel: root; model: root.store }
+              Tabs.CpuTab { id: cpuTab; width: parent.width; visible: root.currentTab === "cpu"; panel: root; model: root.store }
+              Tabs.MemoryTab { id: memTab; width: parent.width; visible: root.currentTab === "mem"; panel: root; model: root.store }
+              Tabs.GpuTab { id: gpuTab; width: parent.width; visible: root.currentTab === "gpu"; panel: root; model: root.store }
+              Tabs.NetworkTab { id: netTab; width: parent.width; visible: root.currentTab === "net"; panel: root; model: root.store }
+              Tabs.DiskTab { id: diskTab; width: parent.width; visible: root.currentTab === "disk"; panel: root; model: root.store }
             }
           }
         }
