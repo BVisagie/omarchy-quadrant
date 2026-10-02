@@ -56,18 +56,21 @@ hardware/name evidence; [device settings](SETTINGS.md) can override it.
   temperature, power, and clock while its segment or tab is visible.
   It does not run in the streaming sampler.
 - **Intel:** DRM fdinfo engine time supplies busy, with the selected
-  card's RC6 / xe `gtidle` residency as a fallback. Values from sources
-  other than DRM engine time or direct sysfs busy have a `~` prefix.
-  A frequency ratio is an estimate of clock activity, not measured
-  utilization. Multi-engine capacity is honored so multi-instance
-  engines still read 0–100 %.
+  card's RC6 / xe `gtidle` residency as a fallback. Both are presented as
+  busy without an estimate prefix. The frequency-ratio fallback is an
+  estimate of clock activity, not measured utilization; it gets a `~`
+  prefix in the bar and GPU tab, or a frequency-estimate label on the CPU
+  tab's integrated-GPU card. Multi-engine capacity is honored so
+  multi-instance engines still read 0–100 %.
 
 AMD/Intel process rows use DRM fdinfo busy and resident memory. A DRM
 client shared across fork is attributed once, to the first PID found.
 Rows depend on readable fdinfo and may be incomplete. NVIDIA process
 rows use `nvidia-smi --query-compute-apps`: memory only, covering compute
-apps rather than all graphics clients. Multiple dedicated cards get a
-picker with model names where available.
+apps rather than all graphics clients. Same-name GPU rows are grouped,
+with busy and resident memory summed and the lowest PID used in the
+tooltip. Multiple dedicated cards get a picker with model names where
+available.
 
 ## Drives
 

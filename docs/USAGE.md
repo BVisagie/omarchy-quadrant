@@ -10,19 +10,21 @@
   stack the segments and drop the glyphs. `barLabels none` hides labels.
   Each segment toggles independently from its tab's **in bar** switch or the settings view; unchecking every segment leaves a
   compact system-monitor glyph.
-- **Click a segment** to open its tab (or close the panel when that tab is
-  already showing); click elsewhere in the slot to toggle the panel on the
-  last-used tab. **Right-click** opens btop; **middle-click**
-  toggles the panel. **Scroll** over the slot to switch tabs while the
-  panel is open. Hovering a segment shows its tooltip.
+- **Left- or middle-click a segment** to open its tab, switch to it, or
+  close the panel when that tab is already showing. Left- or middle-click
+  the slot padding or icon-only fallback to toggle the panel on the
+  last-used tab. **Right-click** opens btop on either target. **Scroll**
+  over the slot to switch tabs while the panel is open. Hovering a segment
+  shows its tooltip.
 - **GPU** is dedicated cards only; integrated graphics live on the CPU tab.
   When no dedicated card is detected the GPU slot shows **Drives** instead
   (`diskFallbackWithoutGpu`). A separate drives segment is off by default.
-- **Colour** (`barPalette`): `theme` paints a value in the theme's urgent
-  colour at 90 % and keeps it there until it drops below 80 % (no flicker
-  on the line); `heat` ramps percentage values from muted through accent to
-  urgent; `vivid` uses one hue per metric until the same hot threshold
-  switches it to urgent. Network rates keep the foreground colour.
+- **Colour** (`barPalette`): for percentage segments, `theme` uses the
+  urgent colour at 90 % until the value drops below 80 %; `heat` ramps
+  from muted through accent to urgent; `vivid` uses a fixed metric hue
+  until the same hot threshold switches it to urgent. Network rates use
+  the foreground in `theme`, the muted floor colour in `heat`, and a fixed
+  network hue in `vivid`. Network rates never trigger hot colouring.
 
 ## Panel
 
@@ -59,10 +61,12 @@ stack total, memory usage, GPU busy, drive **read** rate, or network
 average, so short spikes can be lower than in the minute view.
 
 Click a process-list heading to cycle between the stable roster order,
-descending value, and name. CPU, Memory, and Drives group same-name rows;
-a grouped row's tooltip uses a representative PID. CPU, Memory, Drives,
-and attributed Network rows keep sparklines of up to thirty samples while
-they remain in the roster. GPU and **Other traffic** rows have no sparkline.
+descending value, and name. CPU, GPU, Memory, and Drives sum rows with
+the same display name; a grouped row's tooltip uses the lowest PID in the
+group. Network keeps separate process rows plus **Other traffic**. CPU,
+Memory, Drives, and attributed Network rows keep sparklines of up to thirty
+samples while they remain in the roster. GPU and **Other traffic** rows
+have no sparkline.
 See [measurement limits](METRICS.md) for what each process value represents.
 
 ## IPC
