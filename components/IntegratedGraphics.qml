@@ -134,7 +134,6 @@ Item {
         thickness: Style.space(Theme.metrics.ringThickness)
         fraction: root.ringFraction()
         color: Theme.series.gpu
-        trackColor: Theme.trackFor(root.foreground)
         centerText: root.ringText()
         subText: root.busyIsEstimate ? "freq" : "busy"
         foreground: root.foreground

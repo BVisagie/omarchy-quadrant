@@ -1,17 +1,18 @@
 import QtQuick
 import qs.Commons
+import "../lib/index.mjs" as Model
 
-// Label/value row used across panel tabs. Both texts are PlainText: values
-// can carry script output.
+// One "label ........ value" line. Values use tabular numerals so a column
+// of them stays aligned while digits change.
 Item {
   id: root
 
   property string label: ""
   property string value: ""
-  property color labelColor: Qt.darker(foreground, 1.4)
-  property color valueColor: foreground
-  property color foreground: "#cacccc"
+  property color foreground: Color.foreground
   property string fontFamily: Style.font.family
+  property color labelColor: Model.dimColor(String(foreground), String(Color.background))
+  property color valueColor: foreground
   property bool valueBold: false
   property real labelMaximumRatio: 0.42
   property real textSpacing: Style.space(8)
@@ -40,6 +41,7 @@ Item {
     font.family: root.fontFamily
     font.pixelSize: Style.font.body
     font.bold: root.valueBold
+    font.features: ({ "tnum": 1 })
     anchors.left: labelText.right
     anchors.leftMargin: root.textSpacing
     anchors.right: parent.right

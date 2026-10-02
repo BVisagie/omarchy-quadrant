@@ -1,20 +1,20 @@
 import QtQuick
 import qs.Commons
-import "../Theme.js" as Theme
+import "../lib/index.mjs" as Model
 
-// Topology-aware core usage grid. Hybrid chips get P / E / LP rows with
-// larger P cells; homogeneous chips wrap as a uniform mosaic. SMT siblings
-// are already collapsed by Model.coreGridLayout. Fill follows the theme
-// accent, urgent at ≥90%.
+// Per-core load as a grid of cells: one cell per physical core (SMT
+// siblings collapsed), rows per core class on hybrid chips. Cell colour
+// is the theme heat ramp, so a busy core warms from muted through accent
+// to urgent instead of flipping at a threshold.
+//   layout — Model.coreGridLayout(topo, usageById)
 Item {
   id: root
 
   property var layout: ({ mode: "uniform", rows: [] })
-  property color accent: Color.accent
-  property color urgent: Color.urgent
-  property color foreground: "#cacccc"
+  property color foreground: Color.foreground
   property string fontFamily: Style.font.family
 
+  readonly property var pal: Model.seriesPalette(String(Color.accent), String(Color.urgent), String(foreground), String(Color.background))
   readonly property bool hasCells: {
     var rows = root.layout && root.layout.rows ? root.layout.rows : []
     for (var i = 0; i < rows.length; i++) {
@@ -40,18 +40,6 @@ Item {
     return ""
   }
 
-  function fillFor(usage) {
-    var u = Number(usage) || 0
-    return u >= 90 ? root.urgent : root.accent
-  }
-
-  function opacityFor(usage) {
-    var u = Number(usage) || 0
-    if (u < 0) u = 0
-    if (u > 100) u = 100
-    return 0.18 + 0.82 * (u / 100)
-  }
-
   Column {
     id: column
     width: parent.width
@@ -60,11 +48,10 @@ Item {
     Text {
       textFormat: Text.PlainText
       text: "CORES"
-      color: Qt.darker(root.foreground, 1.4)
+      color: root.pal.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: true
-      font.letterSpacing: 1.2
     }
 
     Repeater {
@@ -81,7 +68,7 @@ Item {
           textFormat: Text.PlainText
           visible: root.layout && root.layout.mode === "hybrid" && root.kindLabel(rowRoot.modelData.kind) !== ""
           text: root.kindLabel(rowRoot.modelData.kind)
-          color: Qt.darker(root.foreground, 1.3)
+          color: root.pal.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           font.bold: true
@@ -96,20 +83,20 @@ Item {
           anchors.left: kindText.right
           anchors.leftMargin: kindText.visible ? Style.space(6) : 0
           anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(3)
 
           Repeater {
-            model: rowRoot.modelData && rowRoot.modelData.cells ? rowRoot.modelData.cells : []
-
+            model: rowRoot.modelData.cells || []
             delegate: Rectangle {
+              id: cell
               required property var modelData
-              width: root.cellSize(rowRoot.modelData ? rowRoot.modelData.kind : "same")
+              readonly property real usage: Math.max(0, Math.min(100, Number(modelData.usage) || 0))
+              width: root.cellSize(rowRoot.modelData.kind)
               height: width
-              radius: 2
-              color: root.fillFor(modelData.usage)
-              opacity: root.opacityFor(modelData.usage)
-              border.width: 1
-              border.color: Theme.trackFor(root.foreground)
+              radius: Style.space(2)
+              color: Model.heatColor(usage, root.pal.faint, root.pal.primary, root.pal.hot, 4)
+              Behavior on color { ColorAnimation { duration: 320 } }
             }
           }
         }

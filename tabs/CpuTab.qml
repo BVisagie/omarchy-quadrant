@@ -110,15 +110,15 @@ Item {
       width: parent.width
       stacked: true
       fixedMax: 100
-      capacity: root.model ? root.model.historyLimit : 60
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      gridColor: Theme.gridFor(root.panel ? root.panel.barForeground : "#cacccc")
-      series: [
-        { label: "user", color: Theme.series.cpuUser, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.u }) },
-        { label: "system", color: Theme.series.cpuSystem, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.s }) },
-        { label: "iowait", color: Theme.series.cpuIowait, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.io }) },
-        { label: "steal", color: Theme.series.cpuSteal, values: (root.model ? root.model.cpuHistory : []).map(function (p) { return p.st }) }
+      points: root.model ? root.model.cpuHistory : []
+      fields: [
+        { key: "u", label: "user", color: Theme.series.cpuUser },
+        { key: "s", label: "system", color: Theme.series.cpuSystem },
+        { key: "io", label: "iowait", color: Theme.series.cpuIowait },
+        { key: "st", label: "steal", color: Theme.series.cpuSteal }
       ]
+      windowSeconds: 60
     }
 
     // legend
@@ -164,8 +164,6 @@ Item {
         root.sysCpu && root.sysCpu.topo ? root.sysCpu.topo : [],
         root.model && root.model.coreUsage ? root.model.coreUsage : {}
       )
-      accent: Color.accent
-      urgent: Color.urgent
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
       fontFamily: root.panel && root.panel.bar ? root.panel.bar.fontFamily : Style.font.family
     }

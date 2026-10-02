@@ -1,29 +1,57 @@
 import QtQuick
 import Quickshell
 import qs.Commons
-import "../Theme.js" as Theme
+import qs.Ui
+import "../lib/index.mjs" as Model
 
-// Process roster with app icons and a sticky row order (the merge itself
-// happens in Model.mergeRoster; this component only renders).
+// Process roster with app icons, a sparkline per row, sortable header and
+// a single cursor shared by mouse and keyboard. The sticky row order comes
+// from Model.mergeRoster in the store; this component only renders and
+// re-sorts a copy when the header is clicked.
 //
 // Icon/friendly-name matching is EXACT-MATCH ONLY against the normalized
 // desktop-entry id, Name, Icon, and StartupWMClass — substring matching
-// would let a process borrow another app's identity. When a desktop entry
-// matches, its Name is shown; otherwise the resolved comm from lib/processes.mjs.
-// Every label is PlainText because process names are attacker-controlled.
+// would let a process borrow another app's identity. Every label is
+// PlainText because process names are attacker-controlled.
+//
+//   rows — [{ pid, comm, valueText, sortKey, history, hint }]
 Column {
   id: root
 
-  property var rows: []            // [{ pid, comm, valueText, subText }]
+  property var rows: []
   property string valueHeader: ""
   property string emptyText: "No activity"
   property string errorText: ""
-  property color foreground: "#cacccc"
+  property color foreground: Color.foreground
   property string fontFamily: Style.font.family
+  property bool showSparkline: true
+  property real sparklineMax: 0
+  // "sticky" keeps the store's order; "value" and "name" re-sort locally.
+  property string sortMode: "sticky"
+  property int cursorIndex: -1
+  property bool cursorActive: false
 
-  spacing: Style.spacing.xs
+  signal rowHovered(int index, bool isHovered)
 
+  readonly property color dim: Model.dimColor(String(foreground), String(Color.background))
+  readonly property color sparkColor: Color.accent
+
+  spacing: Style.spacing.xxs
+
+  readonly property var displayRows: {
+    var src = Array.isArray(rows) ? rows.slice() : []
+    if (sortMode === "value") src.sort(function (a, b) { return (Number(b.sortKey) || 0) - (Number(a.sortKey) || 0) })
+    else if (sortMode === "name") src.sort(function (a, b) { return String(a.comm || "").toLowerCase() < String(b.comm || "").toLowerCase() ? -1 : 1 })
+    return src
+  }
+
+  function cycleSort() {
+    sortMode = sortMode === "sticky" ? "value" : sortMode === "value" ? "name" : "sticky"
+  }
+
+  // ---- desktop-entry lookup (bounded cache) ------------------------------
   property var iconCache: ({})
+  property int iconCacheSize: 0
 
   function normalizeKey(value) {
     var s = String(value || "").toLowerCase()
@@ -33,9 +61,6 @@ Column {
     return s
   }
 
-  // Returns { icon, name } or null. Exact matches only. Reads the cache;
-  // the cache is filled in one pass by warmCache() whenever rows change, so
-  // delegate bindings stay side-effect free.
   function entryForComm(comm) {
     var key = normalizeKey(comm)
     if (key === "") return null
@@ -76,15 +101,22 @@ Column {
       additions.push({ key: key, value: found })
     }
     if (additions.length === 0) return
+    // The cache only ever grows with new comm names; cap it so a machine
+    // that churns through thousands of short-lived names cannot grow it
+    // without bound.
     var next = ({})
-    for (var k in root.iconCache) next[k] = root.iconCache[k]
-    for (var j = 0; j < additions.length; j++) next[additions[j].key] = additions[j].value
+    var size = 0
+    if (root.iconCacheSize + additions.length <= 256) {
+      for (var k in root.iconCache) { next[k] = root.iconCache[k]; size++ }
+    }
+    for (var j = 0; j < additions.length; j++) { next[additions[j].key] = additions[j].value; size++ }
     root.iconCache = next
+    root.iconCacheSize = size
   }
 
   onRowsChanged: warmCache()
 
-  // Header
+  // ---- header ------------------------------------------------------------
   Item {
     width: root.width
     implicitHeight: headerLabel.implicitHeight
@@ -94,24 +126,42 @@ Column {
       id: headerLabel
       textFormat: Text.PlainText
       text: "TOP PROCESSES"
-      color: Qt.darker(root.foreground, 1.4)
+      color: root.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: true
-      font.letterSpacing: 1.2
       anchors.left: parent.left
     }
 
     Text {
+      id: sortHint
+      textFormat: Text.PlainText
+      text: root.sortMode === "sticky" ? "" : (root.sortMode === "value" ? "by value" : "by name")
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      anchors.left: headerLabel.right
+      anchors.leftMargin: Style.space(8)
+    }
+
+    Text {
+      id: valueHeaderText
       textFormat: Text.PlainText
       text: root.valueHeader
-      color: Qt.darker(root.foreground, 1.4)
+      color: headerMouse.containsMouse ? root.foreground : root.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: true
-      font.letterSpacing: 1.2
       anchors.right: parent.right
       horizontalAlignment: Text.AlignRight
+    }
+
+    MouseArea {
+      id: headerMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.cycleSort()
     }
   }
 
@@ -119,9 +169,9 @@ Column {
     textFormat: Text.PlainText
     visible: root.errorText !== ""
     text: root.errorText
-    color: "#f7768e"
+    color: Color.urgent
     font.family: root.fontFamily
-    font.pixelSize: Style.font.body
+    font.pixelSize: Style.font.caption
     width: root.width
     wrapMode: Text.WordWrap
   }
@@ -130,15 +180,15 @@ Column {
     textFormat: Text.PlainText
     visible: root.errorText === "" && root.rows.length === 0
     text: root.emptyText
-    color: Qt.darker(root.foreground, 1.4)
+    color: root.dim
     font.family: root.fontFamily
-    font.pixelSize: Style.font.body
+    font.pixelSize: Style.font.bodySmall
   }
 
   Repeater {
-    model: root.errorText === "" ? root.rows : []
+    model: root.errorText === "" ? root.displayRows : []
 
-    delegate: Item {
+    delegate: CursorSurface {
       id: delegateRoot
       required property var modelData
       required property int index
@@ -151,21 +201,35 @@ Column {
         if (entry && entry.name !== "") return entry.name
         return raw
       }
+      readonly property string hint: {
+        if (!modelData) return ""
+        var bits = []
+        if (modelData.pid > 0) bits.push("pid " + modelData.pid)
+        if (modelData.hint) bits.push(String(modelData.hint))
+        return bits.join(" · ")
+      }
 
       width: root.width
-      implicitHeight: rowContent.implicitHeight
+      implicitHeight: rowContent.implicitHeight + Style.space(4)
+      hasCursor: root.cursorActive && root.cursorIndex === index
+      foreground: root.foreground
+      color: hasCursor ? fill : "transparent"
 
       Row {
         id: rowContent
-        width: parent.width
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: Style.space(4)
+        anchors.rightMargin: Style.space(4)
+        anchors.verticalCenter: parent.verticalCenter
         spacing: Style.spacing.controlGap
 
         Image {
           source: delegateRoot.isOther
                   ? Quickshell.iconPath("network-transmit-receive", true)
                   : (delegateRoot.entry ? delegateRoot.entry.icon : Quickshell.iconPath("application-x-executable", true))
-          width: Style.space(Theme.metrics.processIcon)
-          height: Style.space(Theme.metrics.processIcon)
+          width: Style.space(16)
+          height: Style.space(16)
           sourceSize.width: width
           sourceSize.height: height
           anchors.verticalCenter: parent.verticalCenter
@@ -173,27 +237,54 @@ Column {
         }
 
         Text {
+          id: nameText
           textFormat: Text.PlainText
           text: delegateRoot.displayName
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
           elide: Text.ElideRight
-          width: rowContent.width - Style.space(Theme.metrics.processIcon)
-                 - rowContent.spacing - valueText.implicitWidth - rowContent.spacing
+          width: Math.max(0, rowContent.width - Style.space(16) - rowContent.spacing * (root.showSparkline ? 3 : 2)
+                 - valueText.implicitWidth - (root.showSparkline ? spark.width : 0))
+          anchors.verticalCenter: parent.verticalCenter
+        }
+
+        Sparkline {
+          id: spark
+          visible: root.showSparkline && !delegateRoot.isOther
+          values: delegateRoot.modelData && delegateRoot.modelData.history ? delegateRoot.modelData.history : []
+          maxValue: root.sparklineMax
+          color: root.sparkColor
+          width: Style.space(36)
+          height: Style.space(12)
           anchors.verticalCenter: parent.verticalCenter
         }
 
         Text {
           id: valueText
           textFormat: Text.PlainText
-          text: modelData && modelData.valueText || ""
-          color: Qt.darker(root.foreground, 1.2)
+          text: delegateRoot.modelData && delegateRoot.modelData.valueText || ""
+          color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
+          font.features: ({ "tnum": 1 })
           horizontalAlignment: Text.AlignRight
           anchors.verticalCenter: parent.verticalCenter
         }
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        onEntered: root.rowHovered(delegateRoot.index, true)
+        onExited: root.rowHovered(delegateRoot.index, false)
+      }
+
+      PanelToolTip {
+        visible: delegateRoot.hasCursor && delegateRoot.hint !== ""
+        text: delegateRoot.hint
+        fontFamily: root.fontFamily
       }
     }
   }

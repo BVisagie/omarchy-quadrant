@@ -151,7 +151,6 @@ Item {
           fraction: c && c.usedPct !== null && c.usedPct !== undefined
                     ? Model.clamp(c.usedPct / 100, 0, 1) : 0
           color: Theme.series.memApps
-          trackColor: root.memTrack
           centerText: c ? Model.formatPct(c.usedPct) : "--"
           subText: "used"
           foreground: root.panel ? root.panel.barForeground : "#cacccc"
@@ -166,7 +165,6 @@ Item {
           readonly property var psi: root.sample ? root.sample.psi : null
           fraction: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Math.min(1, psi.ms10 / 100) : 0
           color: Theme.series.swap
-          trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
           centerText: psi && psi.ms10 !== null && psi.ms10 !== undefined ? Model.formatPct(psi.ms10, 1) : "--"
           subText: "pressure"
           foreground: root.panel ? root.panel.barForeground : "#cacccc"
@@ -188,7 +186,6 @@ Item {
         Components.CompositionBar {
           width: parent.width
           segments: root.compositionSegments
-          trackColor: root.memTrack
         }
 
         Text {

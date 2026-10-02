@@ -81,13 +81,14 @@ Item {
 
     Components.HistoryGraph {
       width: parent.width
-      capacity: root.model ? root.model.historyLimit : 60
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      gridColor: Theme.gridFor(root.panel ? root.panel.barForeground : "#cacccc")
-      series: [
-        { label: "down", color: Theme.series.netRx, values: (root.model ? root.model.netHistory : []).map(function (p) { return p.rx }) },
-        { label: "up", color: Theme.series.netTx, values: (root.model ? root.model.netHistory : []).map(function (p) { return p.tx }) }
+      points: root.model ? root.model.netHistory : []
+      fields: [
+        { key: "rx", label: "down", color: Theme.series.netRx },
+        { key: "tx", label: "up", color: Theme.series.netTx }
       ]
+      windowSeconds: 60
+      formatValue: function (v) { return Model.formatRate(v) }
     }
 
     Row {

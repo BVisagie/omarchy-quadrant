@@ -162,13 +162,14 @@ Item {
 
     Components.HistoryGraph {
       width: parent.width
-      capacity: root.model ? root.model.historyLimit : 60
       foreground: root.panel ? root.panel.barForeground : "#cacccc"
-      gridColor: Theme.gridFor(root.panel ? root.panel.barForeground : "#cacccc")
-      series: [
-        { label: "read", color: Theme.series.diskRead, values: (root.model ? root.model.diskHistory : []).map(function (p) { return p.r }) },
-        { label: "write", color: Theme.series.diskWrite, values: (root.model ? root.model.diskHistory : []).map(function (p) { return p.w }) }
+      points: root.model ? root.model.diskHistory : []
+      fields: [
+        { key: "r", label: "read", color: Theme.series.diskRead },
+        { key: "w", label: "write", color: Theme.series.diskWrite }
       ]
+      windowSeconds: 60
+      formatValue: function (v) { return Model.formatRate(v) }
     }
 
     Row {

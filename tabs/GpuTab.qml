@@ -201,7 +201,6 @@ Item {
           return 0
         }
         color: Theme.series.gpu
-        trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
         centerText: root.busyText()
         subText: root.busyIsEstimate ? "freq" : "busy"
         foreground: root.panel ? root.panel.barForeground : "#cacccc"
@@ -215,7 +214,6 @@ Item {
         thickness: Style.space(Theme.metrics.largeRingThickness)
         fraction: root.vramFraction()
         color: Theme.series.memCache
-        trackColor: Theme.trackFor(root.panel ? root.panel.barForeground : "#cacccc")
         centerText: root.live && vramTotalKnown() ? Model.formatPct(root.vramFraction() * 100) : "--"
         subText: root.live && root.live.memKind === "shared" ? "shared" : "VRAM"
         foreground: root.panel ? root.panel.barForeground : "#cacccc"

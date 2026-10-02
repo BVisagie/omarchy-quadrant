@@ -789,9 +789,37 @@ Item {
   // is open on any monitor; process-net runs while a Network tab is open.
   // Rows keep raw numbers; tabs format them.
   property var procSample: null
-  property var cpuRows: []        // { pid, comm, value: machine %, core: one-core %, sortKey }
-  property var memRows: []        // { pid, comm, value: KiB, pct, kind, sortKey }
-  property var ioRows: []         // { pid, comm, read, write, value: B/s, sortKey }
+  property var cpuRows: []        // { pid, comm, value: machine %, core: one-core %, sortKey, history }
+  property var memRows: []        // { pid, comm, value: KiB, pct, kind, sortKey, history }
+  property var ioRows: []         // { pid, comm, read, write, value: B/s, sortKey, history }
+  // Short per-row trends for the sparklines: the last `sparkLength` values
+  // of every row that is currently shown, keyed by pid per metric. Rows
+  // that leave the list drop their trend.
+  readonly property int sparkLength: 30
+  property var sparkHist: ({ cpu: {}, mem: {}, io: {}, net: {}, gpu: {} })
+
+  function withSpark(metric, rows) {
+    var prev = sparkHist[metric] || {}
+    var next = {}
+    var out = []
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i]
+      var key = String(r.pid)
+      var hist = Array.isArray(prev[key]) ? prev[key].slice() : []
+      hist.push(Number(r.value) || 0)
+      while (hist.length > sparkLength) hist.shift()
+      next[key] = hist
+      var copy = {}
+      for (var k in r) copy[k] = r[k]
+      copy.history = hist
+      out.push(copy)
+    }
+    var all = {}
+    for (var m in sparkHist) all[m] = sparkHist[m]
+    all[metric] = next
+    sparkHist = all
+    return out
+  }
   property var procStats: null    // { procs, running, threads, ncpu, ioVisible, ioHidden, dt }
   property string procError: ""
   readonly property bool procSampleWanted: openPanels > 0 && (cpuTabViewers > 0 || memTabViewers > 0 || diskTabViewers > 0)
@@ -822,18 +850,18 @@ Item {
       cpuMapped.push({ pid: c[i].pid, comm: c[i].comm, value: c[i].value, core: c[i].core, sortKey: c[i].value })
     // A sampler run without an interval (first run after a cold start)
     // has no CPU rows; keep the roster rather than flashing it empty.
-    if (parsed.dt > 0 || cpuRows.length === 0) cpuRows = Model.mergeRoster(cpuRows, cpuMapped, limit)
+    if (parsed.dt > 0 || cpuRows.length === 0) cpuRows = withSpark("cpu", Model.mergeRoster(cpuRows, cpuMapped, limit))
     var memMapped = []
     c = Model.nameAndCollapse(parsed.mem, limit)
     for (i = 0; i < c.length; i++)
       memMapped.push({ pid: c[i].pid, comm: c[i].comm, value: c[i].value, kind: c[i].kind || "rss",
                        pct: totalK > 0 ? 100 * c[i].value / totalK : null, sortKey: c[i].value })
-    memRows = Model.mergeRoster(memRows, memMapped, limit)
+    memRows = withSpark("mem", Model.mergeRoster(memRows, memMapped, limit))
     var ioMapped = []
     c = Model.nameAndCollapse(parsed.io, limit)
     for (i = 0; i < c.length; i++)
       ioMapped.push({ pid: c[i].pid, comm: c[i].comm, read: c[i].read, write: c[i].write, value: c[i].value, sortKey: c[i].value })
-    if (parsed.dt > 0 || ioRows.length === 0) ioRows = Model.mergeRoster(ioRows, ioMapped, limit)
+    if (parsed.dt > 0 || ioRows.length === 0) ioRows = withSpark("io", Model.mergeRoster(ioRows, ioMapped, limit))
     procError = ""
   }
 
@@ -898,7 +926,7 @@ Item {
     // named "Other traffic" keeps its own pid and cannot collide with it.
     mapped.push({ pid: 0, comm: "", rx: result.other.rxBps, tx: result.other.txBps,
                   value: result.other.rxBps + result.other.txBps, sortKey: result.other.rxBps + result.other.txBps })
-    netRows = Model.mergeRoster(netRows, mapped, limit + 1)
+    netRows = withSpark("net", Model.mergeRoster(netRows, mapped, limit + 1))
     netPrevSockets = sockets
     netPrevIf = currIf
     netPrevTs = env.ts
