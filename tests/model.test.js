@@ -113,6 +113,62 @@ test("cpuCoreDeltas maps per-logical non-idle percent", () => {
   assert.equal(Math.round(rows[1].busy), 0);
 });
 
+test("cpuCoreDeltas keys cores by id when /proc/stat skips offline cpus", () => {
+  const z = { user: 0, nice: 0, system: 0, idle: 0, iowait: 0, irq: 0, softirq: 0, steal: 0 };
+  const prev = [z, z, z];
+  const curr = [
+    { user: 0, nice: 0, system: 0, idle: 100, iowait: 0, irq: 0, softirq: 0, steal: 0 },
+    { user: 100, nice: 0, system: 0, idle: 0, iowait: 0, irq: 0, softirq: 0, steal: 0 },
+    { user: 0, nice: 0, system: 0, idle: 100, iowait: 0, irq: 0, softirq: 0, steal: 0 }
+  ];
+  // SMT siblings 1 and 3 are offline: ids are 0, 2, 4.
+  const rows = Model.cpuCoreDeltas(prev, curr, [0, 2, 4], [0, 2, 4]);
+  assert.deepEqual(rows.map((r) => r.id), [0, 2, 4]);
+  assert.equal(Math.round(rows[1].busy), 100);
+  // A core that was offline in the previous sample has no delta yet.
+  const hot = Model.cpuCoreDeltas(prev.slice(0, 2), curr, [0, 2], [0, 2, 4]);
+  assert.deepEqual(hot.map((r) => r.id), [0, 2]);
+  // Without ids, positions are ids (older streams and fixtures).
+  assert.deepEqual(Model.parseCpuCoreIds(undefined, 3), [0, 1, 2]);
+  assert.deepEqual(Model.parseCpuCoreIds([0, "x", 2], 3), [0, 1, 2]);
+  assert.deepEqual(Model.parseCpuCoreIds([0, 2], 3), [0, 1, 2]);
+});
+
+test("parseStreamLine carries sparse core ids through to the delta", () => {
+  const line = JSON.stringify({
+    v: 1, ts: 10, cpu: [1, 0, 1, 1, 0, 0, 0, 0],
+    mem: { tot: 1, fre: 1, avl: 1, buf: 0, cac: 0, srec: 0, slab: 0, swtot: 0, swfre: 0 },
+    cc: [[1, 0, 0, 1, 0, 0, 0, 0], [1, 0, 0, 1, 0, 0, 0, 0]], ci: [0, 2]
+  });
+  const s = Model.parseStreamLine(line);
+  assert.deepEqual(s.cpuCoreIds, [0, 2]);
+  const s2 = Model.parseStreamLine(JSON.stringify({
+    v: 1, ts: 11, cpu: [2, 0, 1, 1, 0, 0, 0, 0],
+    mem: { tot: 1, fre: 1, avl: 1, buf: 0, cac: 0, srec: 0, slab: 0, swtot: 0, swfre: 0 },
+    cc: [[1, 0, 0, 2, 0, 0, 0, 0], [2, 0, 0, 1, 0, 0, 0, 0]], ci: [0, 2]
+  }));
+  const rows = Model.cpuCoreDeltas(s.cpuCores, s2.cpuCores, s.cpuCoreIds, s2.cpuCoreIds);
+  assert.deepEqual(rows.map((r) => [r.id, Math.round(r.busy)]), [[0, 0], [2, 100]]);
+});
+
+test("physical cores are counted per package, not by bare core_id", () => {
+  const topo = [
+    { id: 0, core: 0, pkg: 0, cls: "performance", maxKhz: 3000000, cap: 0 },
+    { id: 1, core: 1, pkg: 0, cls: "performance", maxKhz: 3000000, cap: 0 },
+    { id: 2, core: 0, pkg: 1, cls: "performance", maxKhz: 3000000, cap: 0 },
+    { id: 3, core: 1, pkg: 1, cls: "performance", maxKhz: 3000000, cap: 0 }
+  ];
+  const info = Model.parseSystemCpu({ modelName: "x", vendorId: "y", topo: topo });
+  assert.equal(info.physCores, 4);
+  assert.equal(info.classes.performance, 4);
+  const layout = Model.coreGridLayout(topo, { 0: 10, 1: 20, 2: 30, 3: 40 });
+  assert.equal(layout.rows[0].cells.length, 4);
+  assert.equal(layout.rows[0].cells[2].usage, 30);
+  // Omitting pkg still works for single-socket topologies.
+  const single = topo.slice(0, 2).map((e) => ({ id: e.id, core: e.core, cls: e.cls, maxKhz: e.maxKhz, cap: 0 }));
+  assert.equal(Model.parseSystemCpu({ topo: single }).physCores, 2);
+});
+
 test("classifyCpuTopology keeps Intel hybrid labels and counts physical cores", () => {
   const topo = [
     { id: 0, core: 0, cls: "performance", maxKhz: 5100000, cap: 0, l3: "0-19" },

@@ -380,7 +380,8 @@ BarWidget {
     cpuPct = Model.cpuDelta(prevSample ? prevSample.cpu : null, s.cpu)
     coreUsage = {}
     if (prevSample && prevSample.cpuCores && s.cpuCores) {
-      var coreDeltas = Model.cpuCoreDeltas(prevSample.cpuCores, s.cpuCores)
+      var coreDeltas = Model.cpuCoreDeltas(prevSample.cpuCores, s.cpuCores,
+                                           prevSample.cpuCoreIds, s.cpuCoreIds)
       var usage = {}
       for (var c = 0; c < coreDeltas.length; c++) usage[coreDeltas[c].id] = coreDeltas[c].busy
       coreUsage = usage

@@ -348,6 +348,7 @@ function parseStreamLine(line) {
     cores: Math.max(1, Math.round(nonNeg(data.cores) || 1)),
     cpuFreqMhz: num(data.cf, null),
     cpuCores: parseCpuCoreArray(data.cc),
+    cpuCoreIds: parseCpuCoreIds(data.ci, parseCpuCoreArray(data.cc).length),
     disk: parseStreamDisk(data.disk)
   }
 }
@@ -391,15 +392,44 @@ function parseCpuCoreArray(value) {
   return out
 }
 
-function cpuCoreDeltas(prevCores, currCores) {
+// Per-logical cpu ids that match a `cc` array. /proc/stat lists online
+// CPUs only, so ids can be sparse; when the stream sends none, positions
+// are the ids (older streams and fixtures).
+function parseCpuCoreIds(value, count) {
+  var out = []
+  var i
+  if (Array.isArray(value) && value.length === count) {
+    for (i = 0; i < count; i++) {
+      var id = num(value[i], null)
+      if (id === null || id < 0 || id > 4095 || Math.round(id) !== id) { out = null; break }
+      out.push(id)
+    }
+    if (out) return out
+    out = []
+  }
+  for (i = 0; i < count; i++) out.push(i)
+  return out
+}
+
+// Per-logical non-idle percent, keyed by cpu id. Samples are matched by
+// id, so a core that goes offline between samples (or comes back) never
+// borrows another core's counters.
+function cpuCoreDeltas(prevCores, currCores, prevIds, currIds) {
   var prev = Array.isArray(prevCores) ? prevCores : []
   var curr = Array.isArray(currCores) ? currCores : []
+  var pids = parseCpuCoreIds(prevIds, prev.length)
+  var cids = parseCpuCoreIds(currIds, curr.length)
+  var prevById = {}
+  var i
+  for (i = 0; i < prev.length; i++) prevById[pids[i]] = prev[i]
   var out = []
-  var n = curr.length < prev.length ? curr.length : prev.length
-  for (var i = 0; i < n; i++) {
-    var d = cpuDelta(prev[i], curr[i])
+  for (i = 0; i < curr.length; i++) {
+    var id = cids[i]
+    var before = prevById[id]
+    if (!before) continue
+    var d = cpuDelta(before, curr[i])
     out.push({
-      id: i,
+      id: id,
       busy: d ? d.nonIdle : 0
     })
   }
@@ -1776,14 +1806,22 @@ function parseCpuTopoEntry(e) {
   var cap = num(e.cap, 0)
   if (cap === null || cap < 0) cap = 0
   var l3 = clipStr(e.l3, 64)
+  var pkg = num(e.pkg, 0)
+  if (pkg === null || pkg < 0) pkg = 0
   return {
     id: Math.round(id),
     core: Math.round(core),
+    pkg: Math.round(pkg),
     cls: cls,
     maxKhz: maxKhz,
     cap: cap,
     l3: l3
   }
+}
+
+// core_id is only unique within a package; this is the key that is.
+function physicalCoreKey(e) {
+  return String(e.pkg || 0) + ":" + String(e.core)
 }
 
 function parseCpuTopo(list) {
@@ -1867,7 +1905,7 @@ function cpuClassCounts(topo) {
   var phys = {}
   var i
   for (i = 0; i < topo.length; i++) {
-    var key = String(topo[i].core) + ":" + topo[i].cls
+    var key = physicalCoreKey(topo[i]) + ":" + topo[i].cls
     if (!phys[key]) phys[key] = topo[i].cls
   }
   var counts = { performance: 0, efficiency: 0, lowpower: 0 }
@@ -1896,9 +1934,9 @@ function coreGridLayout(topo, usageById) {
   var i
   for (i = 0; i < classified.length; i++) {
     var e = classified[i]
-    var key = String(e.core)
+    var key = physicalCoreKey(e)
     if (!byCore[key]) {
-      byCore[key] = { core: e.core, cls: e.cls, logicals: [], usage: 0 }
+      byCore[key] = { core: e.core, pkg: e.pkg, cls: e.cls, logicals: [], usage: 0 }
       coreOrder.push(key)
     }
     byCore[key].logicals.push(e.id)
@@ -1920,6 +1958,7 @@ function coreGridLayout(topo, usageById) {
       if (kind && cell.cls !== kind) continue
       cells.push({
         core: cell.core,
+        pkg: cell.pkg,
         cls: cell.cls,
         logicals: cell.logicals.slice(),
         usage: cell.usage
@@ -1955,7 +1994,7 @@ function parseSystemCpu(c) {
     var seen = {}
     var phys = 0
     for (var i = 0; i < topo.length; i++) {
-      var ck = String(topo[i].core)
+      var ck = physicalCoreKey(topo[i])
       if (!seen[ck]) { seen[ck] = true; phys++ }
     }
     physCores = phys
@@ -2465,6 +2504,8 @@ if (typeof module !== "undefined" && module.exports) {
     parseCpuCoreArray: parseCpuCoreArray,
     cpuDelta: cpuDelta,
     cpuCoreDeltas: cpuCoreDeltas,
+    parseCpuCoreIds: parseCpuCoreIds,
+    physicalCoreKey: physicalCoreKey,
     cpuBarTooltip: cpuBarTooltip,
     netRates: netRates,
     isExcludedDiskName: isExcludedDiskName,

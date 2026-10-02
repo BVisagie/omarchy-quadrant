@@ -222,17 +222,23 @@ fi
 
 read_stat() {
   # $1: name of result array — user nice system idle iowait irq softirq steal cores
-  # Also rewrites CORE_JSON as a JSON array of per-logical 8-tuples.
-  local tag u n s id iw irq si st _rest
+  # Also rewrites CORE_JSON as a JSON array of per-logical 8-tuples and
+  # CORE_IDS as the matching array of cpu numbers. /proc/stat lists online
+  # CPUs only, so the ids can be sparse (SMT off, hot-unplugged cores);
+  # consumers must key per-core data by id, never by position.
+  local tag u n s id iw irq si st _rest cid
   # shellcheck disable=SC2178
   local -n out=$1
   local cores=0
   CORE_JSON=""
+  CORE_IDS=""
   {
     read -r tag "out[0]" "out[1]" "out[2]" "out[3]" "out[4]" "out[5]" "out[6]" "out[7]" _rest
     while read -r tag u n s id iw irq si st _rest; do
       case $tag in
         cpu[0-9]*)
+          cid=${tag#cpu}
+          [[ $cid =~ ^[0-9]+$ ]] || continue
           [[ $u =~ ^[0-9]+$ ]] || u=0
           [[ $n =~ ^[0-9]+$ ]] || n=0
           [[ $s =~ ^[0-9]+$ ]] || s=0
@@ -241,8 +247,9 @@ read_stat() {
           [[ $irq =~ ^[0-9]+$ ]] || irq=0
           [[ $si =~ ^[0-9]+$ ]] || si=0
           [[ $st =~ ^[0-9]+$ ]] || st=0
-          [[ -n $CORE_JSON ]] && CORE_JSON+=","
+          [[ -n $CORE_JSON ]] && { CORE_JSON+=","; CORE_IDS+=","; }
           CORE_JSON+="[$u,$n,$s,$id,$iw,$irq,$si,$st]"
+          CORE_IDS+="$cid"
           cores=$(( cores + 1 ))
           (( cores >= 128 )) && break
           ;;
@@ -425,6 +432,7 @@ read_gpu() {
 emit() {
   local -a cpu=() mem=() vm=()
   CORE_JSON=""
+  CORE_IDS=""
   read_stat cpu
   read_meminfo mem
   read_vmstat vm
@@ -492,7 +500,7 @@ emit() {
   [[ $l15 =~ ^[0-9.]+$ ]] || l15=0
   [[ $up =~ ^[0-9.]+$ ]] || up=0
 
-  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"disk":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s,"cf":%s,"cc":[%s]}\n' \
+  printf '{"v":1,"ts":%s,"cpu":[%s,%s,%s,%s,%s,%s,%s,%s],"mem":{"tot":%s,"fre":%s,"avl":%s,"buf":%s,"cac":%s,"srec":%s,"slab":%s,"swtot":%s,"swfre":%s},"psi":%s,"vm":{"swpin":%s,"swpout":%s},"net":[%s],"disk":[%s],"r4":[%s],"r6":[%s],"gpu":%s,"t":%s,"load":[%s,%s,%s],"up":%s,"cores":%s,"cf":%s,"cc":[%s],"ci":[%s]}\n' \
     "$EPOCHREALTIME" \
     "${cpu[0]}" "${cpu[1]}" "${cpu[2]}" "${cpu[3]}" \
     "${cpu[4]}" "${cpu[5]}" "${cpu[6]}" "${cpu[7]}" \
@@ -502,7 +510,7 @@ emit() {
     "${vm[0]}" "${vm[1]}" \
     "$NET_JSON" "$DISK_JSON" "$R4_JSON" "$R6_JSON" \
     "$GPU_JSON" "$temp_json" \
-    "$l1" "$l5" "$l15" "$up" "${cpu[8]}" "$cf_json" "$CORE_JSON"
+    "$l1" "$l5" "$l15" "$up" "${cpu[8]}" "$cf_json" "$CORE_JSON" "$CORE_IDS"
 }
 
 ticks=0
