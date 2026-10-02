@@ -20,6 +20,11 @@ jobs:
         run: jq -e '.id and .kinds and .entryPoints.barWidget and .barWidget.schema' manifest.json
       - name: Model tests
         run: node --test tests/model.test.js
+      - name: qmllint gate
+        # Needs qmllint plus an Omarchy shell to resolve qs.* imports; the
+        # script skips cleanly elsewhere, so this documents the local gate
+        # and fails the moment a runner with the shell is attached.
+        run: bash tests/qmllint.sh
 
   scripts:
     runs-on: ubuntu-latest
@@ -55,7 +60,7 @@ jobs:
         # Quote the whole command so GitHub Actions YAML stays valid; the
         # block scalar still lets the shell expand the QML globs.
         run: |
-          ${{ matrix.awk }} -f tests/check-plaintext.awk BarWidget.qml Panel.qml tabs/*.qml components/*.qml
+          ${{ matrix.awk }} -f tests/check-plaintext.awk $(find . -path ./.git -prune -o -name '*.qml' -print | sort)
       - name: Script smoke tests (${{ matrix.awk }})
         run: |
           set -e
