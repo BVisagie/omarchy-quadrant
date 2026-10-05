@@ -80,9 +80,13 @@ bash tests/render.sh cpu /tmp/quadrant-cpu.png
 ```
 
 `qs-smoke.sh` runs the real store under a throwaway Quickshell instance and
-checks settings, viewers, process sampling, and history reload. It needs
+checks settings, viewers, process sampling, history reload, and watchdog
+recovery before and after a settings restart. It needs
 Quickshell and a display (`WAYLAND_DISPLAY` or `DISPLAY`), but does not
 need the Omarchy `qs.*` imports. It skips without those prerequisites.
+The watchdog regression can also run independently with
+`bash tests/qs-stream-recovery.sh`; it uses Qt's offscreen platform and only
+needs Quickshell.
 
 `qmllint.sh` needs qmllint and an Omarchy shell at
 `${OMARCHY_PATH:-/usr/share/omarchy}/shell`; it skips when either is
