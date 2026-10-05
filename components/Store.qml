@@ -448,7 +448,9 @@ Item {
   }
 
   function restartStream() {
-    streamProc.intentionalStop = true
+    // Initial settings/topology bindings can fire before the process starts.
+    // Only a live process will emit the exit that consumes this flag.
+    streamProc.intentionalStop = streamProc.running
     streamProc.running = false
     streamLive = false
     streamRelaunchTimer.restart()
@@ -470,8 +472,13 @@ Item {
     stdout: SplitParser {
       onRead: function (line) { store.handleSample(line) }
     }
-    onRunningChanged: if (running) store.streamStartedAtMs = Date.now()
+    onRunningChanged: if (running) {
+      intentionalStop = false
+      streamKillTimer.stop()
+      store.streamStartedAtMs = Date.now()
+    }
     onExited: function (exitCode) {
+      streamKillTimer.stop()
       store.streamLive = false
       if (streamProc.intentionalStop) {
         streamProc.intentionalStop = false

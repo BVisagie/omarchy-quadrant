@@ -77,3 +77,5 @@ assert s2["cpuLong"] > s["cpuLong"], (s["cpuLong"], s2["cpuLong"])
 assert s2["memLong"] > s["memLong"], (s["memLong"], s2["memLong"])
 print("qs-smoke: ok (history buckets run1=%d run2=%d)" % (s["cpuLong"], s2["cpuLong"]))
 PY
+
+bash tests/qs-stream-recovery.sh
