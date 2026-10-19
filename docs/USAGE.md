@@ -32,11 +32,15 @@ Tabs combine hardware identity, graphs, stats, and top processes. Hiding
 a bar segment leaves its panel tab available. The GPU tab appears only
 when a dedicated card is selected and available.
 
+Tabs use equal slots and wrap on narrow panels. The resource-specific
+**Show … in bar** switch names its current target; the gear remains separate
+from the tab strip. Device choices wrap too, with full names in tooltips.
+
 | Key | Action |
 | --- | --- |
 | `←` `→` or `1`–`N` | switch tab (`N` = visible tabs; GPU is omitted without a dedicated card) |
 | `↑` `↓` | move the cursor through the process rows (hover does the same; the row's tooltip shows the pid and a detail) |
-| uppercase `H` | every graph: last hour ↔ last minute (clicking the graph header or scrolling over the graph does the same) |
+| uppercase `H` | every graph: last hour ↔ last minute (the duration buttons, summary click, and graph wheel do the same) |
 | `S` | settings view (gear in the header) |
 | `R` | re-read system, GPU, and disk inventory and refresh the active tab |
 | `/` | open process search on CPU, Memory, or Drives |
@@ -60,12 +64,23 @@ and the cursor.
 
 ## Graphs and processes
 
-Click the graph's time/average/peak note, scroll over a graph, or press
-uppercase `H` to switch every graph between 60 s and 1 h. Hovering a graph
-shows the readings at that point. The header reports the displayed CPU
+Choose **1 min** or **1 hour**, click the average/peak summary, scroll over a
+graph, or press uppercase `H` to switch every graph in that panel together.
+Choosing the already selected duration leaves it unchanged. Each monitor
+keeps its own choice for the session. Hovering a graph shows the readings at
+that point. The summary names the series it describes: the displayed CPU
 stack total, memory usage, GPU busy, drive **read** rate, or network
 **download** rate. In the hour view, peak means the highest 10 s bucket
 average, so short spikes can be lower than in the minute view.
+
+Changing refresh cadence retains recent minute samples until their timestamps
+leave the 60 s window, including samples collected at the previous cadence.
+
+Memory's used ring is total RAM minus the kernel's available estimate. Its
+composition shows a separate physical-RAM breakdown, with an application
+estimate after free RAM, cache, and unreclaimable slab. The pressure ring
+labels its **0–25% visual scale** while printing the actual PSI percentage,
+including values above 25%. Swap remains outside that physical-RAM breakdown.
 
 CPU, Memory, and Drives start with a compact top-consumer list. **Show all**
 opens a searchable roster; **Show less** returns to the compact list. Search
@@ -132,17 +147,18 @@ methods. See [Settings](SETTINGS.md) for typed values and validation.
 ## Screenshots
 
 These captures show the current panel across dark, light, and monochrome
-Omarchy themes. Click a screenshot to view the original at full size.
+Omarchy themes. The dedicated-GPU example uses fixture readings; the other
+tabs sample the development machine. Click a screenshot to view it at full size.
 
 <table>
   <tr>
     <td width="50%" valign="top">
       <p><strong>CPU</strong><br>Core activity and process CPU.</p>
-      <a href="screenshots/cpu.png"><img src="screenshots/cpu.png" alt="CPU tab showing an Intel Core i7-12700K, load history, physical cores, and top processes in a dark teal theme" width="420"></a>
+      <a href="screenshots/cpu.png"><img src="screenshots/cpu.png" alt="CPU tab showing an Intel Core Ultra 9, labelled history controls, physical cores, and top processes in a dark teal theme" width="420"></a>
     </td>
     <td width="50%" valign="top">
       <p><strong>GPU</strong><br>Dedicated GPU activity and VRAM.</p>
-      <a href="screenshots/gpu.png"><img src="screenshots/gpu.png" alt="GPU tab showing a Radeon RX 7900 XT, busy and VRAM gauges, history, and GPU processes in a light theme" width="420"></a>
+      <a href="screenshots/gpu.png"><img src="screenshots/gpu.png" alt="GPU tab with Radeon fixture readings, busy and VRAM gauges, labelled history controls, and GPU processes in a light theme" width="420"></a>
     </td>
   </tr>
   <tr>
@@ -152,7 +168,7 @@ Omarchy themes. Click a screenshot to view the original at full size.
     </td>
     <td width="50%" valign="top">
       <p><strong>Drives</strong><br>Disk selection, throughput, and mounts.</p>
-      <a href="screenshots/drives.png"><img src="screenshots/drives.png" alt="Drives tab showing a Samsung SSD, the disk picker, read and write throughput, mount usage, and process I/O" width="420"></a>
+      <a href="screenshots/drives.png"><img src="screenshots/drives.png" alt="Drives tab showing a WD SSD, labelled history controls, read and write throughput, mount usage, and process I/O" width="420"></a>
     </td>
   </tr>
 </table>
@@ -161,7 +177,7 @@ Omarchy themes. Click a screenshot to view the original at full size.
 process attribution.
 
 <p align="center">
-  <a href="screenshots/network.png"><img src="screenshots/network.png" alt="Network tab showing an Ethernet interface, interface picker, traffic graph, totals, and process traffic in a dark theme with orange and green accents" width="540"></a>
+  <a href="screenshots/network.png"><img src="screenshots/network.png" alt="Network tab showing a Wi-Fi interface, labelled history controls, traffic graph, totals, and process traffic in a dark teal theme" width="540"></a>
 </p>
 
 The [settings guide includes the full settings view](SETTINGS.md#settings-view).

@@ -2,8 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- Labelled `1 min` / `1 hour` controls switch the panel's graphs together,
+  retaining uppercase `H`, summary clicks, and the graph wheel. Summaries
+  name their series, and missing readings remain excluded.
+- Equal tab slots wrap on narrow panels, device choices keep full names in
+  tooltips, and the bar switch names its resource. Hardware details adapt to
+  narrow widths; memory explains used/composition accounting and labels the
+  pressure ring's 0–25% visual scale beside its actual PSI value.
+
 ### Fixed
 
+- Changing stream cadence preserves the existing minute history until its
+  samples age out, instead of discarding them to fit the slower point count.
 - GPU and disk pins use persistent hardware identities when available,
   with legacy settings and best-effort downgrade selection preserved. `R`
   refreshes GPU inventory as well as drives. Renumbering keeps matching
