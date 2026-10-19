@@ -21,6 +21,10 @@ each metric; reusable controls live in `components/`. Pure functions in
 settings, name processes, and manage history. The same ES modules run
 under Quickshell and Node tests.
 
+`PanelHeader.qml` owns wrapping tab/action layout; `PanelKeys.qml` owns the
+same shortcut path used by the offscreen interaction tests. Device choices
+keep full labels separate from their width-limited presentation.
+
 ### Samplers
 
 `scripts/quadrant-stream` emits one JSON line per tick: CPU and per-core
@@ -87,6 +91,7 @@ bash tests/qs-smoke.sh
 bash tests/qs-device-identity.sh
 bash tests/qs-process-lifecycle.sh
 bash tests/qs-process-ui.sh
+bash tests/qs-panel-ui.sh
 bash tests/qmllint.sh
 bash tests/render.sh cpu /tmp/quadrant-cpu.png
 ```
@@ -129,6 +134,18 @@ filtered results, and cursor scrolling at a narrow width, with and without
 the load-patch pragma. It requires QtTest and shell imports;
 the lifecycle test needs only Quickshell. Both use isolated temporary state.
 
+`qs-panel-ui.sh` exercises the real panel shortcut dispatcher, duration
+buttons, synchronized graphs, summary click and wheel, search focus,
+settings Esc, and access when a bar segment is absent. Four- and five-tab
+headers are checked at 320 and 440 px, plus a one-pixel width sweep for
+font sizes 12–18 and spacing scales 1, 1.5, and 2. It rejects avoidable extra
+rows and clipped labels, and checks new labels and live text-size changes.
+These style fixtures change only the throwaway test process. Device choices
+and hardware details keep long names within the panel. PSI prints its actual
+value above the ring's labelled scale. A real Store fixture changes from 250 ms to 10 s
+and 60 s collection, verifying that minute history expires by timestamp
+rather than by the new cadence's point count. Both load-patch modes run.
+
 `qmllint.sh` needs qmllint and an Omarchy shell at
 `${OMARCHY_PATH:-/usr/share/omarchy}/shell`; it skips when either is
 missing. The regular CI runner therefore does not establish that the QML
@@ -160,6 +177,11 @@ capture before replacing the output file. When a session Wayland socket is
 available, it links only that socket into the temporary runtime and retains
 the desktop platform theme so process icons match the live panel. Without a
 socket it disables the platform theme for headless rendering.
+
+Use `QUADRANT_RENDER_HEADER=1` to include the shared panel header and
+`QUADRANT_RENDER_FIT=1` to size the capture to its content. The dedicated-GPU
+documentation capture uses fixture telemetry because this machine has no
+dedicated card; it does not establish driver or power-management behavior.
 
 ## Before publishing
 

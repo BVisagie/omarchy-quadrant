@@ -116,7 +116,8 @@ Item {
       wrapMode: Text.WordWrap
     }
 
-    ButtonGroup {
+    Components.DeviceChoices {
+      width: parent.width
       visible: root.interfaceOptions.length > 2
       options: root.interfaceOptions
       value: root.pinned ? (root.model ? root.model.networkInterface : "auto") : "auto"
@@ -147,6 +148,7 @@ Item {
       width: parent.width
       spacing: Commons.Style.space(6)
 
+      Components.SectionHeader { width: parent.width; text: "INTERFACE" }
       Components.StatRow {
         width: parent.width
         visible: root.totals !== null

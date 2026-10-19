@@ -128,7 +128,8 @@ Item {
       detail: root.gpuDetail
     }
 
-    ButtonGroup {
+    Components.DeviceChoices {
+      width: parent.width
       visible: root.cardOptions.length > 1
       options: root.cardOptions
       value: root.gpu ? root.gpu.card : ""
@@ -194,6 +195,7 @@ Item {
       width: parent.width
       spacing: Commons.Style.space(6)
 
+      Components.SectionHeader { width: parent.width; text: "DEVICE" }
       Components.StatRow {
         width: parent.width
         visible: root.vramText !== "--"

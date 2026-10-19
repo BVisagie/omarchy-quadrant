@@ -52,7 +52,9 @@ Item {
   readonly property var segmentsSetting: cfg.segments
   readonly property int barIntervalMs: cfg.barIntervalMs
   readonly property int panelIntervalMs: cfg.panelIntervalMs
-  readonly property int historyLimit: Math.ceil(60000 / barIntervalMs) + 1
+  // Enough for a minute at the fastest supported cadence (250 ms), even
+  // after switching to slower collection. Timestamps trim the actual span.
+  readonly property int historyLimit: 242
   readonly property int processCount: cfg.processCount
   readonly property string networkInterface: cfg.networkInterface
   readonly property string gpuDevice: cfg.gpuDevice

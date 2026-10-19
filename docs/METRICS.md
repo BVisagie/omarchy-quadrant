@@ -34,6 +34,9 @@ different calculation from the used-memory ring and need not match it.
 The pressure ring displays PSI memory some avg10 on a 0–25 % scale; its
 numeric value remains the actual percentage. The used-memory graph
 follows its own range when usage varies; a flat series uses the full scale.
+The ring labels that visual scale explicitly. Composition's Applications
+slice is an estimate of the remaining physical RAM, not a sum of process
+PSS or RSS. Swap and compressed-swap details are shown separately.
 
 Compact process memory uses proportional set size (PSS) from `smaps_rollup` where
 readable, apportioning shared pages across the processes that map them;
@@ -133,6 +136,14 @@ buckets. The hour survives a shell restart when the state directory is
 writable (see [stored data](../SECURITY.md#stored-data)). History is saved
 every 30 s and when the store is destroyed; a crash can lose recent
 samples. Minute history and process sparklines are not persisted.
+Minute history is trimmed by timestamp, with a fixed 242-point safety cap
+covering the fastest supported 250 ms cadence. Slowing collection keeps
+previous-cadence points until they age out of the 60 s window.
+
+The duration buttons and uppercase `H` switch all graphs in one panel;
+each monitor's panel keeps its own session choice. Average and peak name
+their series: the CPU stack total, used memory, GPU busy, disk read, or
+network download. Null readings are excluded from those summaries.
 
 Saved GPU, interface, and disk histories are adopted only when their
 device tags match. Disk tags use whole-disk by-id names; GPU tags use PCI

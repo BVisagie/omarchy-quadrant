@@ -12,7 +12,8 @@ lists the processes behind the numbers.
 
 - CPU topology and per-core load, RAM composition and pressure, GPU
   usage, drive throughput and mount capacity, and network traffic.
-- Last-minute graphs and an hour of saved history, shared across monitors.
+- Last-minute graphs and an hour of saved history, shared across monitors,
+  with labelled duration controls in each panel.
 - Searchable CPU, memory, and disk I/O process groups, with memory sizes and member counts.
 - Per-process CPU, memory, disk I/O, TCP traffic, and GPU metrics where
   available; see [measurement sources and limits](docs/METRICS.md).
@@ -102,13 +103,13 @@ do not require sudo or pkexec.
 
 Click a bar segment to open its tab; clicking the same segment again
 closes the panel. Click elsewhere in the slot to reopen the last-used tab.
-Use `←` / `→` to switch tabs, uppercase `H` to switch all graphs between
-the last minute and last hour, `S` or the gear to open settings, and `Esc`
+Use `←` / `→` to switch tabs, **1 min** / **1 hour** or uppercase `H` to
+switch the panel's graphs together, `S` or the gear to open settings, and `Esc`
 to close settings or the panel.
 
 The default bar shows CPU, dedicated GPU, memory, and network. Without a
 dedicated GPU, Drives appears after Memory instead of the GPU segment;
-integrated graphics appear on the CPU tab. Use each tab's **in bar** switch
+integrated graphics appear on the CPU tab. Use each tab's **Show … in bar** switch
 to change what appears.
 
 ## Documentation

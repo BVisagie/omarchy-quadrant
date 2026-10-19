@@ -119,7 +119,8 @@ Item {
       wrapMode: Text.WordWrap
     }
 
-    ButtonGroup {
+    Components.DeviceChoices {
+      width: parent.width
       visible: root.diskOptions.length > 1
       options: root.diskOptions
       value: root.diskName
@@ -150,6 +151,7 @@ Item {
       width: parent.width
       spacing: Commons.Style.space(6)
 
+      Components.SectionHeader { width: parent.width; text: "DEVICE" }
       Components.StatRow {
         width: parent.width
         label: "Busy"

@@ -42,6 +42,11 @@ must look like a device (an interface name of at most 15 characters, a
 `cardN`, a sysfs block name) or they become `auto`, unknown segment names
 are dropped. Quadrant's settings view and IPC may only update the keys
 listed here.
+
+Changing `barIntervalMs` preserves the graph duration and retains minute
+samples collected at the previous cadence until they age out. The **1 min** /
+**1 hour** choice belongs to each panel's session and is not a saved setting.
+
 Persistent GPU IDs must have the PCI form `DDDD:BB:DD.F`; disk IDs contain
 at most 255 safe basename characters and cannot contain paths, `..`, or a
 `-partN` suffix. Invalid IDs become empty. IDs are looked up in inventory;
@@ -56,6 +61,9 @@ so a disk or GPU can keep its pin when its kernel name changes. The old
 name settings retain the currently resolved name for older Quadrant
 releases. Those releases preserve the new ID settings as unknown keys;
 their selection remains best effort until the newer release is restored.
+
+Tab pickers wrap within the panel width. A long model name is elided on its
+button while its tooltip and accessible name retain the complete label.
 
 Existing name-only pins are migrated when inventory resolves them. A name
 left over from another boot cannot establish what it referred to before
