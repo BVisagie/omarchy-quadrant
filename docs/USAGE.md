@@ -78,7 +78,7 @@ leave the 60 s window, including samples collected at the previous cadence.
 
 Memory's used ring is total RAM minus the kernel's available estimate. Its
 composition shows a separate physical-RAM breakdown, with an application
-estimate after free RAM, cache, and unreclaimable slab. The pressure ring
+estimate after free RAM, cache, and kernel (unreclaimable slab). The pressure ring
 labels its **0–25% visual scale** while printing the actual PSI percentage,
 including values above 25%. Swap remains outside that physical-RAM breakdown.
 

@@ -194,7 +194,7 @@ Item {
     Text {
       objectName: "memoryAccounting"
       textFormat: Text.PlainText
-      text: "Used = total − available. Composition separates free RAM, cache, unreclaimable slab and the remaining application estimate."
+      text: "Used = total − available. Composition separates free RAM, cache, kernel (unreclaimable slab) and the remaining application estimate."
       color: root.pal.dim
       font.family: Commons.Style.font.family
       font.pixelSize: Commons.Style.font.caption

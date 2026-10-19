@@ -26,13 +26,19 @@ Item {
 
   // Measure the widest selected label with the same theme chrome as the
   // real buttons; a bold selection must not make an equal slot too small.
-  Ui.Button {
+  Column {
     id: tabMeasure
     visible: false
-    text: "Network"
-    fontSize: Commons.Style.font.caption
-    selected: true
-    bordered: true
+    Repeater {
+      model: root.options
+      delegate: Ui.Button {
+        required property var modelData
+        text: modelData.label
+        fontSize: Commons.Style.font.caption
+        selected: true
+        bordered: true
+      }
+    }
   }
 
   Flow {
@@ -40,7 +46,9 @@ Item {
     objectName: "panelTabs"
     width: Math.max(0, root.width - gear.width - Commons.Style.space(8))
     spacing: Commons.Style.space(4)
-    readonly property int maxColumns: Math.max(1, Math.floor((width + spacing) / (tabMeasure.implicitWidth + spacing)))
+    // Round the minimum up and each slot down so Flow cannot wrap a fitting
+    // tab because floating-point sums exceed the available width slightly.
+    readonly property int maxColumns: Math.max(1, Math.floor((width + spacing) / (Math.ceil(tabMeasure.implicitWidth) + spacing)))
     readonly property int rows: Math.ceil((root.options.length || 1) / maxColumns)
     readonly property int columns: Math.ceil((root.options.length || 1) / rows)
 
@@ -49,7 +57,7 @@ Item {
       delegate: Ui.Button {
         required property var modelData
         objectName: "panelTab_" + modelData.value
-        width: Math.max(0, (tabFlow.width - tabFlow.spacing * (tabFlow.columns - 1)) / tabFlow.columns)
+        width: Math.max(0, Math.floor((tabFlow.width - tabFlow.spacing * (tabFlow.columns - 1)) / tabFlow.columns))
         text: modelData.label
         tooltipText: modelData.label
         selected: !root.settingsOpen && root.currentTab === modelData.value

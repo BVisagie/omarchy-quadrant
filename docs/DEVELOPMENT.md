@@ -137,9 +137,12 @@ the lifecycle test needs only Quickshell. Both use isolated temporary state.
 `qs-panel-ui.sh` exercises the real panel shortcut dispatcher, duration
 buttons, synchronized graphs, summary click and wheel, search focus,
 settings Esc, and access when a bar segment is absent. Four- and five-tab
-headers are checked at 320 and 440 px; device choices and hardware details
-keep long names within the panel. PSI prints its actual value above the
-ring's labelled scale. A real Store fixture changes from 250 ms to 10 s
+headers are checked at 320 and 440 px, plus a one-pixel width sweep for
+font sizes 12–18 and spacing scales 1, 1.5, and 2. It rejects avoidable extra
+rows and clipped labels, and checks new labels and live text-size changes.
+These style fixtures change only the throwaway test process. Device choices
+and hardware details keep long names within the panel. PSI prints its actual
+value above the ring's labelled scale. A real Store fixture changes from 250 ms to 10 s
 and 60 s collection, verifying that minute history expires by timestamp
 rather than by the new cadence's point count. Both load-patch modes run.
 

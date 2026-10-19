@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Window
 import Quickshell
 import QtTest
+import qs.Commons as Commons
 import qs.Ui as Ui
 import "components" as Components
 import "tabs" as Tabs
@@ -83,11 +84,17 @@ ShellRoot {
   Component { id: memoryComponent; Tabs.MemoryTab { } }
   Component { id: storeComponent; Components.Store { } }
   Component { id: choicesComponent; Components.DeviceChoices { onChanged: function (value) { this.value = value } } }
+  Component { id: headerComponent; Components.PanelHeader { } }
   TestCase {
     id: testCase
     name: "PanelClarity"
     when: testWindow.visible
     windowShown: true
+    property var initialStyle: ({})
+    function initTestCase() {
+      wait(20)
+      initialStyle = Object.assign({}, Commons.Color.shellValues)
+    }
     function cleanupTestCase() {
       console.log("QPANELUI " + JSON.stringify({ passed: qtest_results.passCount, failed: qtest_results.failCount }))
     }
@@ -95,6 +102,7 @@ ShellRoot {
       if (qtest_results.failed) console.error("QPANELUI failure: " + qtest_results.functionName + " " + qtest_results.dataTag)
     }
     function init() {
+      Commons.Style.applyShellValues(initialStyle)
       fakePanel.settingsOpen = false; fakePanel.longWindow = false
       fakePanel.gpuAvailable = true; fakePanel.barAvailable = true; fakePanel.barEnabled = false
       fakePanel.currentTab = "cpu"
@@ -206,6 +214,66 @@ ShellRoot {
       firstGraph.finePoints = [{ t: 1, rx: null, tx: null }, { t: 2, rx: 20, tx: 10 }]
       compare(firstGraph.stats.avg, 30)
       verify(firstGraph.note.indexOf("total · avg") === 0)
+    }
+    function test_header_width_sweep_data() {
+      var cases = []
+      for (var font = 12; font <= 18; font++) {
+        for (var spacing of [1, 1.5, 2]) {
+          for (var gpu of [false, true])
+            cases.push({ tag: font + "px spacing " + spacing + " " + (gpu ? "five" : "four"), font: font, spacing: spacing, gpu: gpu })
+        }
+      }
+      return cases
+    }
+    function test_header_measures_current_labels_and_text_size() {
+      var view = createTemporaryObject(headerComponent, keys, { width: 440, currentTab: "mem", options: [
+        { value: "cpu", label: "CPU" }, { value: "mem", label: "Very detailed memory statistics" }, { value: "net", label: "Net" }
+      ] })
+      verify(view)
+      wait(20)
+      var memory = findChild(view, "panelTab_mem")
+      verify(memory.width >= memory.implicitWidth, "measure the current labels, including a new widest label")
+      view.options = [{ value: "cpu", label: "CPU" }, { value: "mem", label: "RAM" }, { value: "net", label: "Net" }]
+      wait(20)
+      memory = findChild(view, "panelTab_mem")
+      compare(memory.y, findChild(view, "panelTab_cpu").y, "shorter options can share a row again")
+      Commons.Style.applyShellValues({ "font.base-size": 18, "spacing.scale": 1.5 })
+      wait(20)
+      for (var name of ["cpu", "mem", "net"]) {
+        var button = findChild(view, "panelTab_" + name)
+        verify(button.width >= button.implicitWidth, "live text sizing updates label measurement")
+      }
+    }
+    function test_header_width_sweep(data) {
+      // Only this throwaway process changes; no user config is written.
+      Commons.Style.applyShellValues({ "font.base-size": data.font, "spacing.scale": data.spacing })
+      var options = (data.gpu ? ["cpu", "gpu", "mem", "disk", "net"] : ["cpu", "mem", "disk", "net"])
+                    .map(function (t) { return { value: t, label: fakePanel.labels[t] } })
+      var view = createTemporaryObject(headerComponent, keys, { width: Commons.Style.space(440), options: options, currentTab: "net" })
+      verify(view)
+      wait(20)
+      var flow = findChild(view, "panelTabs")
+      var gear = findChild(view, "panelSettings")
+      var buttons = options.map(function (o) { return findChild(view, "panelTab_" + o.value) })
+      var widest = Math.max.apply(null, buttons.map(function (b) { return b.implicitWidth }))
+      var reserved = view.width - flow.width
+      // Skip widths too small to fit even one full label plus the settings action.
+      for (var width = Math.max(240, Math.ceil(widest + reserved)); width <= Commons.Style.space(440); width++) {
+        view.width = width
+        flow.forceLayout()
+        for (var i = 0; i < buttons.length; i++) {
+          var button = buttons[i]
+          verify(button.width + 0.01 >= button.implicitWidth, "labels fit at width " + width)
+          verify(button.x >= 0 && button.x + button.width <= flow.width + 0.01)
+          if (i > 0 && button.y > buttons[i - 1].y) {
+            var nextX = buttons[i - 1].x + buttons[i - 1].width + flow.spacing
+            var fits = nextX + button.width <= flow.width + 0.01
+            if (fits) console.error("QPANELUI avoidable wrap at width " + width + " for " + data.tag)
+            verify(!fits, "a tab must not wrap while its full slot fits on the previous row")
+          }
+        }
+        verify(flow.width < gear.x)
+      }
     }
     function test_device_choices_fit_without_losing_full_names() {
       var name = "A very long GPU or drive model name that exceeds a narrow panel width"
