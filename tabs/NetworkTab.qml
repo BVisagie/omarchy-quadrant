@@ -14,6 +14,7 @@ Item {
 
   property var panel: null
   property var model: null
+  property alias processList: processRoster
 
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "net"
   readonly property bool longWindow: panel !== null && panel.longWindow === true
@@ -169,11 +170,12 @@ Item {
     PanelSeparator { }
 
     Components.ProcessList {
+      id: processRoster
+      panel: root.panel
+      active: root.active
+      scopeText: "Per-process TCP attribution from visible sockets; UDP and other users may be missing. Full-roster search is unavailable."
       width: parent.width
       rows: root.rows
-      cursorIndex: root.panel ? root.panel.cursorIndex : -1
-      cursorActive: root.panel ? root.panel.cursorActive === true : false
-      onRowHovered: function (index, on) { if (root.panel && root.panel.hoverRow) root.panel.hoverRow(index, on) }
       valueHeader: "TRAFFIC"
       emptyText: root.active ? (root.interfaceValid ? "Sampling…" : "No interface to watch") : "Open this tab to sample processes"
       errorText: root.errorText

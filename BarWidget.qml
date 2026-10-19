@@ -92,6 +92,7 @@ BarWidget {
     memTab: panelOpenOn("mem"),
     diskTab: panelOpenOn("disk"),
     netTab: panelOpenOn("net"),
+    expandedProcesses: panelLoader.item ? panelLoader.item.expandedProcesses === true : false,
     open: opened
   })
   onViewerStateChanged: pushViewer()
@@ -100,7 +101,7 @@ BarWidget {
   }
   function panelOpenOn(tab) {
     var p = panelLoader.item
-    return p ? (p.opened === true && p.currentTab === tab) : false
+    return p ? (p.opened === true && !p.settingsOpen && p.currentTab === tab) : false
   }
 
   // ---- store reads used by the slot ------------------------------------

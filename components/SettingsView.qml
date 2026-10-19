@@ -302,7 +302,8 @@ Column {
           "H", "last hour / last minute on every graph",
           "S", "settings",
           "R", "re-read hardware identity",
-          "Esc", "close settings, then the panel",
+          "/", "search processes (CPU, Memory, Drives)",
+          "Esc", "clear search, leave editor, close view",
           "Tab", "next bar panel (the shell's own binding)"
         ]
         delegate: Text {

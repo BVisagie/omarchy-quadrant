@@ -13,6 +13,7 @@ Item {
 
   property var panel: null
   property var model: null
+  property alias processList: processRoster
 
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "cpu"
   readonly property bool longWindow: panel !== null && panel.longWindow === true
@@ -73,16 +74,8 @@ Item {
   }
 
   // ---- rows --------------------------------------------------------------
-  readonly property var rows: {
-    var src = model ? model.cpuRows : []
-    var out = []
-    for (var i = 0; i < src.length; i++) {
-      out.push({ pid: src[i].pid, comm: src[i].comm, history: src[i].history,
-                 valueText: Model.formatPct(src[i].value, 1), sortKey: src[i].sortKey,
-                 hint: Model.formatPct(src[i].core, 0) + " of one core" })
-    }
-    return out
-  }
+  readonly property var rows: Model.formatProcessGroups(model ? model.cpuRows : [], "cpu")
+  readonly property var expandedRows: !processRoster.expanded || !root.active ? [] : Model.formatProcessGroups(model ? model.allCpuRows : [], "cpu")
   readonly property string errorText: model ? model.procError : ""
   readonly property string procFooter: {
     var s = model ? model.procStats : null
@@ -199,13 +192,17 @@ Item {
     PanelSeparator { }
 
     Components.ProcessList {
+      id: processRoster
+      panel: root.panel
+      active: root.active
+      expandable: true
+      expandedRows: root.expandedRows
+      expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
+      scopeText: Model.processScope(root.model ? root.model.procStats : null, "cpu", expanded)
       width: parent.width
       rows: root.rows
-      cursorIndex: root.panel ? root.panel.cursorIndex : -1
-      cursorActive: root.panel ? root.panel.cursorActive === true : false
-      onRowHovered: function (index, on) { if (root.panel && root.panel.hoverRow) root.panel.hoverRow(index, on) }
       valueHeader: "CPU"
-      emptyText: root.active ? "Sampling…" : "Open this tab to sample processes"
+      emptyText: !root.active ? "Open this tab to sample processes" : !root.model || !root.model.procStats || !(root.model.procStats.dt > 0) || (root.model.procStats.procs > 0 && root.model.procStats.cpuReady === 0) ? "Measuring CPU rates…" : "No eligible CPU processes"
       errorText: root.errorText
     }
 

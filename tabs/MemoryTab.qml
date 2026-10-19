@@ -12,6 +12,7 @@ Item {
 
   property var panel: null
   property var model: null
+  property alias processList: processRoster
 
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "mem"
   readonly property bool longWindow: panel !== null && panel.longWindow === true
@@ -79,16 +80,8 @@ Item {
     return out
   }
 
-  readonly property var rows: {
-    var src = model ? model.memRows : []
-    var out = []
-    for (var i = 0; i < src.length; i++) {
-      out.push({ pid: src[i].pid, comm: src[i].comm, history: src[i].history,
-                 valueText: src[i].pct === null ? "--" : Model.formatPct(src[i].pct, 1), sortKey: src[i].sortKey,
-                 hint: Model.formatKiB(src[i].value) + (src[i].kind === "pss" ? " proportional" : " resident") })
-    }
-    return out
-  }
+  readonly property var rows: Model.formatProcessGroups(model ? model.memRows : [], "mem")
+  readonly property var expandedRows: !processRoster.expanded || !root.active ? [] : Model.formatProcessGroups(model ? model.allMemRows : [], "mem")
   readonly property string errorText: model ? model.procError : ""
 
   Column {
@@ -103,7 +96,7 @@ Item {
       detail: root.memDetail
     }
 
-    Row {
+    Flow {
       width: parent.width
       spacing: Commons.Style.space(18)
 
@@ -114,7 +107,6 @@ Item {
         color: root.pal.primary
         centerText: root.comp ? Model.formatPct(root.comp.usedPct) : "--"
         subText: "used"
-        anchors.verticalCenter: parent.verticalCenter
       }
 
       Components.RingGauge {
@@ -124,13 +116,11 @@ Item {
         color: root.pal.hot
         centerText: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined ? Model.formatPct(root.psi.ms10, 1) : "--"
         subText: "pressure"
-        anchors.verticalCenter: parent.verticalCenter
       }
 
       Column {
-        width: Math.max(0, parent.width - Commons.Style.space(96) * 2 - parent.spacing * 2)
+        width: parent.width < Commons.Style.space(360) ? parent.width : Math.max(0, parent.width - Commons.Style.space(96) * 2 - parent.spacing * 2)
         spacing: Commons.Style.space(4)
-        anchors.verticalCenter: parent.verticalCenter
 
         Components.CompositionBar {
           width: parent.width
@@ -237,13 +227,17 @@ Item {
     PanelSeparator { }
 
     Components.ProcessList {
+      id: processRoster
+      panel: root.panel
+      active: root.active
+      expandable: true
+      expandedRows: root.expandedRows
+      expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
+      scopeText: Model.processScope(root.model ? root.model.procStats : null, "mem", expanded)
       width: parent.width
       rows: root.rows
-      cursorIndex: root.panel ? root.panel.cursorIndex : -1
-      cursorActive: root.panel ? root.panel.cursorActive === true : false
-      onRowHovered: function (index, on) { if (root.panel && root.panel.hoverRow) root.panel.hoverRow(index, on) }
-      valueHeader: "% OF RAM"
-      emptyText: root.active ? "Sampling…" : "Open this tab to sample processes"
+      valueHeader: "SIZE · % RAM"
+      emptyText: root.active ? "Measuring memory…" : "Open this tab to sample processes"
       errorText: root.errorText
     }
   }

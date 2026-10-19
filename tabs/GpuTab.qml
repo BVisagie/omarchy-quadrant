@@ -13,6 +13,7 @@ Item {
 
   property var panel: null
   property var model: null
+  property alias processList: processRoster
 
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "gpu"
   readonly property bool longWindow: panel !== null && panel.longWindow === true
@@ -235,11 +236,12 @@ Item {
     PanelSeparator { }
 
     Components.ProcessList {
+      id: processRoster
+      panel: root.panel
+      active: root.active
+      scopeText: "Top processes with readable GPU attribution; full-roster search is unavailable."
       width: parent.width
       rows: root.rows
-      cursorIndex: root.panel ? root.panel.cursorIndex : -1
-      cursorActive: root.panel ? root.panel.cursorActive === true : false
-      onRowHovered: function (index, on) { if (root.panel && root.panel.hoverRow) root.panel.hoverRow(index, on) }
       valueHeader: root.vendor === "nvidia" ? "VRAM" : "GPU"
       showSparkline: false
       emptyText: root.active ? "No process is using the GPU" : "Open this tab to sample processes"

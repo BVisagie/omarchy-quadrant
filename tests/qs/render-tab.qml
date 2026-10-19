@@ -49,6 +49,7 @@ ShellRoot {
   QtObject {
     id: fakePanel
     property bool opened: true
+    property bool settingsOpen: false
     property bool longWindow: Quickshell.env("QUADRANT_RENDER_LONG") === "1"
     property int cursorIndex: -1
     property bool cursorActive: false
@@ -62,8 +63,8 @@ ShellRoot {
 
   Window {
     id: win
-    width: 440
-    height: 1100
+    width: Number(Quickshell.env("QUADRANT_RENDER_WIDTH")) || 440
+    height: Number(Quickshell.env("QUADRANT_RENDER_HEIGHT")) || 1100
     visible: true
     color: Commons.Color.background
 
@@ -76,6 +77,12 @@ ShellRoot {
       width: parent.width - 32
       spacing: 0
       Loader {
+        onLoaded: {
+          if (item && item.processList && Quickshell.env("QUADRANT_RENDER_EXPANDED") === "1") {
+            item.processList.expanded = true
+            item.processList.query = Quickshell.env("QUADRANT_RENDER_QUERY")
+          }
+        }
         width: parent.width
         sourceComponent: harness.tab === "cpu" ? cpuC : harness.tab === "mem" ? memC : harness.tab === "gpu" ? gpuC : harness.tab === "disk" ? diskC : harness.tab === "settings" ? settingsC : harness.tab === "bar" ? barC : netC
       }
@@ -93,7 +100,7 @@ ShellRoot {
     id: barC
     Rectangle {
       width: col.width
-      height: 26
+      height: fakeBar.vertical ? Math.max(26, slot.implicitHeight) : 26
       color: Commons.Color.bar.background
       Plugin.BarWidget {
         id: slot
@@ -109,7 +116,7 @@ ShellRoot {
     }
   }
 
-  Component.onCompleted: store.setViewer("render", { gpuSegment: true, gpuTab: true, cpuTab: true, memTab: true, diskTab: true, netTab: true, open: true })
+  Component.onCompleted: store.setViewer("render", { gpuSegment: true, gpuTab: true, cpuTab: true, memTab: true, diskTab: true, netTab: true, expandedProcesses: Quickshell.env("QUADRANT_RENDER_EXPANDED") === "1", open: true })
 
   Timer {
     interval: 7000

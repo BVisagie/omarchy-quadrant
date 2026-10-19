@@ -225,3 +225,20 @@ test("hostile group names stay inert and missing fields stay unavailable", () =>
   assert.equal(groups[1].comm, "<img>");
   assert.equal(Model.parseProcessSample({ mode: "expanded" }), null);
 });
+
+test("process presentation labels accounting, missing rates and partial totals", () => {
+  const group = (kind) => ({ pid: 1, comm: "workers", value: 1024, known: 1, n: 2, kind, pct: 1, core: null, read: null, write: null });
+  const mixed = Model.formatProcessGroups([group("mixed")], "mem")[0];
+  assert.equal(mixed.valueText, "≥ 1 MiB");
+  assert.equal(mixed.secondaryValueText, "1.0% · PSS/RSS");
+  const restricted = Model.formatProcessGroups([{ ...group("rss"), value: null, hidden: 2 }], "io")[0];
+  assert.equal(restricted.valueText, "Restricted");
+  const cold = Model.formatProcessGroups([{ ...group("rss"), value: null }], "cpu")[0];
+  assert.equal(cold.valueText, "Measuring…");
+  const scope = Model.processScope({ mode: "expanded", procs: 80, unreadable: 2, ioHidden: 20, dt: 0 }, "io", true);
+  assert.match(scope, /80 eligible/);
+  assert.match(scope, /2 unreadable/);
+  assert.match(scope, /20 processes with restricted/);
+  assert.match(scope, /Measuring rates/);
+  assert.equal(Model.processScope({ mode: "compact" }, "mem", true), "Collecting the full eligible roster…");
+});
