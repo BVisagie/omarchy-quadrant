@@ -98,6 +98,22 @@ ShellRoot {
         netError: store.netError,
         netRows: store.netRows.length
       })
+      var cpuCount = store.cpuRows.length
+      store.applyProcessSample(JSON.stringify({ ok: true, truncated: true, payload: "" }))
+      store.applyNetSample(JSON.stringify({ ok: true, truncated: true, payload: "" }))
+      harness.report("coverage-limit", {
+        procError: store.procError,
+        cpuRowsPreserved: store.cpuRows.length === cpuCount,
+        netError: store.netError,
+        netBaselineCleared: store.netPrevTs === 0 && store.netPrevSockets === null && store.netPrevIf === null,
+        netRows: store.netRows.length
+      })
+      store.applyNetSample(JSON.stringify({ ok: true, ts: 1, ifRx: 100, ifTx: 50, addrs: [], payload: "" }))
+      harness.report("coverage-recovery", {
+        error: store.netError,
+        baseline: store.netPrevTs,
+        value: store.netRows.length ? store.netRows[0].value : -1
+      })
     }
   }
 

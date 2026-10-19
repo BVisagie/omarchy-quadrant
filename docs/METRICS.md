@@ -139,3 +139,8 @@ CPU sensors are restricted to `k10temp`, `coretemp`, `zenpower`, and
 substituting an unrelated sensor. Available identity and metrics depend
 on the firmware, driver, and current user's read permissions; missing
 fields may be omitted or shown as `--`.
+
+Process and network helper envelopes are limited to 1 MiB of encoded JSON.
+An over-limit sample is omitted in full and the panel shows a process-coverage
+error. Network interface graphs and totals continue independently; discarded
+socket counters are not used as a baseline for subsequent process rates.

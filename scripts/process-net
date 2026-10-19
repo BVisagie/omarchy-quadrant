@@ -15,7 +15,7 @@
 # "Other traffic" row keyed on pid 0. UDP is not socket-attributed at all and
 # also lands in Other.
 #
-# The raw ss text travels as one JSON string via jq --arg: process names are
+# The raw ss text travels through stdin as one bounded JSON string: process names are
 # attacker-controlled and must never split a transport format. Failures emit
 # {"ok":false,...} and exit non-zero so QML can show an error instead of
 # "no activity".
@@ -24,6 +24,8 @@
 
 # shellcheck disable=SC2016  # jq programs are single-quoted on purpose
 set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 fail() {
   local msg=$1 bin=""
@@ -58,7 +60,7 @@ ifname=${1:-}
 [[ -r "/sys/class/net/$ifname/statistics/rx_bytes" ]] || fail "no such interface: $ifname"
 [[ -r "/sys/class/net/$ifname/statistics/tx_bytes" ]] || fail "no such interface: $ifname"
 
-JQ=$(resolve_bin jq) || fail "jq not found"
+PY=$(resolve_bin python3) || fail "python3 not found"
 SS=$(resolve_bin ss) || fail "ss not found (iproute2)"
 TIMEOUT=$(resolve_bin timeout) || fail "timeout not found"
 IP=$(resolve_bin ip) || true
@@ -78,6 +80,7 @@ if [[ -n ${IP:-} ]]; then
         [[ -n $a && $a != *[[:space:]]* && $a == *[0-9]* ]] || continue
         [[ -n $addrs ]] && addrs+=$'\n'
         addrs+="$a"
+        (( ${#addrs} <= 16384 )) || fail "too many interface addresses; process coverage unavailable"
         ;;
     esac
   done < <("$IP" -o addr show dev "$ifname" 2>/dev/null || true)
@@ -86,11 +89,9 @@ fi
 # -H no header, -t TCP, -i internal info (byte counters), -n numeric,
 # -p owning process. Bounded by timeout so a stuck netlink read can never
 # wedge the panel sampler.
-if ! ss_out=$("$TIMEOUT" 3 "$SS" -H -t -i -n -p state established 2>/dev/null); then
+if ! result=$("$TIMEOUT" 3 "$SS" -H -t -i -n -p state established 2>/dev/null |
+  "$PY" "$SCRIPT_DIR/helper-envelope.py" net "$EPOCHREALTIME" "$ifname" "$if_rx" "$if_tx" "$addrs"); then
   fail "ss failed or timed out"
 fi
 
-"$JQ" -cn --arg ts "$EPOCHREALTIME" --arg ifname "$ifname" \
-  --arg rx "$if_rx" --arg tx "$if_tx" --arg payload "$ss_out" --arg addrs "$addrs" \
-  '{ok:true, ts:($ts|tonumber), ifname:$ifname, ifRx:($rx|tonumber), ifTx:($tx|tonumber),
-    addrs:($addrs | split("\n") | map(select(length > 0))), payload:$payload}'
+printf '%s\n' "$result"

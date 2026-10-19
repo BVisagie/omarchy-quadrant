@@ -62,8 +62,9 @@ data. Attribution limits are documented in [Measurements](docs/METRICS.md).
 
 - All plugin `Text` elements explicitly use `Text.PlainText`; CI checks
   every QML file. Process and firmware names cannot become rich-text markup.
-- Untrusted strings travel as JSON data. Bash helpers use `jq --arg` for
-  string payloads; Python uses its JSON encoder; the stream uses its own
+- Untrusted strings travel as JSON data. Small Bash helper fields use
+  `jq --arg`; process and socket payloads stream through a bounded Python
+  JSON encoder with a 1 MiB envelope limit. The stream uses its own
   JSON escaping with Bash builtins. Strings are not executed as commands.
 - Desktop-entry matching for process icons and names uses exact normalized
   matches and a bounded cache. Wrapper labels use a fixed application map.
