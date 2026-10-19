@@ -79,6 +79,9 @@ jobs:
         # block scalar still lets the shell expand the QML globs.
         run: |
           ${{ matrix.awk }} -f tests/check-plaintext.awk $(find . -path ./.git -prune -o -name '*.qml' -print | sort)
+      - name: Namespaced shell imports (${{ matrix.awk }})
+        run: |
+          ${{ matrix.awk }} -f tests/check-qml-imports.awk $(find . -path ./.git -prune -o -name '*.qml' -print | sort)
       - name: Script smoke tests (${{ matrix.awk }})
         run: |
           set -e

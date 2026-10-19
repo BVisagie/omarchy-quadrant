@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import "../lib/index.mjs" as Model
 import "." as Components
 
@@ -20,9 +20,9 @@ Column {
   property bool band: false
   property var formatValue: function (v) { return Model.formatPct(v) }
   property var legend: []
-  property color foreground: Color.foreground
-  property string fontFamily: Style.font.family
-  property real graphHeight: Style.space(88)
+  property color foreground: Commons.Color.foreground
+  property string fontFamily: Commons.Style.font.family
+  property real graphHeight: Commons.Style.space(88)
   // Seconds between fine samples (the stream cadence); sets the gap threshold.
   property real sampleSeconds: 1
 
@@ -64,7 +64,7 @@ Column {
     return label + " · avg " + formatValue(s.avg) + " · peak " + formatValue(s.peak)
   }
 
-  spacing: Style.space(6)
+  spacing: Commons.Style.space(6)
 
   Components.SectionHeader {
     width: parent.width

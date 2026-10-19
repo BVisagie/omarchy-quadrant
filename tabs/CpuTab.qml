@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../lib/index.mjs" as Model
 import "../components" as Components
@@ -20,7 +20,7 @@ Item {
   readonly property var cpuPct: model ? model.cpuPct : null
   readonly property var sysCpu: model && model.sysInfo ? model.sysInfo.cpu : null
   readonly property var cpuFreqMhz: model ? model.cpuFreqMhz : null
-  readonly property var pal: Model.seriesPalette(String(Color.accent), String(Color.urgent), String(Color.foreground), String(Color.background))
+  readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(Commons.Color.foreground), String(Commons.Color.background))
 
   implicitWidth: 200
   implicitHeight: column.implicitHeight
@@ -93,7 +93,7 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Style.space(10)
+    spacing: Commons.Style.space(10)
 
     Components.Hero {
       width: parent.width
@@ -107,8 +107,8 @@ Item {
       visible: root.hostLine !== ""
       text: root.hostLine
       color: root.pal.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
       width: parent.width
       elide: Text.ElideRight
     }
@@ -148,7 +148,7 @@ Item {
 
     Column {
       width: parent.width
-      spacing: Style.space(6)
+      spacing: Commons.Style.space(6)
 
       Components.StatRow {
         width: parent.width
@@ -179,7 +179,7 @@ Item {
         value: root.sample
                ? Model.formatLoad(root.sample.load[0]) + "  " + Model.formatLoad(root.sample.load[1]) + "  " + Model.formatLoad(root.sample.load[2])
                : "--"
-        valueColor: root.loadHot ? Color.urgent : Color.foreground
+        valueColor: root.loadHot ? Commons.Color.urgent : Commons.Color.foreground
       }
       Components.StatRow {
         width: parent.width
@@ -219,8 +219,8 @@ Item {
       visible: root.procFooter !== ""
       text: root.procFooter
       color: root.pal.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
       font.features: ({ "tnum": 1 })
     }
   }

@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../lib/index.mjs" as Model
 
@@ -11,9 +11,9 @@ Item {
   property string title: ""
   property string meta: ""
   property string detail: ""
-  property color foreground: Color.foreground
-  property string fontFamily: Style.font.family
-  readonly property color dim: Model.dimColor(String(foreground), String(Color.background))
+  property color foreground: Commons.Color.foreground
+  property string fontFamily: Commons.Style.font.family
+  readonly property color dim: Model.dimColor(String(foreground), String(Commons.Color.background))
 
   implicitWidth: 200
   implicitHeight: Math.max(labels.implicitHeight, pill.implicitHeight)
@@ -22,16 +22,16 @@ Item {
     id: labels
     anchors.left: parent.left
     anchors.right: pill.visible ? pill.left : parent.right
-    anchors.rightMargin: pill.visible ? Style.space(10) : 0
+    anchors.rightMargin: pill.visible ? Commons.Style.space(10) : 0
     anchors.verticalCenter: parent.verticalCenter
-    spacing: Style.space(2)
+    spacing: Commons.Style.space(2)
 
     Text {
       textFormat: Text.PlainText
       text: root.title
       color: root.foreground
       font.family: root.fontFamily
-      font.pixelSize: Style.font.title
+      font.pixelSize: Commons.Style.font.title
       font.bold: true
       width: parent.width
       elide: Text.ElideRight
@@ -42,7 +42,7 @@ Item {
       text: root.meta
       color: root.dim
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Commons.Style.font.caption
       width: parent.width
       wrapMode: Text.Wrap
       maximumLineCount: 2
@@ -53,13 +53,13 @@ Item {
   BorderSurface {
     id: pill
     visible: root.detail !== ""
-    implicitWidth: detailText.implicitWidth + Style.space(10)
-    implicitHeight: detailText.implicitHeight + Style.space(4)
+    implicitWidth: detailText.implicitWidth + Commons.Style.space(10)
+    implicitHeight: detailText.implicitHeight + Commons.Style.space(4)
     anchors.right: parent.right
     anchors.top: parent.top
     color: "transparent"
-    borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
-    radius: Style.cornerRadius
+    borderSpec: Commons.Border.controlSpec("normal", root.foreground, Commons.Color.accent)
+    radius: Commons.Style.cornerRadius
 
     Text {
       id: detailText
@@ -68,7 +68,7 @@ Item {
       text: root.detail
       color: root.dim
       font.family: root.fontFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Commons.Style.font.body
       font.bold: true
       font.features: ({ "tnum": 1 })
     }

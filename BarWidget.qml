@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Ui
-import qs.Commons
+import qs.Commons as Commons
 import "lib/index.mjs" as Model
 import "components" as Components
 
@@ -126,12 +126,12 @@ BarWidget {
   // Bar glyphs are icons, not captions: they size with the shell's body
   // text so they read at the same weight as neighbouring bar widgets,
   // while the value stays at caption.
-  readonly property int glyphFontSize: Style.font.body
+  readonly property int glyphFontSize: Commons.Style.font.body
 
   // ---- colours ---------------------------------------------------------
-  readonly property color barFg: root.bar ? (root.bar.barForeground || root.bar.foreground) : Color.foreground
-  readonly property color barBg: root.bar ? root.bar.background : Color.background
-  readonly property color barUrgent: root.bar ? root.bar.urgent : Color.urgent
+  readonly property color barFg: root.bar ? (root.bar.barForeground || root.bar.foreground) : Commons.Color.foreground
+  readonly property color barBg: root.bar ? root.bar.background : Commons.Color.background
+  readonly property color barUrgent: root.bar ? root.bar.urgent : Commons.Color.urgent
   readonly property color mutedLabelColor: Model.dimColor(String(barFg), String(barBg), 0.38)
   readonly property color quietValueColor: Model.dimColor(String(barFg), String(barBg), 0.12)
 
@@ -152,7 +152,7 @@ BarWidget {
   //   vivid  fixed per-resource hue, urgent while hot
   function valueColorFor(metric, pct, hot) {
     if (barPaletteMode === "heat")
-      return Model.heatColor(pct === null ? 0 : pct, String(quietValueColor), String(Color.accent), String(barUrgent), 8)
+      return Model.heatColor(pct === null ? 0 : pct, String(quietValueColor), String(Commons.Color.accent), String(barUrgent), 8)
     if (hot) return barUrgent
     if (barPaletteMode === "vivid") return Model.VIVID[metric] || barFg
     return barFg
@@ -196,11 +196,11 @@ BarWidget {
   // widest ("99%") — so neighbouring bar widgets never move; the slack
   // collects at the end of the slot, and a cell that changes digit count
   // slides its neighbours smoothly.
-  readonly property real labelGap: Style.space(3)
-  readonly property real segmentGap: Style.space(8)
-  readonly property real outerPad: Style.spaceReal(6)
+  readonly property real labelGap: Commons.Style.space(3)
+  readonly property real segmentGap: Commons.Style.space(8)
+  readonly property real outerPad: Commons.Style.spaceReal(6)
 
-  FontMetrics { id: captionFm; font.family: button.fontFamily; font.pixelSize: Style.font.caption }
+  FontMetrics { id: captionFm; font.family: button.fontFamily; font.pixelSize: Commons.Style.font.caption }
   FontMetrics { id: glyphFm; font.family: button.fontFamily; font.pixelSize: root.glyphFontSize }
 
   function labelFor(metric) {
@@ -239,7 +239,7 @@ BarWidget {
     }
     return Math.ceil(w)
   }
-  readonly property int verticalSlot: root.bar ? root.bar.barSize : Style.bar.sizeVertical
+  readonly property int verticalSlot: root.bar ? root.bar.barSize : Commons.Style.bar.sizeVertical
 
   // ---- panel contract (Quattro bar-widget shape) -----------------------
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
@@ -274,12 +274,12 @@ BarWidget {
   }
 
   function launchBtop() {
-    Util.execArgv(["omarchy-launch-or-focus-tui", "btop"])
+    Commons.Util.execArgv(["omarchy-launch-or-focus-tui", "btop"])
   }
 
   property real wheelAccumulator: 0
   function handleWheel(delta) {
-    var r = Util.wheelSteps(root.wheelAccumulator, delta)
+    var r = Commons.Util.wheelSteps(root.wheelAccumulator, delta)
     root.wheelAccumulator = r.remainder
     var p = panelLoader.item
     if (!p || !p.opened || r.steps === 0) return
@@ -305,9 +305,9 @@ BarWidget {
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
-  readonly property real indicatorSlot: showMonitorFallback ? Style.bar.statusSlot : Style.bar.iconSlot
-  readonly property real openPanelIndicatorWidth: Math.max(Style.space(10), Math.round(indicatorSlot * 0.55))
-  readonly property real openPanelIndicatorHeight: Math.max(Style.space(10), Math.round(indicatorSlot * 0.55))
+  readonly property real indicatorSlot: showMonitorFallback ? Commons.Style.bar.statusSlot : Commons.Style.bar.iconSlot
+  readonly property real openPanelIndicatorWidth: Math.max(Commons.Style.space(10), Math.round(indicatorSlot * 0.55))
+  readonly property real openPanelIndicatorHeight: Math.max(Commons.Style.space(10), Math.round(indicatorSlot * 0.55))
 
   Loader {
     id: panelLoader
@@ -329,13 +329,13 @@ BarWidget {
     hasVisualContent: true
     keepSpace: true
     tooltipText: root.slotTooltip
-    slotSize: root.showMonitorFallback ? Style.bar.statusSlot : Style.bar.iconSlot
-    fontSize: Style.bar.iconFont
+    slotSize: root.showMonitorFallback ? Commons.Style.bar.statusSlot : Commons.Style.bar.iconSlot
+    fontSize: Commons.Style.bar.iconFont
     fixedWidth: root.vertical
                 ? -1
-                : (root.showMonitorFallback ? Style.bar.statusSlot : root.reservedWidth + root.outerPad * 2)
+                : (root.showMonitorFallback ? Commons.Style.bar.statusSlot : root.reservedWidth + root.outerPad * 2)
     fixedHeight: root.vertical
-                 ? (root.showMonitorFallback ? Style.bar.statusSlot : segGrid.implicitHeight + root.outerPad * 2)
+                 ? (root.showMonitorFallback ? Commons.Style.bar.statusSlot : segGrid.implicitHeight + root.outerPad * 2)
                  : -1
 
     onPressed: function (buttonCode) {
@@ -446,7 +446,7 @@ BarWidget {
             text: "↓" + root.netDownText
             color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
-            font.pixelSize: Style.font.caption
+            font.pixelSize: Commons.Style.font.caption
             font.features: ({ "tnum": 1 })
           }
           Text {
@@ -455,7 +455,7 @@ BarWidget {
             text: "↓" + root.netDownText + " ↑" + root.netUpText
             color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
-            font.pixelSize: Style.font.caption
+            font.pixelSize: Commons.Style.font.caption
             font.features: ({ "tnum": 1 })
           }
           Text {
@@ -466,7 +466,7 @@ BarWidget {
             text: "↑" + root.netUpText
             color: root.valueColorFor("net", null, false)
             font.family: button.fontFamily
-            font.pixelSize: Style.font.caption
+            font.pixelSize: Commons.Style.font.caption
             font.features: ({ "tnum": 1 })
           }
         }
@@ -530,7 +530,7 @@ BarWidget {
       text: cell.valueText
       color: cell.valueColor
       font.family: button.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Commons.Style.font.caption
       font.features: ({ "tnum": 1 })
       anchors.verticalCenter: parent.verticalCenter
       anchors.left: labelText.visible ? labelText.right : parent.left

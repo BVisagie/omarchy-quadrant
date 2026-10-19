@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell.Io
-import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "lib/index.mjs" as Model
 import "tabs" as Tabs
@@ -23,7 +23,7 @@ Panel {
 
   readonly property int processCount: store ? store.processCount : 5
   readonly property int panelIntervalMs: store ? store.panelIntervalMs : 2000
-  readonly property color dim: Model.dimColor(String(Color.foreground), String(Color.background))
+  readonly property color dim: Model.dimColor(String(Commons.Color.foreground), String(Commons.Color.background))
 
   // Last-used tab survives close/reopen; the window choice and the settings
   // view do not.
@@ -153,10 +153,10 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(440))
+    contentWidth: panel.fittedContentWidth(Commons.Style.space(440))
     contentHeight: {
-      var sp = Style.space(10)
-      var natural = header.implicitHeight + headerSep.implicitHeight + bodyColumn.implicitHeight + sp * 2 + Style.space(6)
+      var sp = Commons.Style.space(10)
+      var natural = header.implicitHeight + headerSep.implicitHeight + bodyColumn.implicitHeight + sp * 2 + Commons.Style.space(6)
       return panel.fittedContentHeight(natural)
     }
     Behavior on contentHeight { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
@@ -199,7 +199,7 @@ Panel {
         id: contentColumn
         width: parent.width
         height: parent.height
-        spacing: Style.space(10)
+        spacing: Commons.Style.space(10)
 
         // ---- header: tabs · show-in-bar · gear ----
         Item {
@@ -213,29 +213,29 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             options: root.tabOptions
             value: root.settingsOpen ? "" : root.currentTab
-            fontSize: Style.font.caption
+            fontSize: Commons.Style.font.caption
             onChanged: function (value) { root.currentTab = value; root.settingsOpen = false }
           }
 
           Row {
             id: barToggleRow
             anchors.right: gear.left
-            anchors.rightMargin: Style.space(10)
+            anchors.rightMargin: Commons.Style.space(10)
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(6)
+            spacing: Commons.Style.space(6)
             visible: !root.settingsOpen && root.store && root.barSegmentKey !== ""
 
             Text {
               textFormat: Text.PlainText
               text: "in bar"
               color: root.dim
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
               anchors.verticalCenter: parent.verticalCenter
             }
             ToggleSwitch {
               checked: root.barSegmentEnabled
-              trackHeight: Math.max(16, Math.round(Style.spacing.controlHeight * 0.5))
+              trackHeight: Math.max(16, Math.round(Commons.Style.spacing.controlHeight * 0.5))
               anchors.verticalCenter: parent.verticalCenter
               onToggled: if (root.store) root.store.setBarSegment(root.barSegmentKey, !root.barSegmentEnabled)
             }
@@ -273,7 +273,7 @@ Panel {
           Column {
             id: bodyColumn
             width: bodyFlick.width
-            spacing: Style.space(10)
+            spacing: Commons.Style.space(10)
 
             // Keep last-good metrics on screen, but never leave stale or
             // failed async data looking live. Waiting is first-load only.
@@ -296,13 +296,13 @@ Panel {
                 return messages.join(" · ")
               }
               color: {
-                if (!root.store) return Color.urgent
+                if (!root.store) return Commons.Color.urgent
                 if (root.store.streamError !== "" || root.store.gpuDetectionError !== "" || root.store.diskInfoError !== "")
-                  return Color.urgent
+                  return Commons.Color.urgent
                 return root.dim
               }
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
               width: parent.width
               wrapMode: Text.WordWrap
             }
@@ -312,8 +312,8 @@ Panel {
               visible: root.store && root.store.gpuDeviceWarning !== ""
               text: root.store ? String(root.store.gpuDeviceWarning || "") : ""
               color: root.dim
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
               width: parent.width
               wrapMode: Text.WordWrap
             }

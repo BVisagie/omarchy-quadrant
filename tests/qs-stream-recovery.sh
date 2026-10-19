@@ -33,7 +33,7 @@ exec "$script_dir/quadrant-stream.real" "$@"
 SH
 chmod +x "$work/tree/scripts/quadrant-stream"
 
-if ! QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME= XDG_STATE_HOME="$work/state" XDG_RUNTIME_DIR="$work/runtime" \
+if ! QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME="" XDG_STATE_HOME="$work/state" XDG_RUNTIME_DIR="$work/runtime" \
   QUADRANT_TEST_LAUNCHES="$work/launches" \
   timeout --kill-after=2s 35 quickshell -p "$work/tree/shell.qml" > "$work/log" 2>&1; then
   cat "$work/log"

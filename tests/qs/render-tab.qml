@@ -1,7 +1,8 @@
+//@ pragma OmarchyLoadPatch
 import QtQuick
 import QtQuick.Window
 import Quickshell
-import qs.Commons
+import qs.Commons as Commons
 import "components" as Components
 import "." as Plugin
 import "tabs" as Tabs
@@ -10,16 +11,28 @@ ShellRoot {
   id: harness
   property string outPath: Quickshell.env("QUADRANT_RENDER_OUT")
   property string tab: Quickshell.env("QUADRANT_RENDER_TAB") || "cpu"
+  property string palette: Quickshell.env("QUADRANT_RENDER_PALETTE")
+
+  // Palette fixtures affect this throwaway process only; the installed theme
+  // and user configuration are never changed.
+  function applyPalette() {
+    if (palette === "") return
+    Commons.Color.shellValues = ({})
+    Commons.Color.background = palette === "light" ? "#faf6ef" : palette === "mono" ? "#000000" : "#081217"
+    Commons.Color.foreground = palette === "light" ? "#3d3b50" : palette === "mono" ? "#eeeeee" : "#c8d8de"
+    Commons.Color.accent = palette === "light" ? "#5850a0" : palette === "mono" ? "#cccccc" : "#70b7be"
+    Commons.Color.urgent = palette === "mono" ? "#ffffff" : "#b34b4b"
+  }
 
   Components.Store { id: store; embedded: true }
 
   QtObject {
     id: fakeBar
-    property string fontFamily: Style.font.family
-    property color barForeground: Color.foreground
-    property color foreground: Color.foreground
-    property color background: Color.background
-    property color urgent: Color.urgent
+    property string fontFamily: Commons.Style.font.family
+    property color barForeground: Commons.Color.foreground
+    property color foreground: Commons.Color.foreground
+    property color background: Commons.Color.background
+    property color urgent: Commons.Color.urgent
     property bool vertical: Quickshell.env("QUADRANT_RENDER_VERTICAL") === "1"
     property int barSize: 26
     property string position: "top"
@@ -41,7 +54,7 @@ ShellRoot {
     property bool cursorActive: false
     function hoverRow(index, on) { cursorActive = on; cursorIndex = on ? index : -1 }
     property string currentTab: harness.tab
-    property color barForeground: Color.foreground
+    property color barForeground: Commons.Color.foreground
     property var bar: fakeBar
     property int processCount: store.processCount
     property int panelIntervalMs: store.panelIntervalMs
@@ -52,7 +65,10 @@ ShellRoot {
     width: 440
     height: 1100
     visible: true
-    color: Color.background
+    color: Commons.Color.background
+
+    // grabToImage captures contentItem, not the Window's clear colour.
+    Rectangle { anchors.fill: parent; color: Commons.Color.background }
 
     Column {
       id: col
@@ -78,7 +94,7 @@ ShellRoot {
     Rectangle {
       width: col.width
       height: 26
-      color: Color.bar.background
+      color: Commons.Color.bar.background
       Plugin.BarWidget {
         id: slot
         anchors.left: parent.left
@@ -99,7 +115,8 @@ ShellRoot {
     interval: 7000
     running: true
     onTriggered: {
-      win.color = Color.background
+      harness.applyPalette()
+      win.color = Commons.Color.background
       win.contentItem.grabToImage(function (r) {
         r.saveToFile(harness.outPath)
         console.log("RENDER saved " + harness.outPath)

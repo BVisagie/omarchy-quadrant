@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../lib/index.mjs" as Model
 
@@ -12,12 +12,12 @@ Column {
 
   property var store: null
   readonly property var cfg: store ? store.cfg : Model.readSettings({})
-  readonly property color dim: Model.dimColor(String(Color.foreground), String(Color.background))
+  readonly property color dim: Model.dimColor(String(Commons.Color.foreground), String(Commons.Color.background))
   readonly property real labelColumn: Math.round(width * 0.40)
-  readonly property real controlColumn: Math.max(0, width - labelColumn - Style.space(10))
-  readonly property int switchHeight: Math.max(16, Math.round(Style.spacing.controlHeight * 0.5))
+  readonly property real controlColumn: Math.max(0, width - labelColumn - Commons.Style.space(10))
+  readonly property int switchHeight: Math.max(16, Math.round(Commons.Style.spacing.controlHeight * 0.5))
 
-  spacing: Style.space(14)
+  spacing: Commons.Style.space(14)
 
   function set(key, value) {
     if (!store) return
@@ -77,16 +77,16 @@ Column {
     property string title: ""
     default property alias rows: body.data
     width: root.width
-    spacing: Style.space(8)
+    spacing: Commons.Style.space(8)
     Text {
       textFormat: Text.PlainText
       text: parent.title
       color: root.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
       font.bold: true
     }
-    Column { id: body; width: parent.width; spacing: Style.space(6) }
+    Column { id: body; width: parent.width; spacing: Commons.Style.space(6) }
   }
 
   // Label column + control column, control vertically centred on the label.
@@ -101,13 +101,13 @@ Column {
       width: root.labelColumn
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
-      spacing: Style.space(2)
+      spacing: Commons.Style.space(2)
       Text {
         textFormat: Text.PlainText
         text: parent.parent.label
-        color: Color.foreground
-        font.family: Style.font.family
-        font.pixelSize: Style.font.body
+        color: Commons.Color.foreground
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.body
         width: parent.width
         elide: Text.ElideRight
       }
@@ -116,8 +116,8 @@ Column {
         visible: text !== ""
         text: parent.parent.hint
         color: root.dim
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.caption
         width: parent.width
         wrapMode: Text.WordWrap
       }
@@ -134,7 +134,7 @@ Column {
   component Pick: Dropdown {
     width: root.controlColumn
     showLabel: false
-    fontFamily: Style.font.family
+    fontFamily: Commons.Style.font.family
   }
 
   // ---- bar segments: five compact switches on one line ------------------
@@ -144,7 +144,7 @@ Column {
     Grid {
       width: parent.width
       columns: 5
-      rowSpacing: Style.space(6)
+      rowSpacing: Commons.Style.space(6)
 
       Repeater {
         model: [
@@ -154,7 +154,7 @@ Column {
         delegate: Row {
           required property var modelData
           width: Math.floor(root.width / 5)
-          spacing: Style.space(6)
+          spacing: Commons.Style.space(6)
           ToggleSwitch {
             checked: root.cfg.segments.indexOf(parent.modelData.key) !== -1
             cursorRing: false
@@ -165,9 +165,9 @@ Column {
           Text {
             textFormat: Text.PlainText
             text: parent.modelData.label
-            color: Color.foreground
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
+            color: Commons.Color.foreground
+            font.family: Commons.Style.font.family
+            font.pixelSize: Commons.Style.font.caption
             anchors.verticalCenter: parent.verticalCenter
           }
         }
@@ -235,7 +235,7 @@ Column {
         value: root.cfg.processCount
         from: 1
         to: 10
-        fontFamily: Style.font.family
+        fontFamily: Commons.Style.font.family
         onModified: function (v) { root.set("processCount", v) }
       }
     }
@@ -286,8 +286,8 @@ Column {
     Grid {
       width: parent.width
       columns: 2
-      columnSpacing: Style.space(14)
-      rowSpacing: Style.space(3)
+      columnSpacing: Commons.Style.space(14)
+      rowSpacing: Commons.Style.space(3)
       Repeater {
         model: [
           "← →  or  1–5", "switch tab",
@@ -303,10 +303,10 @@ Column {
           required property int index
           textFormat: Text.PlainText
           text: modelData
-          width: index % 2 === 0 ? Style.space(110) : parent.width - Style.space(110) - Style.space(14)
-          color: index % 2 === 0 ? Color.foreground : root.dim
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          width: index % 2 === 0 ? Commons.Style.space(110) : parent.width - Commons.Style.space(110) - Commons.Style.space(14)
+          color: index % 2 === 0 ? Commons.Color.foreground : root.dim
+          font.family: Commons.Style.font.family
+          font.pixelSize: Commons.Style.font.caption
           font.features: ({ "tnum": 1 })
           wrapMode: Text.WordWrap
         }
@@ -318,23 +318,23 @@ Column {
       wrapMode: Text.WordWrap
       text: "In the bar: click a segment for its tab, right-click for btop, scroll to switch tabs while the panel is open."
       color: root.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
     }
   }
 
   // ---- footer ------------------------------------------------------------
   Column {
     width: parent.width
-    spacing: Style.space(8)
+    spacing: Commons.Style.space(8)
     Text {
       textFormat: Text.PlainText
       width: parent.width
       wrapMode: Text.WordWrap
       text: "Settings are stored on this widget's entry in ~/.config/omarchy/shell.json and also follow `omarchy bar set`."
       color: root.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
     }
     Button {
       text: "Reset to defaults"

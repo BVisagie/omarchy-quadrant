@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import "../lib/index.mjs" as Model
 
 // Percentage ring: fraction 0..1 painted in `color` over a faint track,
@@ -9,16 +9,16 @@ Item {
   clip: true
 
   property real fraction: 0
-  property color color: Color.accent
-  property color foreground: Color.foreground
-  property string fontFamily: Style.font.family
-  property real thickness: Style.space(9)
+  property color color: Commons.Color.accent
+  property color foreground: Commons.Color.foreground
+  property string fontFamily: Commons.Style.font.family
+  property real thickness: Commons.Style.space(9)
   property string centerText: ""
   property string subText: ""
-  property real size: Style.space(96)
+  property real size: Commons.Style.space(96)
 
   readonly property color trackColor: Model.withAlpha(String(foreground).length === 9 ? "#" + String(foreground).slice(3) : String(foreground), 0.10)
-  readonly property color dim: Model.dimColor(String(foreground), String(Color.background))
+  readonly property color dim: Model.dimColor(String(foreground), String(Commons.Color.background))
 
   property real shown: 0
   Behavior on shown { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
@@ -66,14 +66,14 @@ Item {
   Column {
     anchors.centerIn: parent
     spacing: 0
-    width: parent.width - root.thickness * 2 - Style.space(6)
+    width: parent.width - root.thickness * 2 - Commons.Style.space(6)
 
     Text {
       textFormat: Text.PlainText
       text: root.centerText
       color: root.foreground
       font.family: root.fontFamily
-      font.pixelSize: Style.font.subtitle
+      font.pixelSize: Commons.Style.font.subtitle
       font.bold: true
       font.features: ({ "tnum": 1 })
       width: parent.width
@@ -86,7 +86,7 @@ Item {
       text: root.subText
       color: root.dim
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Commons.Style.font.caption
       width: parent.width
       horizontalAlignment: Text.AlignHCenter
       elide: Text.ElideRight

@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../lib/index.mjs" as Model
 import "../components" as Components
@@ -21,7 +21,7 @@ Item {
   readonly property var swapRate: model ? model.swapRate : null
   readonly property var sysMem: model && model.sysInfo ? model.sysInfo.mem : null
   readonly property var psi: sample ? sample.psi : null
-  readonly property var pal: Model.seriesPalette(String(Color.accent), String(Color.urgent), String(Color.foreground), String(Color.background))
+  readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(Commons.Color.foreground), String(Commons.Color.background))
   // The pressure ring spans 0–25 %: PSI "some" above that is already a
   // machine that stalls constantly, and a 0–100 ring never moved.
   readonly property real pressureCeiling: 25
@@ -94,7 +94,7 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Style.space(10)
+    spacing: Commons.Style.space(10)
 
     Components.Hero {
       width: parent.width
@@ -105,10 +105,10 @@ Item {
 
     Row {
       width: parent.width
-      spacing: Style.space(18)
+      spacing: Commons.Style.space(18)
 
       Components.RingGauge {
-        size: Style.space(96)
+        size: Commons.Style.space(96)
         fraction: root.comp && root.comp.usedPct !== null && root.comp.usedPct !== undefined
                   ? Model.clamp(root.comp.usedPct / 100, 0, 1) : 0
         color: root.pal.primary
@@ -118,7 +118,7 @@ Item {
       }
 
       Components.RingGauge {
-        size: Style.space(96)
+        size: Commons.Style.space(96)
         fraction: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined
                   ? Math.min(1, root.psi.ms10 / root.pressureCeiling) : 0
         color: root.pal.hot
@@ -128,8 +128,8 @@ Item {
       }
 
       Column {
-        width: Math.max(0, parent.width - Style.space(96) * 2 - parent.spacing * 2)
-        spacing: Style.space(4)
+        width: Math.max(0, parent.width - Commons.Style.space(96) * 2 - parent.spacing * 2)
+        spacing: Commons.Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
 
         Components.CompositionBar {
@@ -140,8 +140,8 @@ Item {
           textFormat: Text.PlainText
           text: "Cache can be reclaimed. Used cannot."
           color: root.pal.dim
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          font.family: Commons.Style.font.family
+          font.pixelSize: Commons.Style.font.caption
           width: parent.width
           wrapMode: Text.WordWrap
         }
@@ -158,9 +158,9 @@ Item {
             implicitHeight: legendLabel.implicitHeight
             Rectangle {
               id: swatch
-              width: Style.space(8)
-              height: Style.space(8)
-              radius: Style.space(2)
+              width: Commons.Style.space(8)
+              height: Commons.Style.space(8)
+              radius: Commons.Style.space(2)
               color: parent.modelData.color
               anchors.verticalCenter: parent.verticalCenter
             }
@@ -169,18 +169,18 @@ Item {
               textFormat: Text.PlainText
               text: parent.modelData.label
               color: root.pal.dim
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
               anchors.left: swatch.right
-              anchors.leftMargin: Style.space(5)
+              anchors.leftMargin: Commons.Style.space(5)
               anchors.verticalCenter: parent.verticalCenter
             }
             Text {
               textFormat: Text.PlainText
               text: parent.modelData.value
-              color: Color.foreground
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
+              color: Commons.Color.foreground
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
               font.features: ({ "tnum": 1 })
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
@@ -210,7 +210,7 @@ Item {
 
     Column {
       width: parent.width
-      spacing: Style.space(6)
+      spacing: Commons.Style.space(6)
 
       Components.StatRow {
         width: parent.width

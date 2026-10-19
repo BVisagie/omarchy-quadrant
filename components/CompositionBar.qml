@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import "../lib/index.mjs" as Model
 
 // Stacked horizontal bar: segments [{ fraction, color }] left to right over
@@ -9,8 +9,8 @@ Item {
   id: root
 
   property var segments: []
-  property color foreground: Color.foreground
-  property real barHeight: Style.space(8)
+  property color foreground: Commons.Color.foreground
+  property real barHeight: Commons.Style.space(8)
   readonly property color trackColor: Model.withAlpha(String(foreground).length === 9 ? "#" + String(foreground).slice(3) : String(foreground), 0.10)
 
   implicitWidth: 200

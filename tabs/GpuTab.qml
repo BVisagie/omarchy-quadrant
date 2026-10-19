@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../lib/index.mjs" as Model
 import "../components" as Components
@@ -25,7 +25,7 @@ Item {
     if (!model || !model.sysInfo || !model.sysInfo.gpusByCard || !gpu) return null
     return model.sysInfo.gpusByCard[gpu.card] || null
   }
-  readonly property var pal: Model.seriesPalette(String(Color.accent), String(Color.urgent), String(Color.foreground), String(Color.background))
+  readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(Commons.Color.foreground), String(Commons.Color.background))
 
   implicitWidth: 200
   implicitHeight: column.implicitHeight
@@ -121,7 +121,7 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Style.space(10)
+    spacing: Commons.Style.space(10)
 
     Components.Hero {
       width: parent.width
@@ -135,7 +135,7 @@ Item {
       visible: root.cardOptions.length > 1
       options: root.cardOptions
       value: root.gpu ? root.gpu.card : ""
-      fontSize: Style.font.caption
+      fontSize: Commons.Style.font.caption
       onChanged: function (value) { if (root.model) root.model.selectGpu(value) }
     }
 
@@ -143,19 +143,19 @@ Item {
       textFormat: Text.PlainText
       visible: root.nvidiaError !== ""
       text: root.nvidiaError
-      color: Color.urgent
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      color: Commons.Color.urgent
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
       width: parent.width
       wrapMode: Text.WordWrap
     }
 
     Row {
       width: parent.width
-      spacing: Style.space(18)
+      spacing: Commons.Style.space(18)
 
       Components.RingGauge {
-        size: Style.space(96)
+        size: Commons.Style.space(96)
         fraction: root.display ? root.display.pct / 100 : 0
         color: root.pal.primary
         centerText: root.display ? (root.display.estimated ? "~" : "") + Model.formatPct(root.display.pct, 1) : "--"
@@ -165,7 +165,7 @@ Item {
 
       Components.RingGauge {
         visible: root.vramPct >= 0
-        size: Style.space(96)
+        size: Commons.Style.space(96)
         fraction: root.vramPct < 0 ? 0 : root.vramPct / 100
         color: root.pal.secondary
         centerText: root.vramPct < 0 ? "--" : Model.formatPct(root.vramPct)
@@ -195,7 +195,7 @@ Item {
 
     Column {
       width: parent.width
-      spacing: Style.space(6)
+      spacing: Commons.Style.space(6)
 
       Components.StatRow {
         width: parent.width
@@ -255,8 +255,8 @@ Item {
       visible: root.vendor === "nvidia" && root.rows.length > 0
       text: "NVIDIA reports per-process memory only; busy time is per card."
       color: root.pal.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
       width: parent.width
       wrapMode: Text.WordWrap
     }
