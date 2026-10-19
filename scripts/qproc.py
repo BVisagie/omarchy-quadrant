@@ -17,8 +17,9 @@ after a cold start has no rates.
 
 Compact mode reads exe/cmdline and PSS for at most 32 candidates per metric.
 --expanded returns one eligible roster with RSS and nullable CPU/I/O rates.
-All modes share a locked baseline; requests within 400 ms are skipped. comm is /proc/<pid>/comm, never argv. QUADRANT_PROC_PATH overrides
-/proc and QUADRANT_NOW overrides the clock for tests.
+All modes share a locked baseline; requests within 400 ms are skipped.
+comm is /proc/<pid>/comm, never argv. QUADRANT_PROC_PATH overrides /proc
+and QUADRANT_NOW overrides the clock for tests.
 """
 from __future__ import annotations
 

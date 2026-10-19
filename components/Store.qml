@@ -195,9 +195,9 @@ Item {
       if (!v) continue
       if (v.gpuSegment) seg++
       if (v.gpuTab) gpuTab++
-      if (v.cpuTab) cpuTab++
-      if (v.memTab) memTab++
-      if (v.diskTab) diskTab++
+      if (v.open && v.cpuTab) cpuTab++
+      if (v.open && v.memTab) memTab++
+      if (v.open && v.diskTab) diskTab++
       if (v.netTab) netTab++
       if (v.open) open++
       if (v.open && v.expandedProcesses && (v.cpuTab || v.memTab || v.diskTab)) expanded++
@@ -1029,6 +1029,7 @@ Item {
   readonly property bool procExpandedWanted: expandedProcessViewers > 0
   readonly property int procWindowS: Math.max(15, Math.ceil(panelIntervalMs * 3 / 1000))
   property real procLastStartedMs: 0
+  property real procLastFinishedMs: 0
   property bool procWarmupAvailable: false
 
   onProcSampleWantedChanged: {
@@ -1040,6 +1041,7 @@ Item {
   onProcExpandedWantedChanged: if (procSampleWanted) pollProcesses()
 
   function applyProcessSample(text) {
+    procLastFinishedMs = Date.now()
     var env = Model.safeJson(text)
     if (!env || env.ok !== true) {
       procError = "process sampler failed: " + ((env && env.error) ? String(env.error) : "bad output")
@@ -1062,6 +1064,7 @@ Item {
       return
     }
     procSample = parsed
+    if ((parsed.mode === "expanded") === procExpandedWanted) procRequestTimer.stop()
     procStats = parsed
     var totalK = sample ? sample.mem.tot : 0
     allCpuRows = withSpark("cpu", Model.processGroups(parsed, "cpu", totalK))
@@ -1081,17 +1084,30 @@ Item {
       procWarmupTimer.interval = Math.max(1, 500 - (Date.now() - procLastStartedMs))
       procWarmupTimer.restart()
     }
+    Qt.callLater(reconcileProcessMode)
+  }
+
+  function reconcileProcessMode() {
+    if (procSampleWanted && procError === "" && procSample && (procSample.mode === "expanded") !== procExpandedWanted)
+      pollProcesses()
   }
 
   function pollProcesses() {
     if (!procSampleWanted || procSampler.running) return
-    var remaining = 400 - (Date.now() - procLastStartedMs)
+    // Completion is after the helper's counter timestamp. Waiting from
+    // here also covers process-launch jitter around the 400 ms boundary.
+    var remaining = 400 - (Date.now() - Math.max(procLastStartedMs, procLastFinishedMs))
     if (remaining > 0) {
       procRequestTimer.interval = Math.ceil(remaining)
       procRequestTimer.restart()
       return
     }
     procRequestTimer.stop()
+    // Build from current viewer state here: a QML command binding can
+    // still hold its previous value inside a dependency's change handler.
+    var args = [localPath("scripts/process-sample"), String(processCount), "--window", String(procWindowS)]
+    if (procExpandedWanted) args.push("--expanded")
+    procSampler.command = args
     if (procSampler.run()) procLastStartedMs = Date.now()
   }
 
@@ -1117,19 +1133,13 @@ Item {
 
   Components.Sampler {
     id: procSampler
-    command: {
-      var args = [store.localPath("scripts/process-sample"), String(store.processCount), "--window", String(store.procWindowS)]
-      if (store.procExpandedWanted) args.push("--expanded")
-      return args
-    }
     timeoutMs: Math.max(6000, store.panelIntervalMs * 3)
     onResult: function (text) { store.applyProcessSample(text) }
     onRunningChanged: {
-      // A viewer may change mode while the shared helper is running. Once
-      // it exits, acquire the requested mode through the same cadence gate.
-      if (!running && store.procSampleWanted && store.procSample
-          && (store.procSample.mode === "expanded") !== store.procExpandedWanted)
-        Qt.callLater(store.pollProcesses)
+      // Stdio completion and process exit can arrive in either order. Test
+      // the current mode after both callbacks, rather than enqueueing a run
+      // based on the previous sample's mode.
+      if (!running) Qt.callLater(store.reconcileProcessMode)
     }
     onFailed: function (message) {
       if (store.procError === "") store.procError = "process sampler " + message

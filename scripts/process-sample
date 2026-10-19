@@ -6,7 +6,7 @@
 #   {"ok":true,"ts":<epoch>,"metric":"procs","payload":"<json object>"}
 # The helper's JSON travels through stdin as one bounded JSON string, so
 # a hostile process name can never break the transport; parsing happens
-# in Model.js (node-tested). On any failure the envelope is {"ok":false,…}
+# in lib/processes.mjs (node-tested). On any failure the envelope is {"ok":false,…}
 # and the exit code is non-zero — a failure must never look like "no
 # activity" to the caller.
 #
