@@ -21,10 +21,7 @@ Item {
   readonly property var live: model ? model.gpuLive : null
   readonly property var display: model ? model.gpuDisplay : null
   readonly property string nvidiaError: model ? model.nvidiaError : ""
-  readonly property var gpuInfo: {
-    if (!model || !model.sysInfo || !model.sysInfo.gpusByCard || !gpu) return null
-    return model.sysInfo.gpusByCard[gpu.card] || null
-  }
+  readonly property var gpuInfo: gpu
   readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(Commons.Color.foreground), String(Commons.Color.background))
 
   implicitWidth: 200
@@ -69,9 +66,8 @@ Item {
     var out = []
     for (var i = 0; i < list.length; i++) {
       var g = list[i]
-      var info = model && model.sysInfo && model.sysInfo.gpusByCard ? model.sysInfo.gpusByCard[g.card] : null
-      var name = Model.gpuDisplayName(info) || Model.gpuVendorLabel(g.vendor)
-      out.push({ value: g.card, label: name, tooltip: g.card + " · " + g.vendor })
+      var name = Model.gpuDisplayName(g) || Model.gpuVendorLabel(g.vendor)
+      out.push({ value: g.card, label: name, tooltip: (g.deviceId ? g.deviceId + " · " : "") + g.card + " · " + g.vendor })
     }
     return out
   }

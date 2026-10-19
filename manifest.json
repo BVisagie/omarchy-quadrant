@@ -37,7 +37,10 @@
       "diskFallbackWithoutGpu": true,
       "barPalette": "theme",
       "barLabels": "glyph",
-      "rateUnit": "bytes"
+      "rateUnit": "bytes",
+      "gpuDeviceId": "",
+      "integratedGpuDeviceId": "",
+      "diskDeviceId": ""
     },
     "schema": [
       {
@@ -127,11 +130,25 @@
         "defaultValue": "auto"
       },
       {
+        "key": "gpuDeviceId",
+        "type": "string",
+        "label": "GPU persistent ID (PCI address)",
+        "description": "Persistent pin for the dedicated GPU. Uses a PCI address such as 0000:03:00.0, takes precedence over gpuDevice, and is saved by the device picker. Empty uses gpuDevice.",
+        "defaultValue": ""
+      },
+      {
         "key": "integratedGpuDevice",
         "type": "string",
         "label": "Integrated GPU (auto, none, or cardN)",
         "description": "Which card is treated as integrated graphics on the CPU tab. 'auto' uses positive evidence (Intel at 00:02.x, known AMD APU names). 'none' treats every card as dedicated. A cardN value forces that card to be integrated.",
         "defaultValue": "auto"
+      },
+      {
+        "key": "integratedGpuDeviceId",
+        "type": "string",
+        "label": "Integrated GPU persistent ID (PCI address)",
+        "description": "Persistent pin for integrated graphics. Takes precedence over integratedGpuDevice; empty uses its auto, none, or cardN policy.",
+        "defaultValue": ""
       },
       {
         "key": "diskFallbackWithoutGpu",
@@ -146,6 +163,13 @@
         "label": "Disk (auto or name)",
         "description": "Which whole block device the disk segment and Drives tab follow. 'auto' prefers the disk backing /, else the largest.",
         "defaultValue": "auto"
+      },
+      {
+        "key": "diskDeviceId",
+        "type": "string",
+        "label": "Disk persistent ID (by-id name)",
+        "description": "Persistent whole-disk pin: a basename from /dev/disk/by-id, without a path or partition suffix. Takes precedence over diskDevice. Empty uses diskDevice.",
+        "defaultValue": ""
       },
       {
         "key": "barPalette",

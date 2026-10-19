@@ -10,6 +10,9 @@ Item {
   id: root
 
   property var command: []
+  property string context: ""
+  property string activeContext: ""
+  property var activeCommand: []
   property int timeoutMs: 6000
   readonly property bool running: proc.running
 
@@ -18,6 +21,8 @@ Item {
 
   function run() {
     if (proc.running) return false
+    activeContext = context
+    activeCommand = command.slice()
     killTimer.stop()
     watchdog.restart()
     proc.running = true
@@ -32,7 +37,7 @@ Item {
 
   Process {
     id: proc
-    command: root.command
+    command: root.activeCommand
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.result(text)

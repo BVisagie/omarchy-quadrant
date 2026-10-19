@@ -56,12 +56,33 @@ Item {
   readonly property int processCount: cfg.processCount
   readonly property string networkInterface: cfg.networkInterface
   readonly property string gpuDevice: cfg.gpuDevice
+  readonly property string gpuDeviceId: cfg.gpuDeviceId
   readonly property string integratedGpuDevice: cfg.integratedGpuDevice
+  readonly property string integratedGpuDeviceId: cfg.integratedGpuDeviceId
   readonly property bool diskFallbackWithoutGpu: cfg.diskFallbackWithoutGpu
   readonly property string diskDevice: cfg.diskDevice
+  readonly property string diskDeviceId: cfg.diskDeviceId
   readonly property string barPaletteMode: cfg.barPalette
   readonly property string barLabelsMode: cfg.barLabels
   readonly property string rateUnit: cfg.rateUnit
+
+  onCfgChanged: {
+    if (gpuListReady && sysInfoReady) reconcileGpuTopology()
+    Qt.callLater(migrateLegacyPins)
+  }
+
+  function migrateDevicePins() {
+    persistDeviceMigration(true)
+  }
+
+  function migrateLegacyPins() {
+    persistDeviceMigration(false)
+  }
+
+  function persistDeviceMigration(syncNames) {
+    var patch = Model.devicePinMigration(cfg, gpuTopologyReady && !gpuListFailed ? gpus : null, diskInfo, syncNames)
+    if (Object.keys(patch).length > 0) persistSettings(patch)
+  }
 
   function applySettings(raw) {
     settingsRaw = raw && typeof raw === "object" ? raw : {}
@@ -211,7 +232,10 @@ Item {
   property var sysInfo: null
   property bool sysInfoReady: false
   property var diskInfo: null
+  property bool diskInfoReady: false
   property string diskInfoError: ""
+  property var prevDiskCounters: null
+  property string prevDiskTarget: ""
 
   // ---- GPU state -------------------------------------------------------
   property var rawGpus: []
@@ -250,6 +274,12 @@ Item {
   property var igpuDrmPrev: null
   property string gpuDetectionError: ""
   property string gpuDeviceWarning: ""
+  readonly property string integratedGpuWarning: {
+    if (!gpuTopologyReady || gpuListFailed) return ""
+    if (!integratedGpuDeviceId && (integratedGpuDevice === "auto" || integratedGpuDevice === "none")) return ""
+    if (integratedGpu) return ""
+    return "Pinned integrated GPU " + (integratedGpuDeviceId || integratedGpuDevice) + " is not available"
+  }
   property var integratedGpuLive: null
   property string integratedGpuError: ""
 
@@ -269,6 +299,7 @@ Item {
     }
     return 0
   }
+  readonly property string nvidiaTarget: nvidiaSelected && gpu.deviceId ? gpu.deviceId : String(nvidiaIndex)
   readonly property bool igpuSampleable: {
     if (!integratedGpu) return false
     var v = integratedGpu.vendor
@@ -321,15 +352,28 @@ Item {
   }
 
   // ---- disk / interface selection --------------------------------------
-  readonly property string effectiveDisk: {
+  // Resolve name and identity together. Independent bindings can briefly
+  // pair a new inventory with the old name while QML propagates updates.
+  readonly property var diskSelection: {
+    if (!diskInfoReady) return ({ name: "", disk: null, tag: "" })
     var disks = diskInfo && diskInfo.disks ? diskInfo.disks : []
     var mounts = diskInfo && diskInfo.mounts ? diskInfo.mounts : []
     var backing = diskInfo && diskInfo.backing ? diskInfo.backing : {}
-    return Model.pickDisk(disks, mounts, diskRateList, diskDevice, backing) || ""
+    var name = Model.pickDisk(disks, mounts, diskRateList, cfg.diskDevice, backing, cfg.diskDeviceId) || ""
+    var disk = null
+    for (var i = 0; i < disks.length; i++) if (disks[i].name === name) { disk = disks[i]; break }
+    return ({ name: name, disk: disk, tag: Model.diskHistoryTag(disk, name) })
   }
-  readonly property bool pinnedDisk: diskDevice !== "auto" && diskDevice !== ""
+  readonly property string effectiveDisk: diskSelection.name
+  readonly property var selectedDisk: diskSelection.disk
+  readonly property string diskIdentity: diskSelection.tag
+  readonly property string diskRuntimeKey: effectiveDisk ? diskIdentity + ":" + effectiveDisk : ""
+  property string diskSeriesIdentity: ""
+  property string gpuSeriesIdentity: ""
+  readonly property bool pinnedDisk: diskDeviceId !== "" || (diskDevice !== "auto" && diskDevice !== "")
   readonly property string diskDeviceError: {
-    if (!pinnedDisk || !sample) return ""
+    if (!pinnedDisk || !diskInfoReady) return ""
+    if (diskDeviceId) return effectiveDisk ? "" : "Pinned disk " + diskDeviceId + " is not available"
     var backing = diskInfo && diskInfo.backing ? diskInfo.backing : {}
     var disks = diskInfo && diskInfo.disks ? diskInfo.disks : []
     var name = Model.resolveBackingDisk(diskDevice, backing)
@@ -361,7 +405,12 @@ Item {
     resetNetRows()
     if (netSampleWanted) pollNet()
   }
-  onEffectiveDiskChanged: { diskHistory = []; diskLong = []; diskRates = null }
+  onEffectiveDiskChanged: diskRates = null
+  onDiskIdentityChanged: {
+    if (!diskIdentity) return
+    if (diskSeriesIdentity !== diskIdentity) { diskHistory = []; diskLong = [] }
+    diskSeriesIdentity = diskIdentity
+  }
 
   // ---- stream wiring ---------------------------------------------------
   function handleSample(line) {
@@ -400,22 +449,24 @@ Item {
       netHistory = Model.pushTimedWindow(netHistory, netPoint, s.ts, 60, historyLimit)
       netLong = Model.pushBucket(adoptLoaded("net", effectiveInterface), netPoint, s.ts, longBucketS, longWindowS)
     }
-    var dRates = Model.diskRates(prevSample ? prevSample.disk : null, s.disk, dt)
+    var dRates = Model.diskRates(prevDiskCounters, s.disk, dt)
     diskRateList = dRates
-    var chosen = Model.pickDisk(
-      diskInfo && diskInfo.disks ? diskInfo.disks : [],
-      diskInfo && diskInfo.mounts ? diskInfo.mounts : [],
-      dRates, diskDevice, diskInfo && diskInfo.backing ? diskInfo.backing : {})
+    var chosen = effectiveDisk
     var dr = null
-    for (var d = 0; d < dRates.length; d++) {
-      if (dRates[d].name === chosen) { dr = dRates[d]; break }
+    if (prevDiskCounters && prevDiskTarget === diskRuntimeKey) {
+      for (var d = 0; d < dRates.length; d++) {
+        if (dRates[d].name === chosen) { dr = dRates[d]; break }
+      }
     }
     diskRates = dr
     if (dr) {
       var diskPoint = { r: dr.readBps, w: dr.writeBps, b: dr.utilPct }
       diskHistory = Model.pushTimedWindow(diskHistory, diskPoint, s.ts, 60, historyLimit)
-      diskLong = Model.pushBucket(adoptLoaded("disk", chosen), diskPoint, s.ts, longBucketS, longWindowS)
+      if (diskInfo)
+        diskLong = Model.pushBucket(adoptLoaded("disk", diskIdentity, chosen), diskPoint, s.ts, longBucketS, longWindowS)
     }
+    prevDiskCounters = s.disk
+    prevDiskTarget = diskRuntimeKey
     prevSample = s
     sample = s
     streamLive = true
@@ -444,7 +495,7 @@ Item {
     var vramSource = gpuStreamFresh && sample.gpu && sample.gpu.vramTotal ? sample.gpu : gpuLive
     var point = { b: disp.pct, v: Model.gpuVramPct(vramSource) }
     gpuHistory = Model.pushTimedWindow(gpuHistory, point, ts, 60, historyLimit)
-    gpuLong = Model.pushBucket(adoptLoaded("gpu", gpu.card), point, ts, longBucketS, longWindowS)
+    gpuLong = Model.pushBucket(adoptLoaded("gpu", gpuSeriesIdentity, gpu.card), point, ts, longBucketS, longWindowS)
   }
 
   function restartStream() {
@@ -462,6 +513,7 @@ Item {
   Process {
     id: streamProc
     property bool intentionalStop: false
+    property string activeGpuKey: ""
     command: {
       var args = [store.streamScript, String(store.barIntervalMs)]
       if (store.streamGpuPath !== "" && store.streamGpuVendor !== "")
@@ -470,9 +522,18 @@ Item {
     }
     running: true
     stdout: SplitParser {
-      onRead: function (line) { store.handleSample(line) }
+      onRead: function (line) {
+        if (streamProc.activeGpuKey !== Model.gpuRuntimeKey(store.gpu)) {
+          var data = Model.safeJson(line)
+          if (!data) return
+          data.gpu = null
+          line = JSON.stringify(data)
+        }
+        store.handleSample(line)
+      }
     }
     onRunningChanged: if (running) {
+      activeGpuKey = Model.gpuRuntimeKey(store.gpu)
       intentionalStop = false
       streamKillTimer.stop()
       store.streamStartedAtMs = Date.now()
@@ -543,25 +604,29 @@ Item {
       gpuTopologyReady = true
       return
     }
-    var topo = Model.reconcileGpuTopology(rawGpus, sysInfo, integratedGpuDevice)
+    var topo = Model.reconcileGpuTopology(rawGpus, sysInfo, integratedGpuDevice, integratedGpuDeviceId)
     gpus = topo.gpus
     discreteGpus = topo.discreteGpus
     integratedGpus = topo.integratedGpus
     setIntegratedGpu(topo.integratedGpu)
-    gpuDeviceWarning = Model.gpuDevicePinMessage(topo.gpus, gpuDevice)
-    setGpu(Model.pickGpu(topo.discreteGpus, gpuDevice))
+    gpuDeviceWarning = Model.gpuDevicePinMessage(topo.gpus, gpuDevice, gpuDeviceId)
+    setGpu(Model.pickGpu(topo.discreteGpus, gpuDevice, gpuDeviceId))
     gpuTopologyReady = true
   }
 
-  // Same physical card, new object: keep last-good live metrics. A real
-  // identity change (or disappearance) clears everything sampled for the
-  // old card so a stale busy value can never be shown for the new one.
+  // A names-only rebuild keeps live readings. A new runtime target clears
+  // polls and baselines; history follows the stable hardware tag.
   function setGpu(next) {
     if (Model.gpuIdentityEqual(gpu, next)) {
       gpu = next
       return
     }
     gpu = next
+    var tag = Model.gpuHistoryTag(next)
+    if (tag) {
+      if (gpuSeriesIdentity !== tag) { gpuHistory = []; gpuLong = [] }
+      gpuSeriesIdentity = tag
+    }
     discreteGpuLive = null
     discreteDrmPrev = null
     discreteDrmSnap = null
@@ -570,12 +635,19 @@ Item {
     nvidiaGpu = null
     gpuSampleAtMs = 0
     nvidiaError = ""
-    gpuHistory = []
-    gpuLong = []
+    // A previous stream/poll result may still be in flight. Invalidate
+    // only its GPU data; CPU, memory and network keep their baselines.
+    if (sample && sample.gpu) {
+      var clean = {}
+      for (var k in sample) clean[k] = sample[k]
+      clean.gpu = null
+      sample = clean
+    }
+    restartStream()
   }
 
   function setIntegratedGpu(next) {
-    if (Model.gpuIdentityEqual(integratedGpu, next)) return
+    if (Model.gpuIdentityEqual(integratedGpu, next)) { integratedGpu = next; return }
     integratedGpu = next
     integratedGpuLive = null
     integratedGpuError = ""
@@ -583,22 +655,19 @@ Item {
     if (igpuSampleable && cpuTabViewers > 0) pollIgpu()
   }
 
-  function selectGpu(card) {
-    var chosen = Model.pickGpu(discreteGpus, card)
-    if (chosen) {
-      setGpu(chosen)
-      persistSettings({ gpuDevice: chosen.card })
+  function selectGpu(value) {
+    if (value === "auto") { persistSettings({ gpuDevice: "auto", gpuDeviceId: "" }); return }
+    var chosen = Model.pickGpu(discreteGpus, value, Model.normalizeGpuDeviceId(value))
+    if (chosen) persistSettings({ gpuDevice: chosen.card, gpuDeviceId: chosen.deviceId || "" })
+  }
+
+  function selectIntegratedGpu(value) {
+    if (value === "auto" || value === "none") {
+      persistSettings({ integratedGpuDevice: value, integratedGpuDeviceId: "" })
+      return
     }
-  }
-
-  onGpuDeviceChanged: {
-    if (!gpuTopologyReady || gpuListFailed) return
-    gpuDeviceWarning = Model.gpuDevicePinMessage(gpus, gpuDevice)
-    setGpu(Model.pickGpu(discreteGpus, gpuDevice))
-  }
-
-  onIntegratedGpuDeviceChanged: {
-    if (gpuListReady && sysInfoReady) reconcileGpuTopology()
+    var chosen = Model.pickGpu(gpus, value, Model.normalizeGpuDeviceId(value))
+    if (chosen) persistSettings({ integratedGpuDevice: chosen.card, integratedGpuDeviceId: chosen.deviceId || "" })
   }
 
   // Once the stream reports sysfs busy for an AMD card the DRM overlay is
@@ -624,6 +693,17 @@ Item {
     gpuListReady = true
     gpuDetectionError = ""
     reconcileGpuTopology()
+    Qt.callLater(migrateDevicePins)
+  }
+
+  function refreshGpuList() {
+    gpuListProc.run()
+  }
+
+  function refreshHardware() {
+    refreshSysInfo()
+    refreshDiskInfo()
+    refreshGpuList()
   }
 
   Components.Sampler {
@@ -632,7 +712,6 @@ Item {
     timeoutMs: 10000
     onResult: function (text) { store.applyGpuList(text) }
     onFailed: function (message) {
-      if (store.gpuListReady) return
       store.gpuDetectionError = "GPU detection " + message
       store.rawGpus = []
       store.gpuListFailed = true
@@ -647,6 +726,7 @@ Item {
     if (data && data.ok === true) sysInfo = Model.parseSystemInfo(data)
     sysInfoReady = true
     reconcileGpuTopology()
+    Qt.callLater(migrateDevicePins)
   }
 
   function refreshSysInfo() {
@@ -671,10 +751,14 @@ Item {
       diskInfoError = (data && data.error)
         ? "Disk detection failed: " + String(data.error)
         : "Disk detection returned invalid output"
+      diskInfoReady = true
       return
     }
     diskInfo = Model.parseDiskInfo(data)
+    diskInfoReady = true
+    prevDiskCounters = null
     diskInfoError = ""
+    Qt.callLater(migrateDevicePins)
   }
 
   function refreshDiskInfo() {
@@ -715,9 +799,15 @@ Item {
     persistSettings({ networkInterface: name })
   }
 
-  function selectDisk(name) {
-    if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+$/.test(name)) return
-    persistSettings({ diskDevice: name })
+  function selectDisk(value) {
+    if (value === "auto") { persistSettings({ diskDevice: "auto", diskDeviceId: "" }); return }
+    if (!diskInfo) return
+    var disk = Model.diskDeviceById(diskInfo.disks, value)
+    if (!disk) {
+      for (var i = 0; i < diskInfo.disks.length; i++)
+        if (diskInfo.disks[i].name === value) { disk = diskInfo.disks[i]; break }
+    }
+    if (disk) persistSettings({ diskDevice: disk.name, diskDeviceId: disk.deviceId || "" })
   }
 
   Components.Sampler {
@@ -725,6 +815,7 @@ Item {
     command: [store.diskInfoScript]
     onResult: function (text) { store.applyDiskInfo(text) }
     onFailed: function (message) {
+      store.diskInfoReady = true
       if (store.diskInfoError === "") store.diskInfoError = "Disk detection " + message
     }
   }
@@ -759,9 +850,13 @@ Item {
 
   Components.Sampler {
     id: nvidiaProc
-    command: [store.gpuStatsScript, "sample", "nvidia", String(store.nvidiaIndex)]
-    onResult: function (text) { store.applyNvidia(text) }
+    context: Model.gpuRuntimeKey(store.gpu)
+    command: [store.gpuStatsScript, "sample", "nvidia", store.nvidiaTarget]
+    onResult: function (text) {
+      if (activeContext === Model.gpuRuntimeKey(store.gpu)) store.applyNvidia(text)
+    }
     onFailed: function (message) {
+      if (activeContext !== Model.gpuRuntimeKey(store.gpu)) return
       store.nvidiaGpu = null
       if (store.nvidiaError === "") store.nvidiaError = "gpu-stats " + message
     }
@@ -817,12 +912,16 @@ Item {
 
   Components.Sampler {
     id: igpuProc
+    context: Model.gpuRuntimeKey(store.integratedGpu)
     command: {
       if (!store.igpuSampleable) return [store.gpuStatsScript, "sample", "intel", "/sys/class/drm"]
       return [store.gpuStatsScript, "sample", store.integratedGpu.vendor, store.integratedGpu.path]
     }
-    onResult: function (text) { store.applyIgpu(text) }
+    onResult: function (text) {
+      if (activeContext === Model.gpuRuntimeKey(store.integratedGpu)) store.applyIgpu(text)
+    }
     onFailed: function (message) {
+      if (activeContext !== Model.gpuRuntimeKey(store.integratedGpu)) return
       if (store.integratedGpuError === "") store.integratedGpuError = "gpu-stats " + message
     }
   }
@@ -857,11 +956,14 @@ Item {
 
   Components.Sampler {
     id: discreteGpuProc
+    context: Model.gpuRuntimeKey(store.gpu)
     command: {
       if (!store.discretePollWanted) return [store.gpuStatsScript, "sample", "intel", "/sys/class/drm"]
       return [store.gpuStatsScript, "sample", store.gpu.vendor, store.gpu.path]
     }
-    onResult: function (text) { store.applyDiscreteGpu(text) }
+    onResult: function (text) {
+      if (activeContext === Model.gpuRuntimeKey(store.gpu)) store.applyDiscreteGpu(text)
+    }
   }
 
   // ---- panel process samplers (on demand) ------------------------------
@@ -1063,6 +1165,8 @@ Item {
   property var netLong: []
   property var diskLong: []
   property var loadedHistory: null
+  property double bootTime: 0
+  property bool bootTimeReady: false
   property bool historyDirty: false
   readonly property string stateDir: {
     var xdg = Quickshell.env("XDG_STATE_HOME")
@@ -1074,17 +1178,19 @@ Item {
   // Loaded buckets for `series` are glued in front of the live buckets the
   // first time that series is pushed with a matching tag; after that the
   // live array is returned unchanged.
-  function adoptLoaded(series, tag) {
+  function adoptLoaded(series, tag, legacyName) {
     var live = series === "cpu" ? cpuLong : series === "mem" ? memLong
              : series === "gpu" ? gpuLong : series === "net" ? netLong : diskLong
     var loaded = loadedHistory
     if (!loaded || !loaded.series || !loaded.series[series]) return live
-    var wantTag = series === "gpu" ? loaded.tags.gpu : series === "net" ? loaded.tags.iface
-                : series === "disk" ? loaded.tags.disk : ""
+    // Do not consume device history while identity is still in flight.
+    // In particular, a rate-only automatic disk choice is provisional.
+    if (series === "disk" && (!diskInfo || !diskInfoReady || !bootTimeReady)) return live
+    if (series === "gpu" && (!gpuTopologyReady || !gpu || !bootTimeReady)) return live
     var next = {}
     for (var k in loaded.series) if (k !== series) next[k] = loaded.series[k]
-    loadedHistory = { series: next, tags: loaded.tags }
-    if (wantTag !== String(tag || "")) return live
+    loadedHistory = { series: next, tags: loaded.tags, version: loaded.version, saved: loaded.saved }
+    if (!Model.historySeriesMatches(loaded, series, String(tag || ""), String(legacyName || ""), bootTime)) return live
     return Model.mergeBuckets(loaded.series[series], live)
   }
 
@@ -1097,16 +1203,42 @@ Item {
   function saveHistory() {
     if (!historyDirty) return
     historyDirty = false
+    cpuLong = adoptLoaded("cpu", "")
+    memLong = adoptLoaded("mem", "")
+    netLong = adoptLoaded("net", effectiveInterface)
+    if (gpu) gpuLong = adoptLoaded("gpu", gpuSeriesIdentity, gpu.card)
+    if (effectiveDisk) diskLong = adoptLoaded("disk", diskIdentity, effectiveDisk)
     var payload = Model.historyFilePayload(
       { cpu: cpuLong, mem: memLong, gpu: gpuLong, net: netLong, disk: diskLong },
-      { gpu: gpu ? gpu.card : "", iface: effectiveInterface, disk: effectiveDisk },
+      { gpu: gpuSeriesIdentity, iface: effectiveInterface, disk: diskSeriesIdentity },
       Date.now() / 1000)
+    // Stable, unresolved history can wait for an absent device. Never
+    // refresh the save time of unverified kernel-name history: doing so
+    // would make data from an earlier boot look current.
+    if (loadedHistory && loadedHistory.version === 2) {
+      var names = ["gpu", "disk"]
+      for (var i = 0; i < names.length; i++) {
+        var name = names[i]
+        var pending = loadedHistory.series[name]
+        if (payload[name].length === 0 && pending && /^(pci:|by-id:)/.test(loadedHistory.tags[name])) {
+          payload[name] = pending
+          payload.tags[name] = loadedHistory.tags[name]
+        }
+      }
+    }
     try {
       historyFile.setText(JSON.stringify(payload))
     } catch (e) {
       // State dir missing or unwritable: the graphs still work, they just
       // start empty after a restart.
     }
+  }
+
+  FileView {
+    path: "/proc/stat"
+    printErrors: false
+    onLoaded: { store.bootTime = Model.parseBootTime(text()); store.bootTimeReady = true }
+    onLoadFailed: store.bootTimeReady = true
   }
 
   FileView {

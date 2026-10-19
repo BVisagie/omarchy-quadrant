@@ -1,0 +1,199 @@
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import "components" as Components
+import "lib/index.mjs" as Model
+
+// Deterministic Store test: helpers read staged inventories, then a real
+// refresh re-enumerates devices without touching the host's settings.
+ShellRoot {
+  id: harness
+  property int phase: 0
+  property int ticks: 0
+  property int waitUntil: 0
+  property double now: Date.now() / 1000
+  property int sequence: 0
+  property int cpuCount: 0
+  property int diskCount: 0
+  property int gpuCount: 0
+
+  QtObject {
+    id: fakeShell
+    function updateEntryInline(id, settings) { store.applySettings(settings); return true }
+  }
+  Components.Store {
+    id: store
+    shell: fakeShell
+    settingsRaw: ({ gpuDevice: "card0", gpuDeviceId: "0000:03:00.0", integratedGpuDevice: "none" })
+    saveIntervalMs: 60000
+  }
+  FileView { id: stageFile; path: Quickshell.env("QUADRANT_TEST_STAGE"); printErrors: false }
+  FileView { id: diskGate; path: Quickshell.env("QUADRANT_TEST_DISK_GATE"); printErrors: false }
+  FileView { id: gpuGate; path: Quickshell.env("QUADRANT_TEST_GPU_GATE"); printErrors: false }
+
+  function check(value, message) {
+    if (value) return
+    console.error("QIDENTITY fail phase=" + phase + " " + message)
+    Qt.quit()
+    throw new Error(message)
+  }
+  function sample(base) {
+    sequence++
+    store.handleSample(JSON.stringify({
+      v: 1, ts: now + sequence, up: 1000,
+      cpu: [100 + sequence * 10, 0, 20 + sequence, 500 + sequence * 10, 0, 0, 0, 0],
+      mem: { tot: 1000, fre: 200, avl: 400, buf: 50, cac: 100, srec: 10, slab: 20, swtot: 0, swfre: 0 },
+      net: [], disk: [
+        { n: "sda", rd: base + sequence, rs: base + sequence, wr: sequence, ws: sequence, io: sequence },
+        { n: "sdb", rd: base + sequence, rs: base + sequence, wr: sequence, ws: sequence, io: sequence }
+      ]
+    }))
+  }
+  function stage(name, next) {
+    stageFile.setText(name + "\n")
+    waitUntil = ticks + 2
+    phase = next
+  }
+  function readyForRefresh(next) {
+    if (ticks < waitUntil) return
+    store.refreshHardware()
+    phase = next
+  }
+  function assertPins() {
+    check(store.gpu && store.gpu.card === "card1", "GPU pin followed another card")
+    check(store.integratedGpu && store.integratedGpu.card === "card0", "iGPU pin followed another card")
+    check(store.effectiveDisk === "sdb", "disk pin followed another drive")
+    check(store.cfg.gpuDevice === "card1" && store.cfg.diskDevice === "sdb" && store.cfg.integratedGpuDevice === "card0", "compatibility names did not migrate")
+  }
+
+  Timer {
+    interval: 100
+    running: true
+    repeat: true
+    onTriggered: {
+      harness.ticks++
+      harness.check(harness.ticks < 180, "deadline exceeded")
+      if (harness.phase === 0) {
+        if (!store.gpuTopologyReady || !store.bootTimeReady) return
+        harness.check(!store.diskInfoReady, "disk fixture must arrive after stream rates")
+        store.applyHistoryFile(JSON.stringify({ v: 2, saved: harness.now - 10,
+          tags: { disk: "by-id:wwn-A" }, disk: [{ t: harness.now - 100, r: 71, w: 4, b: 1 }] }))
+        harness.sample(0)
+        harness.sample(10)
+        harness.check(store.effectiveDisk === "" && store.diskLong.length === 0, "provisional rate list selected a disk")
+        harness.check(store.loadedHistory.series.disk.length === 1, "inventory race consumed saved disk history")
+        diskGate.setText("ready\n")
+        harness.phase = 1
+      } else if (harness.phase === 1) {
+        if (!store.diskInfoReady) return
+        harness.sample(20)
+        harness.sample(30)
+        harness.check(store.diskLong.length > 0 && store.diskLong[0].r === 71, "stable disk history was not adopted")
+        store.selectDisk("sda")
+        store.selectIntegratedGpu("card1")
+        harness.check(store.cfg.diskDeviceId === "wwn-A", "disk picker did not persist its ID")
+        harness.check(store.cfg.integratedGpuDeviceId === "0000:08:00.0", "iGPU picker did not persist its ID")
+        store.gpuLong = [{ t: harness.now - 100, b: 88 }]
+        harness.cpuCount = store.cpuLong.length
+        harness.diskCount = store.diskLong.length
+        harness.gpuCount = store.gpuLong.length
+        harness.stage("swapped", 2)
+      } else if (harness.phase === 2) {
+        harness.readyForRefresh(3)
+      } else if (harness.phase === 3) {
+        if (!store.gpu || store.gpu.card !== "card1" || store.effectiveDisk !== "sdb" || store.cfg.diskDevice !== "sdb") return
+        harness.assertPins()
+        harness.check(store.gpuLong.length === harness.gpuCount && store.gpuLong[0].b === 88, "GPU history reset on renumbering")
+        harness.check(store.diskLong.length === harness.diskCount && store.diskLong[0].r === 71, "disk history reset on renumbering")
+        harness.check(store.cpuLong.length === harness.cpuCount, "refresh reset CPU history")
+        harness.sample(1000000)
+        harness.check(store.diskRates === null, "new disk name inherited another device's counters")
+        harness.sample(1000010)
+        harness.check(store.diskRates && store.diskRates.readBps < 10000, "disk rate baseline did not recover")
+        harness.stage("missing", 4)
+      } else if (harness.phase === 4) {
+        harness.readyForRefresh(5)
+      } else if (harness.phase === 5) {
+        if (store.gpu || store.effectiveDisk !== "") return
+        harness.check(store.gpuDeviceWarning.indexOf("0000:03:00.0") >= 0, "missing GPU warning lost the pin")
+        harness.check(store.diskDeviceError.indexOf("wwn-A") >= 0, "missing disk warning lost the pin")
+        harness.check(store.cfg.gpuDeviceId === "0000:03:00.0" && store.cfg.diskDeviceId === "wwn-A", "absent pins were rewritten")
+        harness.stage("swapped", 6)
+      } else if (harness.phase === 6) {
+        harness.readyForRefresh(7)
+      } else if (harness.phase === 7) {
+        if (!store.gpu || store.effectiveDisk !== "sdb") return
+        harness.assertPins()
+        harness.check(store.gpuDeviceWarning === "" && store.diskDeviceError === "", "reappearance did not clear warnings")
+        harness.check(store.gpuLong[0].b === 88 && store.diskLong[0].r === 71, "missing device erased its stable history")
+        store.gpuLong = []
+        store.diskLong = []
+        store.applyHistoryFile(JSON.stringify({ v: 1, saved: store.bootTime - 1,
+          tags: { gpu: "card1", disk: "sdb" }, gpu: [{ t: harness.now - 100, b: 99 }], disk: [{ t: harness.now - 100, r: 99 }] }))
+        harness.check(store.adoptLoaded("gpu", store.gpuSeriesIdentity, "card1").length === 0, "previous-boot GPU history adopted")
+        harness.check(store.adoptLoaded("disk", store.diskIdentity, "sdb").length === 0, "previous-boot disk history adopted")
+        store.applyHistoryFile(JSON.stringify({ v: 1, saved: harness.now,
+          tags: { gpu: "card1", disk: "sdb" }, gpu: [{ t: harness.now - 100, b: 77 }], disk: [{ t: harness.now - 100, r: 66 }] }))
+        harness.check(store.adoptLoaded("gpu", store.gpuSeriesIdentity, "card1")[0].b === 77, "same-boot GPU history rejected")
+        harness.check(store.adoptLoaded("disk", store.diskIdentity, "sdb")[0].r === 66, "same-boot disk history rejected")
+        store.setViewer("test", { gpuTab: true, open: true })
+        // The old poll takes 0.5 s. Replace hardware in its slot before it
+        // finishes; its result must never become the new card's baseline.
+        harness.waitUntil = harness.ticks + 1
+        harness.phase = 8
+      } else if (harness.phase === 8) {
+        if (harness.ticks < harness.waitUntil) return
+        var raw = store.rawGpus.map(function (g) { var copy = Object.assign({}, g); if (g.card === "card1") copy.pciId = "1002:7550"; return copy })
+        store.applyGpuList(JSON.stringify({ ok: true, gpus: raw }))
+        harness.check(store.gpu && store.gpu.pciId === "1002:7550", "replacement did not resolve")
+        harness.check(store.discreteDrmPrev === null, "replacement inherited a rate baseline")
+        gpuGate.setText("ready\n")
+        harness.waitUntil = harness.ticks + 6
+        harness.phase = 9
+      } else if (harness.phase === 9) {
+        if (harness.ticks < harness.waitUntil) return
+        harness.check(store.discreteGpuLive === null && store.gpuSampleAtMs === 0, "in-flight result crossed device identities")
+        store.pollDiscreteGpu()
+        harness.waitUntil = harness.ticks + 6
+        harness.phase = 10
+      } else if (harness.phase === 10) {
+        if (harness.ticks < harness.waitUntil) return
+        harness.check(store.discreteGpuLive && store.discreteGpuLive.busy === 55, "new device's poll did not recover")
+        // A final NVIDIA fixture verifies that its helper target is the
+        // resolved PCI address, independent of DRM/NVIDIA list ordering.
+        store.applyGpuList(JSON.stringify({ ok: true, gpus: [{ card: "card7", slot: "0000:03:00.0", vendor: "nvidia",
+          pciId: "10de:2684", path: "/sys/class/drm/card7/device" }] }))
+        harness.check(store.gpu.card === "card7" && store.nvidiaTarget === "0000:03:00.0", "NVIDIA target uses enumeration order")
+        harness.waitUntil = harness.ticks + 6
+        harness.phase = 11
+      } else if (harness.phase === 11) {
+        if (harness.ticks < harness.waitUntil) return
+        harness.check(store.nvidiaGpu && store.nvidiaGpu.utilPct === 42, "NVIDIA poll did not read resolved card")
+        store.selectGpu("auto")
+        store.selectIntegratedGpu("none")
+        store.selectDisk("auto")
+        harness.check(store.cfg.gpuDeviceId === "" && store.cfg.gpuDevice === "auto", "auto did not clear GPU pin")
+        harness.check(store.cfg.integratedGpuDeviceId === "" && store.cfg.integratedGpuDevice === "none", "none did not clear integrated pin")
+        harness.check(store.cfg.diskDeviceId === "" && store.cfg.diskDevice === "auto", "auto did not clear disk pin")
+        store.selectGpu("card7")
+        // CLI/IPC reset: set the policy, then clear the ID. Inventory
+        // refreshes sync compatibility names; a policy edit alone must
+        // remain available for this two-key transition.
+        store.persistSettings({ gpuDevice: "auto" })
+        harness.waitUntil = harness.ticks + 2
+        harness.phase = 12
+      } else if (harness.phase === 12) {
+        if (harness.ticks < harness.waitUntil) return
+        harness.check(store.cfg.gpuDevice === "auto" && store.cfg.gpuDeviceId !== "", "policy edit was immediately overwritten")
+        store.persistSettings({ gpuDeviceId: "" })
+        harness.waitUntil = harness.ticks + 2
+        harness.phase = 13
+      } else if (harness.phase === 13) {
+        if (harness.ticks < harness.waitUntil) return
+        harness.check(store.cfg.gpuDevice === "auto" && store.cfg.gpuDeviceId === "", "two-key CLI reset re-created a pin")
+        console.log("QIDENTITY ok (delayed inventory, refresh, swaps, missing pins, history, in-flight polls, NVIDIA PCI target)")
+        Qt.quit()
+      }
+    }
+  }
+}

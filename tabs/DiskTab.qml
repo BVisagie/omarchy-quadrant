@@ -74,7 +74,7 @@ Item {
     var out = []
     for (var i = 0; i < disks.length; i++) {
       var d = disks[i]
-      out.push({ value: d.name, label: d.model ? d.model : d.name, tooltip: d.name })
+      out.push({ value: d.name, label: d.model ? d.model : d.name, tooltip: (d.deviceId ? d.deviceId + " · " : "") + d.name })
     }
     return out
   }

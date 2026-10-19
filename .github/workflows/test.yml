@@ -110,3 +110,5 @@ jobs:
         run: bash tests/stream-forks.sh
       - name: Store smoke test (skips without quickshell)
         run: bash tests/qs-smoke.sh
+      - name: Device identity wiring (skips without quickshell)
+        run: bash tests/qs-device-identity.sh

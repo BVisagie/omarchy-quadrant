@@ -25,11 +25,11 @@ available. Right-click launches `btop` through
 
 | Data | Location and contents | Lifetime |
 | --- | --- | --- |
-| Graph history | `$XDG_STATE_HOME/dev.bvisagie.quadrant/history.json`, defaulting to `~/.local/state/dev.bvisagie.quadrant/history.json`; numeric time buckets and GPU/interface/disk tags | Saved every 30 s and on store destruction; remains after uninstall |
+| Graph history | `$XDG_STATE_HOME/dev.bvisagie.quadrant/history.json`, defaulting to `~/.local/state/dev.bvisagie.quadrant/history.json`; numeric time buckets and GPU/interface/disk tags (PCI hardware fingerprint or disk by-id name, which can contain a serial number) | Saved every 30 s and on store destruction; remains after uninstall |
 | Process counter cache | `$XDG_RUNTIME_DIR/quadrant-procs.json`; timestamps and CPU/I/O counters keyed by PID and start time, without names or command lines | Used for interval rates; not removed on plugin exit |
 | Process cache fallback | `~/.cache/quadrant-procs.json` if the process helper runs without `$XDG_RUNTIME_DIR` | Remains until deleted; the streaming sampler itself requires `$XDG_RUNTIME_DIR` |
 | Tick FIFO | `$XDG_RUNTIME_DIR/quadrant-stream.<pid>.<random>/tick.fifo` | Removed on normal exit; abandoned directories are swept on next sampler start |
-| Settings | Quadrant's inline widget entry in `~/.config/omarchy/shell.json` | Managed by the shell |
+| Settings | Quadrant's inline widget entry in `~/.config/omarchy/shell.json`, including selected GPU PCI addresses and disk by-id pins when set | Managed by the shell |
 
 History uses atomic writes and is validated on load. Process-cache writes
 use an atomic rename and a temporary file named `quadrant-procs.json.tmp`;

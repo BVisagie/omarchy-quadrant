@@ -12,6 +12,9 @@ Column {
 
   property var store: null
   readonly property var cfg: store ? store.cfg : Model.readSettings({})
+  readonly property string gpuSelection: cfg.gpuDeviceId || cfg.gpuDevice
+  readonly property string igpuSelection: cfg.integratedGpuDeviceId || cfg.integratedGpuDevice
+  readonly property string diskSelection: cfg.diskDeviceId || cfg.diskDevice
   readonly property color dim: Model.dimColor(String(Commons.Color.foreground), String(Commons.Color.background))
   readonly property real labelColumn: Math.round(width * 0.40)
   readonly property real controlColumn: Math.max(0, width - labelColumn - Commons.Style.space(10))
@@ -47,28 +50,29 @@ Column {
     var list = store ? store.discreteGpus : []
     for (var i = 0; i < list.length; i++) {
       var g = list[i]
-      var info = store && store.sysInfo && store.sysInfo.gpusByCard ? store.sysInfo.gpusByCard[g.card] : null
-      out.push({ value: g.card, label: g.card + " · " + (Model.gpuDisplayName(info) || g.vendor) })
+      out.push({ value: g.deviceId || g.card, label: g.card + " · " + (Model.gpuDisplayName(g) || g.vendor) })
     }
-    if (cfg.gpuDevice !== "auto" && !out.some(function (o) { return o.value === cfg.gpuDevice }))
-      out.push({ value: cfg.gpuDevice, label: cfg.gpuDevice + " · not present" })
+    if (gpuSelection !== "auto" && !out.some(function (o) { return o.value === root.gpuSelection }))
+      out.push({ value: gpuSelection, label: gpuSelection + " · not present" })
     return out
   }
   readonly property var igpuOptions: {
     var out = [{ value: "auto", label: "auto · detect" }, { value: "none", label: "none · every card is dedicated" }]
     var list = store ? store.gpus : []
-    for (var i = 0; i < list.length; i++) out.push({ value: list[i].card, label: list[i].card + " · " + list[i].vendor })
-    if (cfg.integratedGpuDevice !== "auto" && cfg.integratedGpuDevice !== "none"
-        && !out.some(function (o) { return o.value === cfg.integratedGpuDevice }))
-      out.push({ value: cfg.integratedGpuDevice, label: cfg.integratedGpuDevice + " · not present" })
+    for (var i = 0; i < list.length; i++)
+      out.push({ value: list[i].deviceId || list[i].card, label: list[i].card + " · " + list[i].vendor })
+    if (igpuSelection !== "auto" && igpuSelection !== "none"
+        && !out.some(function (o) { return o.value === root.igpuSelection }))
+      out.push({ value: igpuSelection, label: igpuSelection + " · not present" })
     return out
   }
   readonly property var diskOptions: {
     var out = [{ value: "auto", label: "auto · disk behind /" }]
     var list = store && store.diskInfo ? store.diskInfo.disks : []
-    for (var i = 0; i < list.length; i++) out.push({ value: list[i].name, label: list[i].name + (list[i].model ? " · " + list[i].model : "") })
-    if (cfg.diskDevice !== "auto" && !out.some(function (o) { return o.value === cfg.diskDevice }))
-      out.push({ value: cfg.diskDevice, label: cfg.diskDevice + " · not present" })
+    for (var i = 0; i < list.length; i++)
+      out.push({ value: list[i].deviceId || list[i].name, label: list[i].name + (list[i].model ? " · " + list[i].model : "") })
+    if (diskSelection !== "auto" && !out.some(function (o) { return o.value === root.diskSelection }))
+      out.push({ value: diskSelection, label: diskSelection + " · not present" })
     return out
   }
 
@@ -268,15 +272,18 @@ Column {
     }
     FormRow {
       label: "Dedicated GPU"
-      Pick { value: root.cfg.gpuDevice; options: root.gpuOptions; onChanged: function (v) { root.set("gpuDevice", v) } }
+      hint: root.cfg.gpuDevice !== "auto" && !root.cfg.gpuDeviceId ? "Pin uses a kernel name; no unique PCI address." : ""
+      Pick { value: root.gpuSelection; options: root.gpuOptions; onChanged: function (v) { if (root.store) root.store.selectGpu(v) } }
     }
     FormRow {
       label: "Integrated GPU"
-      Pick { value: root.cfg.integratedGpuDevice; options: root.igpuOptions; onChanged: function (v) { root.set("integratedGpuDevice", v) } }
+      hint: root.cfg.integratedGpuDevice !== "auto" && root.cfg.integratedGpuDevice !== "none" && !root.cfg.integratedGpuDeviceId ? "Pin uses a kernel name; no unique PCI address." : ""
+      Pick { value: root.igpuSelection; options: root.igpuOptions; onChanged: function (v) { if (root.store) root.store.selectIntegratedGpu(v) } }
     }
     FormRow {
       label: "Disk"
-      Pick { value: root.cfg.diskDevice; options: root.diskOptions; onChanged: function (v) { root.set("diskDevice", v) } }
+      hint: root.cfg.diskDevice !== "auto" && !root.cfg.diskDeviceId ? "Pin uses a kernel name; no unique disk ID." : ""
+      Pick { value: root.diskSelection; options: root.diskOptions; onChanged: function (v) { if (root.store) root.store.selectDisk(v) } }
     }
   }
 

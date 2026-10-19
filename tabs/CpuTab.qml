@@ -191,12 +191,7 @@ Item {
     Components.GpuCard {
       width: parent.width
       gpu: root.model ? root.model.integratedGpu : null
-      gpuInfo: {
-        if (!root.model || !root.model.sysInfo || !root.model.sysInfo.gpusByCard) return null
-        var g = root.model.integratedGpu
-        if (!g) return null
-        return root.model.sysInfo.gpusByCard[g.card] || g
-      }
+      gpuInfo: root.model ? root.model.integratedGpu : null
       live: root.model ? root.model.integratedGpuLive : null
       errorText: root.model ? String(root.model.integratedGpuError || "") : ""
     }

@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- GPU and disk pins use persistent hardware identities when available,
+  with legacy settings and best-effort downgrade selection preserved. `R`
+  refreshes GPU inventory as well as drives. Renumbering keeps matching
+  history; previous-boot name-only history and in-flight readings from a
+  different device are discarded.
 - Shell palette and style references are namespaced for Qt 6.12. The
   offscreen renderer and local QML lint gate work with the current Qt tools.
   Captures retain the desktop icon theme when a session socket is available.

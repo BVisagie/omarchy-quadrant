@@ -174,8 +174,7 @@ Panel {
       onTextKey: function (t) {
         if (t === "r" || t === "R") {
           if (root.store) {
-            root.store.refreshSysInfo()
-            root.store.refreshDiskInfo()
+            root.store.refreshHardware()
             root.store.pollIgpu()
           }
           root.refreshActiveTab()
@@ -309,8 +308,8 @@ Panel {
 
             Text {
               textFormat: Text.PlainText
-              visible: root.store && root.store.gpuDeviceWarning !== ""
-              text: root.store ? String(root.store.gpuDeviceWarning || "") : ""
+              visible: text !== ""
+              text: root.store ? [root.store.gpuDeviceWarning, root.store.integratedGpuWarning].filter(function (s) { return s !== "" }).join(" · ") : ""
               color: root.dim
               font.family: Commons.Style.font.family
               font.pixelSize: Commons.Style.font.caption

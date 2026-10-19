@@ -38,7 +38,7 @@ when a dedicated card is selected and available.
 | `↑` `↓` | move the cursor through the process rows (hover does the same; the row's tooltip shows the pid and a detail) |
 | uppercase `H` | every graph: last hour ↔ last minute (clicking the graph header or scrolling over the graph does the same) |
 | `S` | settings view (gear in the header) |
-| `R` | re-read system and disk identity and refresh the active tab |
+| `R` | re-read system, GPU, and disk inventory and refresh the active tab |
 | `Esc` | close settings, then the panel |
 | `Tab` | keeps its Quattro meaning: switch to the adjacent bar panel |
 

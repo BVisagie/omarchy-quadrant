@@ -171,8 +171,8 @@ test("reconcileGpuTopology waits for names and never infers siblings as iGPU", (
 });
 
 test("gpuIdentityEqual ignores object identity and extra fields", () => {
-  const a = { card: "card1", vendor: "intel", path: "/sys/class/drm/card1/device", boot: true };
-  const b = { card: "card1", vendor: "intel", path: "/sys/class/drm/card1/device", name: "UHD Graphics" };
+  const a = Model.normalizeGpuListEntry({ card: "card1", vendor: "intel", path: "/sys/class/drm/card1/device", boot: true, slot: "0000:00:02.0", pciId: "8086:1234" });
+  const b = { ...a, name: "UHD Graphics" };
   assert.equal(Model.gpuIdentityEqual(a, b), true);
   assert.equal(Model.gpuIdentityEqual(a, a), true);
   assert.equal(Model.gpuIdentityEqual(null, null), true);
@@ -182,7 +182,7 @@ test("gpuIdentityEqual ignores object identity and extra fields", () => {
   assert.equal(Model.gpuIdentityEqual(a, { card: a.card, vendor: "amd", path: a.path }), false);
   assert.equal(Model.gpuIdentityEqual(a, { card: a.card, vendor: a.vendor, path: "/sys/other" }), false);
   const rebuilt = Model.reconcileGpuTopology([a], {
-    gpusByCard: { card1: { name: "Intel UHD Graphics", slot: "0000:00:02.0" } }
+    gpusByCard: { card1: { name: "Intel UHD Graphics", slot: "0000:00:02.0", pciId: "8086:1234" } }
   }, "auto").integratedGpu;
   assert.equal(Model.gpuIdentityEqual(a, rebuilt), true);
 });
@@ -345,7 +345,7 @@ test("reconcileGpuTopology carries the marketing name for panel titles", () => {
   const topo = Model.reconcileGpuTopology([{
     card: "card0", vendor: "amd", path: "/sys/class/drm/card0/device", boot: true,
     slot: "0000:03:00.0", pciClass: "0x030000", pciId: "1002:7550", driver: "amdgpu"
-  }], { gpusByCard: { card0: { name: "Navi 48 [Radeon RX 9070/9070 XT/9070 GRE]", marketingName: "AMD Radeon RX 9070 XT" } } }, "auto");
+  }], { gpusByCard: { card0: { slot: "0000:03:00.0", pciId: "1002:7550", name: "Navi 48 [Radeon RX 9070/9070 XT/9070 GRE]", marketingName: "AMD Radeon RX 9070 XT" } } }, "auto");
   assert.equal(topo.discreteGpus.length, 1);
   assert.equal(Model.gpuDisplayName(topo.discreteGpus[0]), "Radeon RX 9070 XT");
 });

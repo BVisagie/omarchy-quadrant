@@ -2,7 +2,7 @@
 # disk-info — one-shot block-device identity and mount capacity for Quadrant.
 #
 # Emits one JSON envelope on stdout:
-#   {"ok":true,"disks":[{name,model,rotational,sizeBytes,tempC}],
+#   {"ok":true,"disks":[{name,deviceIds,model,rotational,sizeBytes,tempC}],
 #    "backing":{"dm-0":"nvme0n1",...},"dfPayload":"..."}
 #
 # Disks are whole block devices under /sys/block (loop/ram/zram/fd/nbd/sr
@@ -43,6 +43,13 @@ resolve_bin() {
 
 JQ=$(resolve_bin jq) || fail "jq not found"
 DF=$(resolve_bin df) || fail "df not found"
+
+# Fixture roots use the same convention as gpu-drm; IDs still resolve only
+# to whole devices directly under the selected device root.
+sys_path=${QUADRANT_SYS_PATH:-/sys}
+dev_path=${QUADRANT_DEV_PATH:-/dev}
+sys_path=${sys_path%/}
+dev_path=${dev_path%/}
 
 # `disk-info` (identity: devices, mapper folding, df) runs at startup and on
 # R; `disk-info usage` (df plus NVMe temperatures only) is what the panel
@@ -85,9 +92,9 @@ nvme_temp_mc() {
   local name=$1 ctrl h hname t
   [[ $name =~ ^(nvme[0-9]+)n[0-9]+$ ]] || return 0
   ctrl=${BASH_REMATCH[1]}
-  for h in /sys/class/nvme/"$ctrl"/hwmon/hwmon* \
-           /sys/class/nvme/"$ctrl"/device/hwmon/hwmon* \
-           /sys/block/"$name"/device/hwmon/hwmon*; do
+  for h in "$sys_path"/class/nvme/"$ctrl"/hwmon/hwmon* \
+           "$sys_path"/class/nvme/"$ctrl"/device/hwmon/hwmon* \
+           "$sys_path"/block/"$name"/device/hwmon/hwmon*; do
     [[ -r $h/name && -r $h/temp1_input ]] || continue
     IFS= read -r hname < "$h/name" || continue
     [[ $hname == nvme ]] || continue
@@ -138,8 +145,8 @@ physical_parent() {
 
     physical=()
     virtual=()
-    if [[ -d /sys/block/$current/slaves ]]; then
-      for s in /sys/block/"$current"/slaves/*; do
+    if [[ -d $sys_path/block/$current/slaves ]]; then
+      for s in "$sys_path"/block/"$current"/slaves/*; do
         [[ -e $s || -L $s ]] || continue
         slave=${s##*/}
         [[ $slave =~ ^[A-Za-z0-9._+-]+$ ]] || continue
@@ -193,7 +200,7 @@ physical_parent() {
 
 if [[ $mode == usage ]]; then
   temp_fields=()
-  for dev in /sys/block/nvme*n[0-9]*; do
+  for dev in "$sys_path"/block/nvme*n[0-9]*; do
     [[ -d $dev ]] || continue
     name=${dev##*/}
     [[ $name =~ ^[A-Za-z0-9._+-]+$ ]] || continue
@@ -220,10 +227,31 @@ if [[ $mode == usage ]]; then
   exit 0
 fi
 
+# Enumerate aliases once. Partition links, escaped/path-like IDs and links
+# outside the device root never become persistent pins. Bound the walk and
+# aliases per device so firmware/udev data cannot grow the envelope forever.
+READLINK=$(resolve_bin readlink) || fail "readlink not found"
+declare -A disk_ids=() id_counts=()
+id_count=0
+for link in "$dev_path"/disk/by-id/*; do
+  [[ -L $link ]] || continue
+  id_count=$(( id_count + 1 ))
+  (( id_count > 4096 )) && break
+  id=${link##*/}
+  [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._:+-]{0,254}$ && $id != *..* && ! $id =~ -part[0-9]+$ ]] || continue
+  resolved=$("$READLINK" -f -- "$link") || continue
+  name=${resolved##*/}
+  [[ $name =~ ^[A-Za-z0-9._+-]{1,64}$ && $resolved == "$dev_path/$name" && -d $sys_path/block/$name ]] || continue
+  count=${id_counts[$name]:-0}
+  (( count >= 16 )) && continue
+  id_counts[$name]=$(( count + 1 ))
+  disk_ids[$name]+="$id"$'\n'
+done
+
 disk_fields=()
 disk_count=0
 backing_pairs=()
-for dev in /sys/block/*; do
+for dev in "$sys_path"/block/*; do
   [[ -d $dev ]] || continue
   name=${dev##*/}
   [[ $name =~ ^[A-Za-z0-9._+-]+$ ]] || continue
@@ -236,7 +264,7 @@ for dev in /sys/block/*; do
     if [[ -n ${parent:-} && $parent != "$name" && $parent =~ ^[A-Za-z0-9._+-]+$ ]]; then
       backing_pairs+=("$name" "$parent")
       dmname=""
-      read_line_file "/sys/block/$name/dm/name" dmname
+      read_line_file "$sys_path/block/$name/dm/name" dmname
       if [[ -n $dmname && $dmname =~ ^[A-Za-z0-9._+-]+$ && $dmname != "$name" ]]; then
         backing_pairs+=("$dmname" "$parent")
       fi
@@ -247,7 +275,7 @@ for dev in /sys/block/*; do
   model=""
   read_line_file "$dev/device/model" model
   if [[ -z $model && $name =~ ^(nvme[0-9]+)n[0-9]+$ ]]; then
-    read_line_file "/sys/class/nvme/${BASH_REMATCH[1]}/model" model
+    read_line_file "$sys_path/class/nvme/${BASH_REMATCH[1]}/model" model
   fi
   # Model strings from firmware can be long; clip in Model.js too.
   if (( ${#model} > 64 )); then model=${model:0:64}; fi
@@ -272,7 +300,7 @@ for dev in /sys/block/*; do
     temp_json=$(( tmc / 1000 ))
   fi
 
-  disk_fields+=("$name" "$model" "$rot_json" "$size_json" "$temp_json")
+  disk_fields+=("$name" "$model" "$rot_json" "$size_json" "$temp_json" "${disk_ids[$name]:-}")
   disk_count=$(( disk_count + 1 ))
   if (( disk_count >= 16 )); then break; fi
 done
@@ -281,7 +309,7 @@ if (( ${#disk_fields[@]} == 0 )); then
   disk_json='[]'
 else
   disk_json=$("$JQ" -cn --args '
-    [range(0; ($ARGS.positional | length); 5) as $i |
+    [range(0; ($ARGS.positional | length); 6) as $i |
       { name: $ARGS.positional[$i],
         model: $ARGS.positional[$i + 1],
         rotational: (if $ARGS.positional[$i + 2] == "true" then true
@@ -290,7 +318,8 @@ else
         sizeBytes: (if $ARGS.positional[$i + 3] == "null" then null
                     else ($ARGS.positional[$i + 3] | tonumber) end),
         tempC: (if $ARGS.positional[$i + 4] == "null" then null
-                else ($ARGS.positional[$i + 4] | tonumber) end) }]' "${disk_fields[@]}")
+                else ($ARGS.positional[$i + 4] | tonumber) end),
+        deviceIds: ($ARGS.positional[$i + 5] | split("\n") | map(select(length > 0))) }]' "${disk_fields[@]}")
 fi
 
 if (( ${#backing_pairs[@]} == 0 )); then
