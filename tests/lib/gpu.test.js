@@ -270,6 +270,27 @@ test("parseAmdgpuIds keys product names by device and revision", () => {
   assert.deepEqual(Model.parseAmdgpuIds(null), {});
 });
 
+test("parseAmdgpuIds keeps the first row of a repeated key, like libdrm", () => {
+  const ids = Model.parseAmdgpuIds([
+    "15D8,\tDB,\tAMD Radeon Vega 3 Graphics",
+    "743F,\tC3,\tAMD Radeon RX 6500",
+    "15D8,\tdb,\tAMD Radeon Vega 8 Graphics",
+    "743F,\tC3,\tAMD Radeon RX 6500M",
+    "6808,\t00,\t<bad>",
+    "6808,\t00,\tATI FirePro V (FireGL V) Graphics Adapter"
+  ].join("\n"));
+  assert.equal(ids["15d8:db"], "AMD Radeon Vega 3 Graphics");
+  assert.equal(ids["743f:c3"], "AMD Radeon RX 6500");
+  assert.equal(ids["6808:00"], "ATI FirePro V (FireGL V) Graphics Adapter", "first valid row");
+  assert.equal(Object.keys(ids).length, 3);
+  // Duplicates do not use up the row cap.
+  assert.equal(Object.keys(Model.parseAmdgpuIds([
+    "743F,\tC3,\tAMD Radeon RX 6500",
+    "743F,\tC3,\tAMD Radeon RX 6500M",
+    "743F,\tC1,\tAMD Radeon RX 6500 XT"
+  ].join("\n"), 2)).length, 2);
+});
+
 test("parseAmdgpuIds drops malformed and hostile rows", () => {
   const ids = Model.parseAmdgpuIds([
     "7550,\tC0,\t<b>Radeon</b>",
