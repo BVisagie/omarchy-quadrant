@@ -53,7 +53,8 @@ the resolved PCI address instead of inferring its driver index from card
 order. A failed GPU refresh preserves the last successful inventory and
 live state while reporting its error; startup failures remain unavailable.
 
-See [Measurements](METRICS.md) for calculations and [Security](../SECURITY.md)
+See [Process exploration](PROCESS_EXPLORATION.md) for collection contracts and
+performance observations, [Measurements](METRICS.md) for calculations and [Security](../SECURITY.md)
 for state paths and failure behavior.
 
 ## Checks
@@ -84,6 +85,8 @@ syntax, and runs helper smoke checks in a mawk/gawk matrix. The
 ```sh
 bash tests/qs-smoke.sh
 bash tests/qs-device-identity.sh
+bash tests/qs-process-lifecycle.sh
+bash tests/qs-process-ui.sh
 bash tests/qmllint.sh
 bash tests/render.sh cpu /tmp/quadrant-cpu.png
 ```
@@ -111,6 +114,18 @@ disk/GPU inventory against temporary roots selected by
 `QUADRANT_SYS_PATH` / `QUADRANT_DEV_PATH`; these are fixture hooks, not
 plugin settings.
 
+`qs-process-lifecycle.sh` uses the real process helper over 80 fixture processes
+and two viewers. It checks cold warm-up, baseline spacing, compact/expanded
+acquisition and release, permission coverage, payload failure, panel close,
+follow-up cancellation when a valid sample arrives first, in-flight mode
+changes, and helper failures without a retry loop.
+`qs-process-ui.sh` runs Qt Quick Test inside Quickshell (the standalone runner
+cannot load statically linked Quickshell plugins). It exercises the actual
+shell key handler and process list: printable input, staged Esc, Tab,
+pointer controls, identity retention, filtering before caps, virtualization,
+and cursor scrolling at a narrow width, with and without the load-patch pragma. It requires QtTest and shell imports;
+the lifecycle test needs only Quickshell. Both use isolated temporary state.
+
 `qmllint.sh` needs qmllint and an Omarchy shell at
 `${OMARCHY_PATH:-/usr/share/omarchy}/shell`; it skips when either is
 missing. The regular CI runner therefore does not establish that the QML
@@ -133,7 +148,10 @@ at 1920 × 1320 with the original CPU, GPU, and Memory captures. It frames
 the screenshots without changing their UI text, colours, or measurements.
 
 Use `QUADRANT_RENDER_PALETTE=dark`, `light`, or `mono` for temporary palette
-fixtures in the render process. These do not change the installed theme.
+fixtures in the render process. `QUADRANT_RENDER_EXPANDED=1` opens the full
+process view; `QUADRANT_RENDER_QUERY`, `QUADRANT_RENDER_WIDTH`, and
+`QUADRANT_RENDER_HEIGHT` select a query and viewport for layout review.
+`QT_SCALE_FACTOR=1.25` or `2` exercises device scaling. These do not change the installed theme.
 The renderer uses isolated state and runtime directories and requires a fresh
 capture before replacing the output file. When a session Wayland socket is
 available, it links only that socket into the temporary runtime and retains

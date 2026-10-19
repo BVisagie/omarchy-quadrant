@@ -32,13 +32,14 @@ available. Right-click launches `btop` through
 | Settings | Quadrant's inline widget entry in `~/.config/omarchy/shell.json`, including selected GPU PCI addresses and disk by-id pins when set | Managed by the shell |
 
 History uses atomic writes and is validated on load. Process-cache writes
-use an atomic rename and a temporary file named `quadrant-procs.json.tmp`;
+share a private `quadrant-procs.json.lock` file across compact/expanded runs
+and use an atomic rename and a temporary file named `quadrant-procs.json.tmp`;
 a crash during the write can leave it behind. If history cannot be saved,
 live graphs still work and history may start empty after restarting.
 
 After disabling or removing Quadrant, delete its history directory if you
-want to remove saved graphs. Remove `quadrant-procs.json` and any `.tmp`
-file from the runtime directory (and `~/.cache` if that fallback was used)
+want to remove saved graphs. Remove `quadrant-procs.json`, its `.lock` file,
+and any `.tmp` file from the runtime directory (and `~/.cache` if that fallback was used)
 to clear process counters. Abandoned `quadrant-stream.*` directories can
 also be removed once their sampler has stopped.
 
@@ -46,11 +47,16 @@ also be removed once their sampler has stopped.
 
 CPU, memory, and disk process lists read `comm`, `stat`, `io`, and, for
 memory candidates, `smaps_rollup`. The helper reads up to 4096 bytes of
-`cmdline` and the `exe` link only for top candidates, to identify scripts
-and recognize applications such as Electron wrappers. A clipped command
+`cmdline` and the `exe` link for top candidates in compact mode and for all
+eligible rows while expanded CPU/Memory/Drives data is requested, to identify
+scripts and recognize applications such as Electron wrappers. A clipped command
 hint travels in the JSON sample to the naming logic; raw argument lists
 are not displayed or saved in the counter cache. Script basenames and
-recognized app labels may appear in the panel. `environ` is never read.
+recognized app labels may appear in the panel. Expanded memory uses RSS and
+does not read every `smaps_rollup`. Search and icons use the collected roster
+and local desktop-entry inventory. The search component requests no clipboard
+data on creation, focus, or hiding; paste requires an explicit user action.
+`environ` is never read.
 
 GPU attribution reads DRM `fdinfo` and process names, or NVIDIA compute-app
 memory data. TCP attribution reads socket counters, owners, and local

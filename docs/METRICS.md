@@ -19,7 +19,9 @@ Process CPU is the interval change in `/proc/<pid>/stat`, expressed as a
 share of the whole machine; the tooltip shows the one-core figure.
 Counter snapshots are keyed by PID **and start time** so a reused PID
 cannot inherit old counters. CPU and I/O rates need two samples after a
-cold start. Interpreter rows can use the script basename (`worker.py`);
+cold start. One shared follow-up runs around 500 ms after a cold opening;
+requests within 400 ms never replace the baseline. Long gaps, counter resets,
+and new PID/start-time identities require another interval. Interpreter rows can use the script basename (`worker.py`);
 wrapper applications use a fixed name map, and same-name rows are summed.
 
 ## Memory
@@ -33,12 +35,21 @@ The pressure ring displays PSI memory some avg10 on a 0–25 % scale; its
 numeric value remains the actual percentage. The used-memory graph
 follows its own range when usage varies; a flat series uses the full scale.
 
-Process memory uses proportional set size (PSS) from `smaps_rollup` where
+Compact process memory uses proportional set size (PSS) from `smaps_rollup` where
 readable, apportioning shared pages across the processes that map them;
-otherwise it uses resident set size (RSS). Tooltips distinguish
-proportional and resident memory. The row percentage is its KiB value
+otherwise it uses resident set size (RSS). Rows label PSS, RSS, or mixed
+PSS/RSS accounting and show both size and percentage. The row percentage is its KiB value
 divided by usable RAM. Candidates are selected by RSS before PSS is read,
 so the list is not an exhaustive ranking of every process by PSS.
+
+Expanded memory reads RSS for every readable process stat, avoiding an
+exhaustive `smaps_rollup` walk at panel cadence. Shared pages count for each
+process; summing these rows can exceed physical RAM. This mode is labelled
+RSS in the rows and scope note. CPU/memory/I/O name groups are formed over
+all eligible source members before search or the 256-group display cap.
+Unknown members are omitted from the known subtotal, marked `≥` with measured
+member coverage. Completely unknown fields remain unavailable. A PID search
+keeps the group's full subtotal and identifies the matching member.
 
 DIMM identity comes from unprivileged udev DMI data; swap devices come
 from `/proc/swaps`. Missing firmware details are omitted.
