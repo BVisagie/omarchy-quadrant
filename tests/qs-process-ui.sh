@@ -27,7 +27,7 @@ for mode in patched unpatched; do
 import json, pathlib, sys
 lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
 results = [json.loads(line.split("QPROCESSUI ", 1)[1]) for line in lines if "QPROCESSUI {" in line]
-assert len(results) == 1 and results[0]["passed"] >= 10 and results[0]["failed"] == 0, results
+assert len(results) == 1 and results[0]["passed"] >= 17 and results[0]["failed"] == 0, results
 assert not any(word in line for line in lines for word in ("TypeError", "ReferenceError", "Binding loop", "Failed to load"))
 print("qs-process-ui: ok")
 PYTEST

@@ -34,6 +34,11 @@ Column {
   property var selectedRow: null
   property bool pointerPrimed: false
   property point lastPointer: Qt.point(0, 0)
+  property var presentedRows: []
+  property var pendingViewport: null
+  property string presentedQuery: ""
+  property string presentedSort: "sticky"
+  property bool presentedExpanded: false
   readonly property bool searchFocused: searchField.activeFocus
   readonly property int rowHeight: Commons.Style.space(42)
   readonly property int displayLimit: 256
@@ -59,15 +64,20 @@ Column {
     searchField.focus = false
     if (panel && panel.focusProcessKeys) panel.focusProcessKeys()
   }
+  function enterResults() {
+    if (displayRows.length === 0 || errorText !== "") return
+    leaveSearch()
+    selectRow(0)
+  }
   function suspendSearch() { searchField.focus = false }
   function reset() { expanded = false; query = ""; suspendSearch(); clearCursor() }
   function clearCursor() { cursorActive = false; cursorIndex = -1; selectedRow = null }
-  function selectRow(index) {
+  function selectRow(index, reveal) {
     if (index < 0 || index >= displayRows.length || errorText !== "") { clearCursor(); return }
     selectedRow = displayRows[index]
     cursorIndex = index
     cursorActive = true
-    ensureCursorVisible()
+    if (reveal !== false) ensureCursorVisible()
   }
   function moveCursor(delta) {
     pointerPrimed = false
@@ -78,21 +88,57 @@ Column {
   function reconcileCursor() {
     if (!cursorActive || !selectedRow) return
     for (var i = 0; i < displayRows.length; i++) {
-      if (Model.sameProcessSelection(selectedRow, displayRows[i])) { selectRow(i); return }
+      if (Model.sameProcessSelection(selectedRow, displayRows[i])) { selectRow(i, false); return }
     }
     clearCursor()
   }
   function cursorY() { return list.y + (cursorIndex < 0 ? 0 : cursorIndex * rowHeight - list.contentY) }
   function ensureCursorVisible() {
+    if (pendingViewport) { pendingViewport.revealCursor = true; return }
     if (cursorIndex >= 0) list.positionViewAtIndex(cursorIndex, ListView.Contain)
     if (panel && panel.scrollProcessCursor) panel.scrollProcessCursor(root)
   }
-  onDisplayRowsChanged: {
-    pointerPrimed = false
-    reconcileCursor()
-    // ListView may still be laying out the preceding model in this handler.
-    Qt.callLater(function () { if (root.cursorActive) root.ensureCursorVisible() })
+  function captureViewport() {
+    var y = list ? Math.max(0, list.contentY - list.originY) : 0
+    var index = Math.floor(y / rowHeight)
+    return { anchor: presentedRows[index] || null, offset: y - index * rowHeight,
+             y: y, filterChanged: false, revealCursor: false }
   }
+  function updatePresentedRows() {
+    pointerPrimed = false
+    // Keep the old model until its visible anchor has been captured. Multiple
+    // updates before layout share that snapshot rather than capturing a reset.
+    if (!pendingViewport) pendingViewport = captureViewport()
+    var changed = presentedQuery !== query || presentedSort !== effectiveSort || presentedExpanded !== expanded
+    pendingViewport.filterChanged = pendingViewport.filterChanged || changed
+    presentedQuery = query
+    presentedSort = effectiveSort
+    presentedExpanded = expanded
+    reconcileCursor()
+    presentedRows = displayRows
+    Qt.callLater(restoreViewport)
+  }
+  function restoreViewport() {
+    var viewport = pendingViewport
+    if (!viewport || !list) return
+    list.forceLayout()
+    var y = viewport.y
+    if (viewport.filterChanged && !cursorActive) y = 0
+    else if (viewport.anchor) {
+      for (var i = 0; i < presentedRows.length; i++) {
+        if (Model.sameProcessRow(viewport.anchor, presentedRows[i])) {
+          y = i * rowHeight + viewport.offset
+          break
+        }
+      }
+    }
+    list.contentY = list.originY + Math.max(0, Math.min(y, list.contentHeight - list.height))
+    pendingViewport = null
+    // A sample reconciles identity without moving the cursor or the viewport
+    // to it. Only an explicit navigation/filter action requests a reveal.
+    if (viewport.revealCursor || viewport.filterChanged) ensureCursorVisible()
+  }
+  onDisplayRowsChanged: updatePresentedRows()
   function pointerMoved(item, mouse) {
     var point = item.mapToItem(root, mouse.x, mouse.y)
     var moved = pointerPrimed && (Math.abs(point.x - lastPointer.x) > 1 || Math.abs(point.y - lastPointer.y) > 1)
@@ -206,8 +252,9 @@ Column {
         if (root.panel && root.panel.switchPanel) root.panel.switchPanel(-1)
         event.accepted = true
       }
-      Keys.onReturnPressed: function (event) { event.accepted = true }
-      Keys.onEnterPressed: function (event) { event.accepted = true }
+      Keys.onDownPressed: function (event) { root.enterResults(); event.accepted = true }
+      Keys.onReturnPressed: function (event) { root.enterResults(); event.accepted = true }
+      Keys.onEnterPressed: function (event) { root.enterResults(); event.accepted = true }
     }
     Ui.Button {
       id: clearButton
@@ -280,7 +327,7 @@ Column {
     objectName: "processRows"
     width: root.width
     height: root.errorText !== "" ? 0 : Math.min(contentHeight, root.expanded ? Commons.Style.space(336) : root.displayRows.length * root.rowHeight)
-    model: root.errorText === "" ? root.displayRows : []
+    model: root.presentedRows
     clip: true
     reuseItems: true
     cacheBuffer: 0

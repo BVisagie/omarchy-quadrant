@@ -185,6 +185,67 @@ ShellRoot {
       var y = roster.cursorY() - list.y
       verify(y >= 0 && y + roster.rowHeight <= list.height + 1)
     }
+    function test_scroll_survives_samples_data() {
+      return [{ tag: "no cursor", cursor: -1 }, { tag: "visible cursor", cursor: 103 },
+              { tag: "offscreen cursor", cursor: 20 }]
+    }
+    function test_scroll_survives_samples(data) {
+      roster.expanded = true
+      wait(20)
+      var list = findChild(roster, "processRows")
+      if (data.cursor >= 0) roster.selectRow(data.cursor)
+      list.positionViewAtIndex(100, ListView.Beginning)
+      list.contentY += 17
+      var y = list.contentY
+      for (var sample = 0; sample < 3; sample++) {
+        for (var update = 0; update < 2; update++)
+          roster.expandedRows = roster.expandedRows.map(function (r) { return Object.assign({}, r) })
+        wait(20)
+        fuzzyCompare(list.contentY, y, 0.5, "a sample must preserve the wheel/scrollbar position")
+        compare(roster.cursorIndex, data.cursor)
+      }
+    }
+    function test_scroll_anchor_survives_value_reordering() {
+      roster.expanded = true
+      wait(20)
+      var list = findChild(roster, "processRows")
+      list.positionViewAtIndex(100, ListView.Beginning)
+      list.contentY += 9
+      var anchor = roster.displayRows[100]
+      var oldY = list.contentY
+      roster.expandedRows = roster.expandedRows.map(function (r) {
+        var copy = Object.assign({}, r)
+        if (r.pid === 1399) copy.sortKey = -1 // move an earlier group below the viewport
+        return copy
+      })
+      wait(20)
+      compare(roster.displayRows[99].pid, anchor.pid)
+      fuzzyCompare(list.contentY, oldY - roster.rowHeight, 0.5, "retain the first visible group and pixel offset")
+    }
+    function test_keyboard_enters_filtered_results_data() {
+      return [{ tag: "Down", key: Qt.Key_Down }, { tag: "Return", key: Qt.Key_Return },
+              { tag: "Enter", key: Qt.Key_Enter }]
+    }
+    function test_keyboard_enters_filtered_results(data) {
+      keyClick(Qt.Key_Slash)
+      tryCompare(roster, "searchFocused", true)
+      keyClick(Qt.Key_3); keyClick(Qt.Key_9); keyClick(Qt.Key_9)
+      compare(roster.displayRows.length, 1)
+      keyClick(data.key)
+      verify(!roster.searchFocused, "handoff leaves the editor")
+      compare(roster.query, "399")
+      compare(roster.cursorIndex, 0)
+      compare(roster.selectedRow.pid, 1399)
+      compare(catcher.activations, 0)
+      keyClick(Qt.Key_J)
+      compare(roster.cursorIndex, 0) // navigate only the filtered result
+      keyClick(Qt.Key_Slash)
+      tryCompare(roster, "searchFocused", true)
+      compare(roster.query, "399")
+      keyClick(Qt.Key_Escape)
+      compare(roster.query, "")
+      verify(roster.searchFocused)
+    }
     function test_pointer_controls_clear_and_show_less() {
       // Activate Show all with the pointer, type, then use its Clear control.
       var button = findChild(roster, "processExpand")
