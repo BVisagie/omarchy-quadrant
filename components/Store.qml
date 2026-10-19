@@ -996,7 +996,7 @@ Item {
   readonly property int sparkLength: 30
   property var sparkHist: ({ cpu: {}, mem: {}, io: {}, net: {}, gpu: {} })
 
-  function withSpark(metric, rows) {
+  function withSpark(metric, rows, mode) {
     var prev = sparkHist[metric] || {}
     var next = {}
     var out = []
@@ -1004,11 +1004,14 @@ Item {
       var r = rows[i]
       var key = "r" + Model.processRowKey(r)
       var old = prev[key]
-      var hist = old && Model.sameProcessRow(old.row, r) ? old.history.slice() : []
+      // Memory candidates and accounting change between compact PSS/mixed
+      // and expanded RSS. Those values cannot share one continuous trend.
+      var basis = metric === "mem" ? String(mode || "") + ":" + String(r.kind || "unknown") : ""
+      var hist = old && old.basis === basis && Model.sameProcessRow(old.row, r) ? old.history.slice() : []
       // Unknown intervals create a gap, never a fabricated idle reading.
       hist.push(r.value === null || r.value === undefined ? null : Number(r.value))
       while (hist.length > sparkLength) hist.shift()
-      next[key] = { row: r, history: hist }
+      next[key] = { row: r, history: hist, basis: basis }
       var copy = {}
       for (var k in r) copy[k] = r[k]
       copy.history = hist
@@ -1068,7 +1071,7 @@ Item {
     procStats = parsed
     var totalK = sample ? sample.mem.tot : 0
     allCpuRows = withSpark("cpu", Model.processGroups(parsed, "cpu", totalK))
-    allMemRows = withSpark("mem", Model.processGroups(parsed, "mem", totalK))
+    allMemRows = withSpark("mem", Model.processGroups(parsed, "mem", totalK), parsed.mode)
     allIoRows = withSpark("io", Model.processGroups(parsed, "io", totalK))
     // Compact ordering stays sticky. Expanded views sort/filter full groups
     // locally; no presentation cap can discard a later matching process.

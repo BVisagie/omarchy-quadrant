@@ -27,17 +27,18 @@ for pid in range(1, 81):
 helper = root / 'tree' / 'scripts' / 'process-sample'
 s = helper.read_text().replace('count=5\n', 'printf \'%s %s\\n\' "$EPOCHREALTIME" "$*" >> "$QUADRANT_TEST_REQUESTS"\ncount=5\n', 1)
 s = s.replace('count=5\n', 'if [[ $QUADRANT_TEST_MODE == failed && " $* " == *" --expanded "* ]]; then fail "fixture process failure"; fi\ncount=5\n', 1)
+s = s.replace('count=5\n', 'if [[ $QUADRANT_TEST_MODE == stateless ]]; then export XDG_RUNTIME_DIR="$QUADRANT_TEST_STATELESS_PATH"; fi\ncount=5\n', 1)
 helper.write_text(s)
 for name in ('gpu-stats', 'system-info', 'disk-info'):
     (root / 'tree' / 'scripts' / name).write_text('#!/usr/bin/env bash\nprintf \'%s\\n\' \'{"ok":true}\'\n')
 (root / 'tree' / 'scripts' / 'quadrant-stream').write_text('#!/usr/bin/env bash\nexec sleep 30\n')
 PY
-for mode in normal cancel early-valid failed inflight; do
+for mode in normal cancel early-valid failed inflight stateless; do
   mkdir -m 700 "$work/runtime-$mode"
   requests="$work/requests-$mode"
   : > "$requests"
   if ! QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME='' QUADRANT_PROC_PATH="$work/proc" \
-    QUADRANT_TEST_MODE="$mode" QUADRANT_TEST_REQUESTS="$requests" \
+    QUADRANT_TEST_MODE="$mode" QUADRANT_TEST_REQUESTS="$requests" QUADRANT_TEST_STATELESS_PATH="$work/missing/runtime" \
     XDG_RUNTIME_DIR="$work/runtime-$mode" XDG_STATE_HOME="$work/state" \
     timeout 15 quickshell -p "$work/tree/shell.qml" >"$work/$mode.log" 2>&1; then
     cat "$work/$mode.log"

@@ -38,7 +38,11 @@ ShellRoot {
         }
         harness.stage = 1
       } else if (harness.stage === 1) {
-        if (harness.mode === "cancel" || harness.mode === "early-valid") {
+        if (harness.mode === "cancel" || harness.mode === "early-valid" || harness.mode === "stateless") {
+          if (harness.mode === "stateless") {
+            if (!harness.check(store.procStats.rateState === "unavailable" && store.procError === "", "stateless coverage stays explicit")) return
+            if (!harness.check(store.memRows.length > 0 && store.cpuRows.length === 0 && store.ioRows.length === 0, "stateless memory survives without invented rates")) return
+          }
           if (Date.now() - harness.changed > 900) { harness.report("done"); Qt.quit() }
         } else if (harness.mode === "inflight" && store.procStats.mode === "expanded") {
           harness.report("expanded")
@@ -73,6 +77,17 @@ ShellRoot {
         if (!harness.check(store.withSpark("cpu", first)[0].history.length === 2, "surviving member keeps spark")) return
         var reused = Model.nameAndCollapse([{pid: 900, start: 2, comm: "identity-test", value: 1}], 1)
         if (!harness.check(store.withSpark("cpu", reused)[0].history.length === 1, "reused PID starts spark fresh")) return
+        var memory = Model.nameAndCollapse([{pid: 901, start: 1, comm: "memory-test", value: 100, kind: "pss"}], 1)
+        store.withSpark("mem", memory, "compact")
+        if (!harness.check(store.withSpark("mem", memory, "compact")[0].history.length === 2, "same accounting retains memory trend")) return
+        var rss = Model.nameAndCollapse([{pid: 901, start: 1, comm: "memory-test", value: 300, kind: "rss"}], 1)
+        if (!harness.check(store.withSpark("mem", rss, "expanded")[0].history.length === 1, "expanded RSS starts a new memory trend")) return
+        if (!harness.check(store.withSpark("mem", rss, "expanded")[0].history.length === 2, "same expanded basis retains memory trend")) return
+        if (!harness.check(store.withSpark("mem", rss, "compact")[0].history.length === 1, "mode change resets even with the same RSS kind")) return
+        if (!harness.check(store.withSpark("mem", memory, "compact")[0].history.length === 1, "accounting kind resets within compact mode")) return
+        var mixed = Model.nameAndCollapse([{pid: 901, start: 1, comm: "memory-test", value: 100, kind: "pss"},
+                                           {pid: 902, start: 2, comm: "memory-test", value: 300, kind: "rss"}], 1)
+        if (!harness.check(store.withSpark("mem", mixed, "compact")[0].history.length === 1, "mixed accounting starts a new trend")) return
         harness.report("expanded")
         harness.changed = Date.now()
         harness.stage = 3
