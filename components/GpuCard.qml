@@ -13,6 +13,7 @@ Item {
   property var gpuInfo: null
   property var live: null
   property string errorText: ""
+  property string temperatureUnit: "celsius"
   property color foreground: Commons.Color.foreground
   property string fontFamily: Commons.Style.font.family
 
@@ -137,7 +138,7 @@ Item {
           width: parent.width
           visible: root.live && root.live.tempC !== null && root.live.tempC !== undefined
           label: "Temperature"
-          value: root.live ? Model.formatTemp(root.live.tempC) : "--"
+          value: root.live ? Model.formatTemp(root.live.tempC, root.temperatureUnit) : "--"
           foreground: root.foreground
           fontFamily: root.fontFamily
         }
@@ -150,6 +151,14 @@ Item {
           fontFamily: root.fontFamily
         }
       }
+    }
+    Components.StatRow {
+      width: parent.width
+      visible: root.live && root.live.memoryClockSource !== undefined && root.live.memoryClockSource !== ""
+      label: "Memory clock"
+      value: Model.formatGpuClock(root.live ? root.live.memoryClockMhz : null)
+      foreground: root.foreground
+      fontFamily: root.fontFamily
     }
   }
 }

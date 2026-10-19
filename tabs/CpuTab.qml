@@ -159,7 +159,23 @@ Item {
       Components.StatRow {
         width: parent.width
         label: "Temperature"
-        value: root.sample ? Model.formatTemp(root.sample.tempC) : "--"
+        value: root.sample ? Model.formatTemp(root.sample.tempC, root.model && root.model.cfg ? root.model.cfg.temperatureUnit : "celsius") : "--"
+      }
+      Components.StatRow {
+        objectName: "cpuPackagePower"
+        width: parent.width
+        visible: root.model && root.model.hardwareInventory && root.model.hardwareInventory.packages.length > 0
+        label: root.model && root.model.hardwareInventory && root.model.hardwareInventory.packages.length > 1 ? "Packages total" : "Package power"
+        value: Model.formatWatts(Model.totalPackageWatts(root.model ? root.model.packageReadings : []))
+      }
+      Components.StatRow {
+        objectName: "cpuApuPower"
+        width: parent.width
+        visible: root.model && root.model.integratedGpu && root.model.integratedGpu.vendor === "amd"
+          && !(root.model.hardwareInventory && root.model.hardwareInventory.packages.length > 0)
+          && root.model.integratedGpuLive && root.model.integratedGpuLive.powerW !== null && root.model.integratedGpuLive.powerW !== undefined
+        label: "APU package"
+        value: Model.formatWatts(root.model && root.model.integratedGpuLive ? root.model.integratedGpuLive.powerW : null)
       }
       Components.StatRow {
         width: parent.width
@@ -188,6 +204,7 @@ Item {
       gpuInfo: root.model ? root.model.integratedGpu : null
       live: root.model ? root.model.integratedGpuLive : null
       errorText: root.model ? String(root.model.integratedGpuError || "") : ""
+      temperatureUnit: root.model && root.model.cfg ? (root.model.cfg.temperatureUnit || "celsius") : "celsius"
     }
 
     PanelSeparator { }

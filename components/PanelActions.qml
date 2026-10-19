@@ -15,6 +15,7 @@ Column {
   property bool keyboardActive: false
   property string selectedKey: ""
   property alias runner: localRunner
+  signal requested(var entry)
   readonly property int selectedIndex: {
     // Read outside the callback so selection changes notify this binding.
     var key = selectedKey
@@ -47,6 +48,7 @@ Column {
         && typeof panel.scrollActionItem === "function") panel.scrollActionItem(feedback)
   }
   function unavailableReason(entry) {
+    if (entry.unavailableReason) return entry.unavailableReason
     if (entry.available === false) return "this mount path is incomplete"
     var detail = details[entry.value]
     return detail && detail.unavailableReason ? detail.unavailableReason : ""
@@ -57,10 +59,11 @@ Column {
     focusEntry(index)
     var reason = unavailableReason(entry)
     if (reason) {
-      runner.error = true; runner.message = "Cannot open " + entry.value + ": " + reason
+      runner.error = true; runner.message = (entry.kind === "gpu-details" ? "Cannot show details for " : "Cannot open ") + entry.value + ": " + reason
       return
     }
-    runner.run(entry.kind, entry.value)
+    if (entry.kind === "copy" || entry.kind === "open-mount") runner.run(entry.kind, entry.value)
+    else requested(entry)
   }
   onContextChanged: { leaveFocus(); if (localRunner) localRunner.clear() }
   onEntriesChanged: {
@@ -97,6 +100,8 @@ Column {
             textFormat: Text.PlainText
             text: row.modelData.label
             color: root.dim
+            width: parent.width
+            wrapMode: Text.Wrap
             font.family: Commons.Style.font.family
             font.pixelSize: Commons.Style.font.caption
           }
@@ -118,17 +123,17 @@ Column {
           objectName: "actionButton_" + row.index
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
-          text: row.modelData.kind === "copy" ? "Copy" : "Open"
+          text: row.modelData.actionText || (row.modelData.kind === "copy" ? "Copy" : "Open")
           fontSize: Commons.Style.font.caption
           bordered: true
           focusable: true
           hasCursor: root.keyboardActive && root.selectedKey === row.modelData.key
           enabled: !runner.busy && row.unavailableReason === ""
           opacity: enabled ? 1 : 0.5
-          tooltipText: (row.modelData.kind === "copy" ? "Copy " : "Open ") + row.modelData.value
+          tooltipText: text + " " + row.modelData.value
             + (row.unavailableReason ? "\n" + row.unavailableReason + " · R to refresh" : " · A for keyboard actions")
           Accessible.role: Accessible.Button
-          Accessible.name: (row.modelData.kind === "copy" ? "Copy " : "Open ") + row.modelData.label + " " + row.modelData.value
+          Accessible.name: text + " " + row.modelData.label + " " + row.modelData.value
             + (row.unavailableReason ? ": " + row.unavailableReason : "")
           Accessible.onPressAction: root.trigger(row.index)
           onClicked: root.trigger(row.index)

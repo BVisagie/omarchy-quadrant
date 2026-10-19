@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "Bernard Visagie",
   "license": "MIT",
-  "description": "Unified system monitor for the Quattro bar: CPU, GPU, memory, drives and network in one slot, with a tabbed panel that names your hardware, keeps an hour of history and shows the processes behind the numbers.",
+  "description": "Unified system monitor for the Quattro bar: CPU, GPU, memory, drives and network in one slot, with a tabbed panel that names your hardware, keeps an hour of history and shows the processes behind the numbers, plus sensor and battery diagnostics.",
   "kinds": [
     "bar-widget",
     "service"
@@ -52,14 +52,16 @@
         "network"
       ],
       "barStyle": "text",
-      "barGraphWidth": 32
+      "barGraphWidth": 32,
+      "temperatureUnit": "celsius",
+      "sensorId": ""
     },
     "schema": [
       {
         "key": "segments",
         "type": "multiselect",
         "label": "Bar segments",
-        "description": "Which metric segments appear in the bar slot. Each panel tab's in bar switch updates this list. An empty list keeps a compact system-monitor icon. The GPU segment is dedicated cards only; when none is detected the gpu token is shown as Drives unless diskFallbackWithoutGpu is false.",
+        "description": "Which metric segments appear in the bar slot. Each resource tab's in bar switch updates this list. An empty list keeps a compact system-monitor icon. The GPU segment is dedicated cards only; when none is detected the gpu token is shown as Drives unless diskFallbackWithoutGpu is false.",
         "options": [
           {
             "value": "cpu",
@@ -217,6 +219,24 @@
           "bits"
         ],
         "defaultValue": "bytes"
+      },
+      {
+        "key": "temperatureUnit",
+        "type": "enum",
+        "label": "Temperature unit",
+        "description": "Display Celsius or Fahrenheit throughout the panel. Samples and thresholds remain in Celsius.",
+        "options": [
+          "celsius",
+          "fahrenheit"
+        ],
+        "defaultValue": "celsius"
+      },
+      {
+        "key": "sensorId",
+        "type": "string",
+        "label": "Pinned hardware sensor",
+        "description": "Stable device/driver/channel identity highlighted in Hardware. Select a discovered sensor in panel settings; empty leaves all sensors unpinned.",
+        "defaultValue": ""
       },
       {
         "key": "gpuGraphLayout",

@@ -93,6 +93,12 @@ Column {
       out.push({ value: diskSelection, label: diskSelection + " · not present" })
     return out
   }
+  readonly property var sensorOptions: {
+    var options = Model.sensorOptions(store ? store.hardwareInventory : null)
+    if (cfg.sensorId && !options.some(function (o) { return o.value === root.cfg.sensorId }))
+      options.push({ value: cfg.sensorId, label: "Pinned sensor · not present" })
+    return options
+  }
 
   // ---- building blocks ---------------------------------------------------
   component Section: Column {
@@ -314,6 +320,25 @@ Column {
         onChanged: function (v) { root.set("rateUnit", v) }
       }
     }
+    FormRow {
+      label: "Temperature unit"
+      Pick {
+        objectName: "temperatureUnitChoice"
+        value: root.cfg.temperatureUnit
+        options: [{ value: "celsius", label: "Celsius · °C" }, { value: "fahrenheit", label: "Fahrenheit · °F" }]
+        onChanged: function (v) { root.set("temperatureUnit", v) }
+      }
+    }
+    FormRow {
+      label: "Pinned sensor"
+      hint: "Highlight in Hardware"
+      Pick {
+        objectName: "sensorPinChoice"
+        value: root.cfg.sensorId
+        options: root.sensorOptions
+        onChanged: function (v) { root.set("sensorId", v) }
+      }
+    }
   }
 
   Section {
@@ -419,13 +444,13 @@ Column {
       rowSpacing: Commons.Style.space(3)
       Repeater {
         model: [
-          "← →  or  1–" + (root.store && root.store.discreteGpuAvailable ? 5 : 4), "switch tab",
-          "↑ ↓", "process rows or selected actions",
+          "← →  or  1–" + Model.panelTabs(root.store && root.store.discreteGpuAvailable, root.store && root.store.hardwareAvailable).length, "switch tab",
+          "↑ ↓", "process rows, Hardware scroll, or selected actions",
           "H", "last hour / last minute on every graph",
           "S", "settings",
           "R", "re-read hardware identity",
           "/", "search processes (CPU, Memory, Drives)",
-          "A", "copy/open actions (Network, Drives)",
+          "A", "actions (Network, Drives, Hardware)",
           "Esc", "leave actions/search, close view",
           "Tab", "next bar panel (the shell's own binding)"
         ]

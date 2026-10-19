@@ -33,6 +33,7 @@ Item {
   readonly property string gpuStatsScript: localPath("scripts/gpu-stats")
   readonly property string diskInfoScript: localPath("scripts/disk-info")
   readonly property string sysInfoScript: localPath("scripts/system-info")
+  readonly property string hardwareInfoScript: localPath("scripts/hardware-info.py")
 
   // ---- settings --------------------------------------------------------
   // `settingsRaw` is the inline shell.json entry as the shell injects it
@@ -70,6 +71,7 @@ Item {
   readonly property string barPaletteMode: cfg.barPalette
   readonly property string barLabelsMode: cfg.barLabels
   readonly property string rateUnit: cfg.rateUnit
+  readonly property string temperatureUnit: cfg.temperatureUnit
 
   onCfgChanged: {
     if (gpuListReady && sysInfoReady) reconcileGpuTopology()
@@ -172,6 +174,7 @@ Item {
   property int memTabViewers: 0
   property int diskTabViewers: 0
   property int netTabViewers: 0
+  property int hardwareTabViewers: 0
   property int openPanels: 0
   property int expandedProcessViewers: 0
 
@@ -188,7 +191,7 @@ Item {
   }
 
   function recomputeViewers() {
-    var seg = 0, gpuTab = 0, cpuTab = 0, memTab = 0, diskTab = 0, netTab = 0, open = 0, expanded = 0
+    var seg = 0, gpuTab = 0, cpuTab = 0, memTab = 0, diskTab = 0, netTab = 0, hardwareTab = 0, open = 0, expanded = 0
     for (var k in viewers) {
       var v = viewers[k]
       if (!v) continue
@@ -198,6 +201,7 @@ Item {
       if (v.open && v.memTab) memTab++
       if (v.open && v.diskTab) diskTab++
       if (v.netTab) netTab++
+      if (v.open && v.hardwareTab) hardwareTab++
       if (v.open) open++
       if (v.open && v.expandedProcesses && (v.cpuTab || v.memTab || v.diskTab)) expanded++
     }
@@ -207,6 +211,7 @@ Item {
     memTabViewers = memTab
     diskTabViewers = diskTab
     netTabViewers = netTab
+    hardwareTabViewers = hardwareTab
     openPanels = open
     expandedProcessViewers = expanded
   }
@@ -249,6 +254,8 @@ Item {
 
   // ---- GPU state -------------------------------------------------------
   property var rawGpus: []
+  property var rawDetectedGpus: []
+  readonly property var detectedGpus: Model.reconcileGpuTopology(rawDetectedGpus, sysInfo, integratedGpuDevice, integratedGpuDeviceId).gpus
   property var gpus: []
   property var discreteGpus: []
   property var integratedGpus: []
@@ -695,6 +702,7 @@ Item {
       return
     }
     rawGpus = Model.normalizeGpuList(data)
+    rawDetectedGpus = Model.normalizeGpuInventory(data)
     gpuListFailed = false
     gpuListReady = true
     gpuDetectionError = ""
@@ -709,6 +717,7 @@ Item {
     // topology unavailable. A later successful list can remove hardware.
     if (gpuListReady && !gpuListFailed) return
     rawGpus = []
+    rawDetectedGpus = []
     gpuListFailed = true
     gpuListReady = true
     reconcileGpuTopology()
@@ -722,6 +731,7 @@ Item {
     refreshSysInfo()
     refreshDiskInfo()
     refreshGpuList()
+    refreshHardwareDetails()
   }
 
   Components.Sampler {
@@ -808,6 +818,119 @@ Item {
     onResult: function (text) { store.applyDiskUsage(text) }
   }
 
+  // ---- extra hardware details -----------------------------------------
+  // One serialized helper serves all monitors. Inventory is startup / R;
+  // only visible Hardware details or CPU package watts request live reads.
+  property var hardwareInventory: null
+  property var hardwareReadings: null
+  property var packageReadings: []
+  property var energyPrevious: null
+  property bool hardwareReady: false
+  property string hardwareInventoryError: ""
+  property string hardwareSampleError: ""
+  readonly property string hardwareError: [hardwareInventoryError, hardwareSampleError].filter(function (s) { return s !== "" }).join(" · ")
+  readonly property bool hardwareAvailable: (hardwareInventory !== null && (hardwareInventory.sensors.length > 0
+    || hardwareInventory.batteries.length > 0 || hardwareInventory.packages.length > 0))
+    || detectedGpus.length > 1 || detectedGpus.some(function (g) { return g.telemetryAvailable === false })
+    || cfg.sensorId !== "" || hardwareError !== ""
+  readonly property bool hardwareWanted: hardwareTabViewers > 0 || (cpuTabViewers > 0
+    && hardwareInventory !== null && hardwareInventory.packages.length > 0)
+  readonly property string hardwareDemandMode: hardwareTabViewers > 0 ? "sample" : "power"
+  property int hardwareGeneration: 0
+  property int hardwareDemandEpoch: 0
+  property bool hardwareInventoryPending: false
+  property bool hardwarePollPending: false
+  property string hardwareCommandMode: "list"
+
+  function hardwareContext(mode) {
+    return String(hardwareGeneration) + (mode === "list" ? "" : ":" + String(hardwareDemandEpoch))
+  }
+  function startHardwareRequest() {
+    if (hardwareProc.running) return
+    if (hardwareInventoryPending) hardwareCommandMode = "list"
+    else if (hardwareWanted && hardwarePollPending) hardwareCommandMode = hardwareDemandMode
+    else return
+    if (hardwareProc.run()) {
+      if (hardwareCommandMode === "list") hardwareInventoryPending = false
+      else hardwarePollPending = false
+    }
+  }
+  function refreshHardwareDetails() {
+    hardwareGeneration++
+    hardwareInventoryPending = true
+    hardwarePollPending = hardwareWanted
+    energyPrevious = null
+    hardwareReadings = null
+    packageReadings = []
+    startHardwareRequest()
+  }
+  function pollHardware() {
+    if (!hardwareWanted) return
+    hardwarePollPending = true
+    startHardwareRequest()
+  }
+  onHardwareWantedChanged: {
+    hardwareDemandEpoch++
+    hardwarePollPending = hardwareWanted
+    energyPrevious = null
+    hardwareReadings = null
+    packageReadings = []
+    if (hardwareWanted) Qt.callLater(startHardwareRequest)
+  }
+  onHardwareDemandModeChanged: {
+    hardwareDemandEpoch++
+    hardwareReadings = null
+    if (hardwareWanted) { hardwarePollPending = true; Qt.callLater(startHardwareRequest) }
+  }
+  function applyHardwareData(text, mode) {
+    var data = Model.parseHardware(Model.safeJson(text))
+    if (!data || data.mode !== mode) {
+      failHardwareData("Hardware helper returned invalid data", mode)
+      return
+    }
+    if (mode !== "power") {
+      hardwareInventory = Model.hardwareInventory(data)
+      hardwareInventoryError = ""
+      hardwareReady = true
+    }
+    if (mode === "list") return
+    packageReadings = Model.packagePower(energyPrevious, data, panelIntervalMs / 1000 * 3 + 2)
+    energyPrevious = data
+    hardwareReadings = mode === "sample" ? data : null
+    hardwareSampleError = ""
+  }
+  function failHardwareData(message, mode) {
+    if (mode === "list") { hardwareInventoryError = message; hardwareReady = true }
+    else {
+      hardwareSampleError = message
+      hardwareReadings = null
+      packageReadings = []
+      energyPrevious = null
+    }
+  }
+  Timer {
+    interval: store.panelIntervalMs
+    running: store.hardwareWanted
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: store.pollHardware()
+  }
+  Components.Sampler {
+    id: hardwareProc
+    objectName: "hardwareSampler"
+    command: ["python3", store.hardwareInfoScript, store.hardwareCommandMode]
+    context: store.hardwareContext(store.hardwareCommandMode)
+    onRunningChanged: if (!running) Qt.callLater(store.startHardwareRequest)
+    onResult: function (text) {
+      var mode = activeCommand[2]
+      if (activeContext === store.hardwareContext(mode)) store.applyHardwareData(text, mode)
+    }
+    onFailed: function (message) {
+      var mode = activeCommand[2]
+      if (activeContext === store.hardwareContext(mode)) store.failHardwareData("Hardware collection " + message, mode)
+    }
+  }
+
   function selectInterface(name) {
     if (typeof name !== "string" || !/^[A-Za-z0-9._@:+-]+$/.test(name)) return
     persistSettings({ networkInterface: name })
@@ -842,7 +965,7 @@ Item {
       nvidiaError = (data && data.error) ? String(data.error) : "gpu-stats returned bad output"
       return
     }
-    var rows = Model.parseNvidiaCsv(data.payload)
+    var rows = Model.parseNvidiaCsv(data.payload, 8, data.memoryClock === true)
     nvidiaGpu = rows.length > 0 ? rows[0] : null
     nvidiaApps = Model.parseNvidiaApps(data.apps)
     nvidiaError = ""
@@ -1342,6 +1465,7 @@ Item {
     gpuListProc.run()
     sysInfoProc.run()
     diskInfoProc.run()
+    refreshHardwareDetails()
   }
 
   Component.onDestruction: saveHistory()

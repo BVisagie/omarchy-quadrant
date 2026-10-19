@@ -92,6 +92,7 @@ BarWidget {
     memTab: panelOpenOn("mem"),
     diskTab: panelOpenOn("disk"),
     netTab: panelOpenOn("net"),
+    hardwareTab: panelOpenOn("hardware"),
     expandedProcesses: panelLoader.item ? panelLoader.item.expandedProcesses === true : false,
     open: opened
   })
