@@ -44,6 +44,8 @@ self-held FIFO provides timing. Setup and cleanup use external tools.
 | `gpu-stats sample nvidia` | NVIDIA segment or GPU tab visible |
 | `gpu-stats sample amd/intel` → `gpu-drm` | GPU tab open, or GPU segment visible when DRM polling is needed for busy; integrated GPU while CPU tab is open |
 | `disk-info usage` | Drives tab open; mount capacity and NVMe temperatures |
+| `hardware-info.py list` | Startup and `R`; sensor/package/battery metadata, without telemetry inputs |
+| `hardware-info.py power/sample` | Hardware tab open, or CPU with discovered packages; one serialized helper shared across monitors; CPU alone reads package counters only |
 | `panel-action.py` | Explicit Copy/Open activation only; clipboard stdin or a validated mount URI passed to the desktop tool |
 
 `panelIntervalMs` controls poll timers, including GPU polls needed by a
@@ -70,8 +72,8 @@ checks need the runtime tools, ShellCheck, Ruff, mawk, and gawk.
 ```sh
 node --test tests/lib/*.test.js
 python3 -m unittest discover -s tests/py -t . -v
-ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py tests/py tests/bench-bar.py tests/qs/action-helper.py
-python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py tests/bench-bar.py tests/qs/action-helper.py
+ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py tests/py tests/bench-bar.py tests/qs/*.py
+python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py tests/bench-bar.py tests/qs/*.py
 bash tests/intel-freq-paths.sh
 bash tests/stream-forks.sh
 shellcheck -x scripts/quadrant-stream scripts/system-info scripts/disk-info scripts/gpu-stats scripts/gpu-intel-paths.sh scripts/process-sample scripts/process-net tests/*.sh
@@ -96,6 +98,7 @@ bash tests/qs-panel-ui.sh
 bash tests/qs-graph-ui.sh
 bash tests/qs-bar-ui.sh
 bash tests/qs-actions-ui.sh
+bash tests/qs-hardware-ui.sh
 bash tests/qmllint.sh
 bash tests/render.sh cpu /tmp/quadrant-cpu.png
 ```
@@ -203,6 +206,22 @@ details map. Capacity and access updates therefore do not replace delegates.
 `disk-info` reports read/search access hints with the existing mount polls;
 the action helper still checks current mount membership and access at activation.
 
+`qs-hardware-ui.sh` runs 19 cases in each load-patch mode against Hardware,
+settings, six-tab headers, and the real Store with a private sysfs tree. It
+checks unit/pin persistence, missing pins, stopped versus unreadable fans,
+critical colours in Fahrenheit, CPU/APU package labels, separate memory clocks,
+per-battery units and real zero power, GPU Details routing and unavailable
+cards, mouse/keyboard controls, shell Tab, and Hardware scrolling. Native
+lifecycle cases cover two viewers sharing one helper, metadata-only startup,
+no hidden polls, CPU-only package reads, late results after close/mode changes,
+coalesced refreshes, visible failures, and recovery. Layout cases use 320/440 px,
+font size 18, and spacing scales 1/1.5/2. Python fixtures verify physical sensor
+identity across hwmon/NVMe renumbering, permission-denied counters, MSR/MMIO
+deduplication, battery units, bounds, and actual AMD/NVIDIA clock helper paths.
+FIFO inputs establish that inventory and GPU-owned hwmon discovery never read
+telemetry. Pure tests cover elapsed-time rates, wraps/resets, source/range
+changes, malformed values, and downgrade settings preservation.
+
 `LocalAction.qml` captures each request in its own job. It serializes requests
 within a panel action group; a device-context change drops the previous result
 and lets its accepted desktop request finish before enabling another. Status
@@ -222,10 +241,10 @@ warnings still fail the gate.
 
 `render.sh` needs Quickshell and Omarchy's shell imports. It uses Qt's
 offscreen platform and temporary state to render `cpu`, `gpu`, `mem`,
-`disk`, `net`, `settings`, or `bar`. Missing shell imports are an error,
+`disk`, `net`, `hardware`, `settings`, or `bar`. Missing shell imports are an error,
 not a skip. It samples this machine's real hardware; inspect the output
 and any reported QML errors before using it. Public screenshot files are
-`preview.png` and `docs/screenshots/{bar,cpu,gpu,memory,drives,network,settings}.png`.
+`preview.png` and `docs/screenshots/{bar,cpu,gpu,memory,drives,network,hardware,settings}.png`.
 The hero's editable layout is [artwork/hero.html](artwork/hero.html), rendered
 at 1920 × 1320 with the original CPU, GPU, and Memory captures. It frames
 the screenshots without changing their UI text, colours, or measurements.
@@ -258,6 +277,16 @@ The fixture supplies existing history data and never triggers clipboard or
 launcher actions. `QUADRANT_RENDER_FIT=1 QUADRANT_RENDER_HEADER=1` includes the
 panel header and fits the full content. These captures check presentation;
 they do not establish access to a physical removable volume.
+
+Set `QUADRANT_RENDER_HARDWARE_FIXTURE=1` for synthetic Hardware sensors,
+package watts, batteries, and GPU inventory. It avoids publishing real device
+identifiers. `QUADRANT_RENDER_TEMPERATURE_UNIT=fahrenheit` selects display units
+without saving configuration. For example:
+
+```sh
+QUADRANT_RENDER_HARDWARE_FIXTURE=1 QUADRANT_RENDER_HEADER=1 QUADRANT_RENDER_FIT=1 \
+  bash tests/render.sh hardware /tmp/quadrant-hardware.png
+```
 
 ### Matched graph comparisons
 
@@ -341,3 +370,10 @@ panel and CLI, device changes, a minute/hour toggle, history across a
 shell restart, and visible errors when a helper fails. GPU process lists,
 disk attribution, and the compact network bar have limits described in
 [Measurements](METRICS.md) and [Settings](SETTINGS.md).
+
+For Hardware, check readable and denied RAPL counters, at least two packages,
+hwmon renumbering, duplicate drivers, stopped/faulted fans, a laptop and a
+peripheral battery, multi-GPU role routing, and a card without telemetry.
+Verify memory clocks on physical AMD/NVIDIA hardware and GPU sleep behavior
+on a suitable hybrid machine. Fixture coverage does not establish those
+hardware properties. AMD runtime power-management work remains deferred.

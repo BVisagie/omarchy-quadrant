@@ -4,6 +4,13 @@
 
 ### Added
 
+- Conditional Hardware diagnostics: device-owned temperature/fan inventory,
+  stable sensor pins, Celsius/Fahrenheit across panels, readable CPU package
+  watts, and individual system/peripheral battery health, capacity, cycles,
+  and power. A measured stopped fan remains distinct from unavailable input.
+- Separate AMD/NVIDIA memory clocks and a metadata-only GPU overview with
+  Details actions, including detected cards without telemetry. Live hardware
+  reads are shared across monitors and stop with the last relevant viewer.
 - Copy buttons for collected local IPv4/IPv6 and MAC values, plus Open actions
   for mounted volumes. A/arrow/Enter navigation keeps shell Tab and staged Esc;
   success, missing tools, inaccessible/unmounted paths, and timeouts have visible

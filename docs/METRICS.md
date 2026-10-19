@@ -24,6 +24,12 @@ requests within 400 ms never replace the baseline. Long gaps, counter resets,
 and new PID/start-time identities require another interval. Interpreter rows can use the script basename (`worker.py`);
 wrapper applications use a fixed name map, and same-name rows are summed.
 
+CPU package watts use readable powercap energy deltas and per-counter monotonic
+time. Aliases/subdomains are excluded; unavailable packages make a total
+unknown. APU power stays labelled as package data. See
+[package watts and memory clocks](HARDWARE.md#package-watts-and-memory-clocks)
+for baseline, wrap, reset, and source rules.
+
 ## Memory
 
 The ring and bar show `(MemTotal − MemAvailable) / MemTotal`. The
@@ -65,10 +71,10 @@ metrics appear on the CPU tab. Automatic role detection uses positive
 hardware/name evidence; [device settings](SETTINGS.md) can override it.
 
 - **AMD:** `amdgpu` sysfs supplies busy, memory busy, per-engine busy,
-  VRAM, edge/junction temperature, power, and active DPM clock when
+  VRAM, edge/junction temperature, power, and separate active core/memory DPM clocks when
   readable. Direct sysfs busy takes priority over a DRM overlay.
 - **NVIDIA:** timeout-bounded `nvidia-smi` polls supply utilization, VRAM,
-  temperature, power, and clock while its segment or tab is visible.
+  temperature, power, and separate core/memory clocks while its segment or tab is visible.
   It does not run in the streaming sampler.
 - **Intel:** DRM fdinfo engine time supplies busy, with the selected
   card's RC6 / xe `gtidle` residency as a fallback. Both are presented as
@@ -235,6 +241,12 @@ CPU sensors are restricted to `k10temp`, `coretemp`, `zenpower`, and
 substituting an unrelated sensor. Available identity and metrics depend
 on the firmware, driver, and current user's read permissions; missing
 fields may be omitted or shown as `--`.
+
+The Hardware detail tab adds non-GPU hwmon channels without changing those
+summary sensor choices. Every panel temperature uses the selected Celsius or
+Fahrenheit unit; stored values and thresholds remain Celsius. A fan's measured
+zero is distinct from an unreadable channel. Battery diagnostics retain
+per-device scope and matching Wh/Ah capacity pairs. See [Hardware diagnostics](HARDWARE.md).
 
 Process and network helper envelopes are limited to 1 MiB of encoded JSON.
 An over-limit sample is omitted in full and the panel shows a process-coverage

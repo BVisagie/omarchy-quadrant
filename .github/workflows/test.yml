@@ -37,8 +37,8 @@ jobs:
         run: python3 -m pip install --quiet ruff
       - name: Lint python helpers
         run: |
-          ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py tests/py tests/bench-bar.py tests/qs/action-helper.py
-          python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py tests/bench-bar.py tests/qs/action-helper.py
+          ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py tests/py tests/bench-bar.py tests/qs/*.py
+          python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py tests/bench-bar.py tests/qs/*.py
       - name: Python helper tests
         run: python3 -m unittest discover -s tests/py -t . -v
 
@@ -93,6 +93,9 @@ jobs:
           ./scripts/process-sample 3 --window 30 | jq -e '.ok == true and (.payload | fromjson | (.cpu | length) > 0)'
           ./scripts/process-net eth0 | jq -e '.ok == true'
           ./scripts/gpu-stats list | jq -e '.ok == true'
+          for mode in list power sample; do
+            python3 scripts/hardware-info.py "$mode" | jq -e --arg mode "$mode" '.ok == true and .mode == $mode and (.sensors | type == "array")'
+          done
           bash tests/intel-freq-paths.sh
           ./scripts/system-info | jq -e '.ok == true and .cpu and .mem and .host'
           ./scripts/disk-info | jq -e '.ok == true and .disks and .dfPayload and (.backing | type == "object")'
@@ -124,3 +127,5 @@ jobs:
         run: bash tests/qs-bar-ui.sh
       - name: Local copy/open actions (skips without quickshell and shell imports)
         run: bash tests/qs-actions-ui.sh
+      - name: Hardware details and shared collector (skips without quickshell and shell imports)
+        run: bash tests/qs-hardware-ui.sh

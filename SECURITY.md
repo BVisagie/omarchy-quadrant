@@ -16,6 +16,12 @@ panel. The stream watchdog can terminate and restart **its own sampler**;
 startup cleanup also probes sampler PIDs to remove abandoned FIFO
 directories.
 
+Hardware diagnostics read bounded hwmon, powercap energy, and power-supply
+attributes. Permission-denied counters remain unavailable; the helper never
+changes access, enables capping, writes fan controls, or manages GPU runtime
+power. GPU-owned hwmon input files are left to the existing GPU collectors.
+Metadata inventory includes detected cards without making them live targets.
+
 Settings are written through Omarchy's `shell.json` writer. A compatibility
 path can call `omarchy bar set --json` when the in-process writer is not
 available. Right-click launches `btop` through
@@ -40,7 +46,7 @@ They do not mount volumes or request additional permissions.
 | Process counter cache | `$XDG_RUNTIME_DIR/quadrant-procs.json`; timestamps and CPU/I/O counters keyed by PID and start time, without names or command lines | Used for interval rates; not removed on plugin exit |
 | Process cache fallback | `~/.cache/quadrant-procs.json` if the process helper runs without `$XDG_RUNTIME_DIR` | Remains until deleted; the streaming sampler itself requires `$XDG_RUNTIME_DIR` |
 | Tick FIFO | `$XDG_RUNTIME_DIR/quadrant-stream.<pid>.<random>/tick.fifo` | Removed on normal exit; abandoned directories are swept on next sampler start |
-| Settings | Quadrant's inline widget entry in `~/.config/omarchy/shell.json`, including selected GPU PCI addresses and disk by-id pins when set | Managed by the shell |
+| Settings | Quadrant's inline widget entry in `~/.config/omarchy/shell.json`, including selected GPU PCI addresses, disk by-id pins, and hashed sensor pins when set | Managed by the shell |
 
 History uses atomic writes and is validated on load. Process-cache writes
 share a private `quadrant-procs.json.lock` file across compact/expanded runs
@@ -50,6 +56,12 @@ live graphs still work and history may start empty after restarting. If the
 process-state lock cannot be opened or acquired, memory and process counts
 still work with unavailable CPU/I/O rates; the helper does not read or
 write shared counters without the lock.
+
+Sensor IDs hash device path, driver, channel, and available NVMe serial;
+the raw serial is not stored in that setting. Battery identities also hash
+available serials. Diagnostic snapshots and package baselines stay in memory,
+with no hardware history file. This does not alter existing disk history tags,
+which may contain a disk serial as documented above.
 
 After disabling or removing Quadrant, delete its history directory if you
 want to remove saved graphs. Remove `quadrant-procs.json`, its `.lock` file,

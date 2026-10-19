@@ -49,6 +49,10 @@ Unknown values and long collection gaps leave breaks. See
 Tabs combine hardware identity, graphs, stats, and top processes. Hiding
 a bar segment leaves its panel tab available. The GPU tab appears only
 when a dedicated card is selected and available.
+**Hardware** appears when additional sensors, package counters, batteries,
+multiple GPUs, or unavailable cards are found. It lists per-device diagnostics;
+a missing saved sensor or collection error also keeps it accessible. See
+[Hardware diagnostics](HARDWARE.md) for pinning, units, and source limits.
 
 Tabs use equal slots and wrap on narrow panels. The resource-specific
 **Show … in bar** switch names its current target; the gear remains separate
@@ -57,12 +61,12 @@ from the tab strip. Device choices wrap too, with full names in tooltips.
 | Key | Action |
 | --- | --- |
 | `←` `→` or `1`–`N` | switch tab (`N` = visible tabs; GPU is omitted without a dedicated card) |
-| `↑` `↓` | move the cursor through the process rows (hover does the same; the row's tooltip shows the pid and a detail) |
+| `↑` `↓` | move through process rows or selected actions; scroll the Hardware view |
 | uppercase `H` | every graph: last hour ↔ last minute (the duration buttons, summary click, and graph wheel do the same) |
 | `S` | settings view (gear in the header) |
-| `R` | re-read system, GPU, and disk inventory and refresh the active tab |
+| `R` | re-read system, GPU, disk, sensor, package, and battery inventory and refresh the active tab |
 | `/` | open process search on CPU, Memory, or Drives |
-| `A` | select copy/open actions on Network or Drives; `↑`/`↓` choose and `Enter`/Space activate |
+| `A` | select Network/Drives actions or Hardware GPU Details; `↑`/`↓` choose and `Enter`/Space activate |
 | `Esc` | leave action selection, clear a search query or leave its editor, then close settings or the panel |
 | `Tab` | keeps its Quattro meaning: switch to the adjacent bar panel |
 
@@ -191,12 +195,12 @@ See [measurement limits](METRICS.md) for what each process value represents.
 ## IPC
 
 The shell must be running with Quadrant enabled. Tab names in IPC are
-`cpu`, `gpu`, `mem`, `disk`, and `net`; segment names are `cpu`, `gpu`,
+`cpu`, `gpu`, `mem`, `disk`, `net`, and `hardware`; segment names are `cpu`, `gpu`,
 `memory`, `disk`, and `network`. Unknown or unavailable tabs are ignored.
 The `set` method takes its value as JSON text:
 
 ```sh
-quickshell ipc -p "$OMARCHY_PATH/shell" call dev.bvisagie.quadrant showTab gpu     # cpu | gpu | mem | disk | net
+quickshell ipc -p "$OMARCHY_PATH/shell" call dev.bvisagie.quadrant showTab gpu     # cpu | gpu | mem | disk | net | hardware
 quickshell ipc -p "$OMARCHY_PATH/shell" call dev.bvisagie.quadrant settings
 quickshell ipc -p "$OMARCHY_PATH/shell" call dev.bvisagie.quadrant setBarSegment disk true
 quickshell ipc -p "$OMARCHY_PATH/shell" call dev.bvisagie.quadrant set processCount 8
@@ -244,4 +248,5 @@ history, and TCP process attribution.
   <a href="screenshots/network.png"><img src="screenshots/network.png" alt="Network tab with a fixture Ethernet interface, traffic history, totals, and Copy buttons for MAC, IPv4 and IPv6 values in a light theme" width="540"></a>
 </p>
 
+The [Hardware guide includes a synthetic diagnostics capture](HARDWARE.md).
 The [settings guide includes the full settings view](SETTINGS.md#settings-view).
