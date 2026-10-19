@@ -37,8 +37,8 @@ jobs:
         run: python3 -m pip install --quiet ruff
       - name: Lint python helpers
         run: |
-          ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py tests/py tests/bench-bar.py
-          python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py tests/bench-bar.py
+          ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py tests/py tests/bench-bar.py tests/qs/action-helper.py
+          python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py tests/bench-bar.py tests/qs/action-helper.py
       - name: Python helper tests
         run: python3 -m unittest discover -s tests/py -t . -v
 
@@ -122,3 +122,5 @@ jobs:
         run: bash tests/qs-graph-ui.sh
       - name: Bar trends, ordering and shared service (skips without quickshell and shell imports)
         run: bash tests/qs-bar-ui.sh
+      - name: Local copy/open actions (skips without quickshell and shell imports)
+        run: bash tests/qs-actions-ui.sh

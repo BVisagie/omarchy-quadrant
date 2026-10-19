@@ -40,6 +40,10 @@ Panel {
   readonly property bool expandedProcesses: opened && !settingsOpen && currentProcessList
                                             ? currentProcessList.expandable && currentProcessList.expanded : false
   readonly property bool searchFocused: currentProcessList ? currentProcessList.searchFocused : false
+  readonly property var currentActions: {
+    var item = activeTabItem()
+    return item && "actionList" in item ? item.actionList : null
+  }
 
   readonly property bool gpuAvailable: store ? store.discreteGpuAvailable === true : false
   readonly property var tabs: {
@@ -59,8 +63,9 @@ Panel {
   onTabsChanged: {
     if (tabs.indexOf(currentTab) < 0) currentTab = tabs[0]
   }
-  onCurrentTabChanged: { clearCursor(); focusProcessKeys() }
+  onCurrentTabChanged: { clearCursor(); leaveActionFocus(); focusProcessKeys() }
   onSettingsOpenChanged: {
+    leaveActionFocus()
     if (settingsOpen && currentProcessList) currentProcessList.suspendSearch()
   }
   onOpenedChanged: {
@@ -114,10 +119,20 @@ Panel {
     if (currentProcessList) currentProcessList.clearCursor()
   }
   function resetProcessViews() {
+    leaveActionFocus()
     var items = [cpuTab, memTab, diskTab, gpuTab, netTab]
     for (var i = 0; i < items.length; i++) if (items[i] && items[i].processList) items[i].processList.reset()
   }
   function focusProcessKeys() { if (keyCatcher) keyCatcher.forceActiveFocus() }
+  function leaveActionFocus() {
+    for (var item of [netTab, diskTab]) if (item && item.actionList) item.actionList.leaveFocus()
+  }
+  function scrollActionItem(item) {
+    var y = item.mapToItem(bodyColumn, 0, 0).y
+    if (y < bodyFlick.contentY) bodyFlick.contentY = Math.max(0, y)
+    else if (y + item.height > bodyFlick.contentY + bodyFlick.height)
+      bodyFlick.contentY = Math.min(Math.max(0, bodyFlick.contentHeight - bodyFlick.height), y + item.height - bodyFlick.height)
+  }
   function scrollProcessCursor(item) {
     var y = item.mapToItem(bodyColumn, 0, item.cursorY()).y
     if (y < bodyFlick.contentY) bodyFlick.contentY = Math.max(0, y)

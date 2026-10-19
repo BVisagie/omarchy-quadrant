@@ -4,6 +4,9 @@
 
 Open settings with the panel's gear or `S`. Changes apply immediately.
 
+[Copy/open actions](USAGE.md#copy-addresses-and-open-volumes) need no saved
+configuration; they run only when activated. Their keyboard help is listed here too.
+
 Settings live inline on the widget's entry in `~/.config/omarchy/shell.json`
 and are declared in the manifest schema. The settings view writes them
 through the shell, typed; `omarchy bar set` works too and takes effect at

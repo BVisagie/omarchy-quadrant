@@ -8,16 +8,28 @@ Ui.PanelKeyCatcher {
   property var panel: null
   blocked: !panel || panel.settingsOpen || panel.searchFocused
 
-  onCloseRequested: if (panel) panel.close()
+  onCloseRequested: {
+    if (!panel) return
+    if (panel.currentActions && panel.currentActions.keyboardActive) panel.currentActions.leaveFocus()
+    else panel.close()
+  }
   onTabRequested: function (direction) { if (panel) panel.switchPanel(direction) }
   onMoveRequested: function (dx, dy) {
     if (!panel) return
     if (dx !== 0) panel.stepTab(dx)
-    if (dy !== 0) panel.moveCursor(dy)
+    if (dy !== 0) {
+      if (panel.currentActions && panel.currentActions.keyboardActive) panel.currentActions.moveCursor(dy)
+      else panel.moveCursor(dy)
+    }
   }
+  onActivateRequested: if (panel && panel.currentActions && panel.currentActions.keyboardActive) panel.currentActions.activate()
   onTextKey: function (t) {
     if (!panel) return
-    if (t === "/" && panel.currentProcessList) { panel.currentProcessList.focusSearch(); return }
+    if (t === "/" && panel.currentProcessList) {
+      if (panel.currentActions) panel.currentActions.leaveFocus()
+      panel.currentProcessList.focusSearch(); return
+    }
+    if ((t === "a" || t === "A") && panel.currentActions) { panel.currentActions.toggleFocus(); return }
     if (t === "r" || t === "R") {
       if (panel.store) {
         panel.store.refreshHardware()

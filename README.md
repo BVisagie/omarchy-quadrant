@@ -20,6 +20,7 @@ lists the processes behind the numbers.
 - Independent bar segments, keyboard navigation, device pickers, and an
   inline settings view that follows the active Omarchy theme.
 - Optional minute trends beside bar values, with saved segment ordering.
+- Copy local addresses and MAC values, or open mounted volumes from the panel.
 
 <p align="center">
   <img src="docs/screenshots/bar.png" alt="Quadrant CPU, GPU, memory, and network segments beside Omarchy’s clock and weather" width="486">
@@ -38,6 +39,9 @@ as provided by a normal desktop session.
 `nvidia-smi` is needed for NVIDIA monitoring. `lspci` (pciutils) is
 optional and supplies AMD/Intel model names. Right-clicking the widget
 opens `btop` through Omarchy's terminal launcher.
+
+Copy buttons use `wl-copy` (wl-clipboard). Opening a mounted volume uses the
+default file manager through `gio open` (GLib), or `xdg-open` when GIO is absent.
 
 ## Install
 

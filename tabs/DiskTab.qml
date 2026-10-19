@@ -14,6 +14,7 @@ Item {
   property var panel: null
   property var model: null
   property alias processList: processRoster
+  property alias actionList: mountControls
 
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "disk"
   readonly property bool longWindow: panel !== null && panel.longWindow === true
@@ -120,6 +121,7 @@ Item {
     }
 
     Components.DeviceChoices {
+      objectName: "diskChoices"
       width: parent.width
       visible: root.diskOptions.length > 1
       options: root.diskOptions
@@ -177,31 +179,13 @@ Item {
         text: "MOUNTS"
       }
 
-      Repeater {
-        model: root.diskMounts
-
-        delegate: Column {
-          id: mountRow
-          required property var modelData
-          readonly property real pct: Math.max(0, Math.min(100, Number(modelData.pct) || 0))
-          width: parent.width
-          spacing: Commons.Style.space(3)
-
-          Components.StatRow {
-            width: parent.width
-            label: String(mountRow.modelData.target || "mount")
-            value: Model.formatBytes(mountRow.modelData.used) + " of " + Model.formatBytes(mountRow.modelData.size)
-                   + " · " + Model.formatPct(mountRow.pct)
-            labelColor: Commons.Color.foreground
-            valueColor: root.pal.dim
-            labelMaximumRatio: 0.5
-          }
-          Components.CompositionBar {
-            width: parent.width
-            barHeight: Commons.Style.space(4)
-            segments: [{ fraction: mountRow.pct / 100, color: Model.heatColor(mountRow.pct, root.pal.primary, root.pal.primary, root.pal.hot, 80) }]
-          }
-        }
+      Components.PanelActions {
+        id: mountControls
+        objectName: "mountActions"
+        width: parent.width
+        panel: root.panel
+        context: root.diskName
+        entries: Model.mountActions(root.diskMounts)
       }
     }
 

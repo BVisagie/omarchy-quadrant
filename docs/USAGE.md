@@ -62,7 +62,8 @@ from the tab strip. Device choices wrap too, with full names in tooltips.
 | `S` | settings view (gear in the header) |
 | `R` | re-read system, GPU, and disk inventory and refresh the active tab |
 | `/` | open process search on CPU, Memory, or Drives |
-| `Esc` | clear a search query, leave its editor, then close settings or the panel |
+| `A` | select copy/open actions on Network or Drives; `↑`/`↓` choose and `Enter`/Space activate |
+| `Esc` | leave action selection, clear a search query or leave its editor, then close settings or the panel |
 | `Tab` | keeps its Quattro meaning: switch to the adjacent bar panel |
 
 These shortcuts apply while a metric tab is visible. In settings, use the
@@ -79,6 +80,36 @@ The last-used tab survives closing and reopening the panel within the
 running shell. The history-window choice also stays until changed; closing
 the panel closes the settings view and resets process search, expansion,
 and the cursor.
+
+## Copy addresses and open volumes
+
+On **Network**, each collected IPv4/IPv6 address and MAC value has a **Copy**
+button. The complete displayed value is copied without an added newline;
+IP values show the host address without the CIDR prefix. The existing inventory
+includes up to eight global-scope addresses per interface; `R` refreshes it.
+Copying never reads the clipboard or changes interface selection.
+
+On **Drives**, each displayed mounted volume has an **Open** button. It checks
+that the directory is still mounted and accessible, then sends a request to
+your default file manager. Complete paths are retained even when the label
+needs eliding; the button's tooltip and accessible name include the path.
+An unmounted or inaccessible directory shows an error; `R` refreshes inventory.
+The existing representative-mount grouping remains in effect.
+
+Press **A** to select the first action, **↑/↓** (or `j`/`k`) to choose, and
+**Enter** or **Space** to activate. **Esc** or **A** returns to normal navigation;
+**Tab** still switches bar panels. Action selection follows the same value
+through an inventory reorder, and clears if it disappears or its device changes.
+Settings, search, tab changes, and panel close also leave action selection.
+Selecting a process row returns keyboard navigation to processes.
+
+Success and failure messages name the requested value and remain until the
+next action or device-context change. File-manager success means the desktop
+tool accepted the request. These actions run only when activated; opening a
+tab, focusing a button, and refreshing inventory do not copy or launch anything.
+
+The [Network](screenshots/network.png) and [Drives](screenshots/drives.png)
+captures use synthetic local addresses and volumes to demonstrate these controls.
 
 ## Graphs and processes
 
@@ -177,8 +208,8 @@ methods. See [Settings](SETTINGS.md) for typed values and validation.
 ## Screenshots
 
 These captures show the current panel across dark, light, and monochrome
-Omarchy themes. The dedicated-GPU example uses fixture readings; the other
-tabs sample the development machine. Click a screenshot to view it at full size.
+Omarchy themes. GPU, Network, and Drives use fixture readings; CPU and Memory
+sample the development machine. Click a screenshot to view it at full size.
 
 <table>
   <tr>
@@ -198,16 +229,16 @@ tabs sample the development machine. Click a screenshot to view it at full size.
     </td>
     <td width="50%" valign="top">
       <p><strong>Drives</strong><br>Disk selection, throughput, and mounts.</p>
-      <a href="screenshots/drives.png"><img src="screenshots/drives.png" alt="Drives tab showing a WD SSD, labelled history controls, read and write throughput, mount usage, and process I/O" width="420"></a>
+      <a href="screenshots/drives.png"><img src="screenshots/drives.png" alt="Drives tab with fixture SSD identity, throughput history, mounted-volume Open buttons, capacity bars, and process I/O" width="420"></a>
     </td>
   </tr>
 </table>
 
-**Network** — interface selection, download/upload history, and TCP
-process attribution.
+**Network** — interface selection, copyable MAC/IP values, download/upload
+history, and TCP process attribution.
 
 <p align="center">
-  <a href="screenshots/network.png"><img src="screenshots/network.png" alt="Network tab showing a Wi-Fi interface, labelled history controls, traffic graph, totals, and process traffic in a dark teal theme" width="540"></a>
+  <a href="screenshots/network.png"><img src="screenshots/network.png" alt="Network tab with a fixture Ethernet interface, traffic history, totals, and Copy buttons for MAC, IPv4 and IPv6 values in a light theme" width="540"></a>
 </p>
 
 The [settings guide includes the full settings view](SETTINGS.md#settings-view).

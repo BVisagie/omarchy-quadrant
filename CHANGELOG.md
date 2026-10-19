@@ -4,6 +4,10 @@
 
 ### Added
 
+- Copy buttons for collected local IPv4/IPv6 and MAC values, plus Open actions
+  for mounted volumes. A/arrow/Enter navigation keeps shell Tab and staged Esc;
+  success, missing tools, inaccessible/unmounted paths, and timeouts have visible
+  feedback. Copied bytes use stdin and mount URIs use literal argument lists.
 - Optional graph-plus-text bar with bounded minute trends from shared history;
   text remains the default. Segment switches now have ordering arrows, and
   disabled or absent devices retain their saved positions.
@@ -34,6 +38,8 @@
 
 ### Fixed
 
+- Mount actions retain complete paths, including spaces, backslashes and
+  trailing whitespace, instead of launching a truncated display label.
 - Horizontal bar values stay beside their own labels and trends within fixed
   slots. Only Intel reserves the GPU estimate prefix, and visible vertical
   percentage values share a font size without shrinking AMD/NVIDIA needlessly.
