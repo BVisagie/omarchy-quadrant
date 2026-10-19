@@ -678,14 +678,10 @@ Item {
 
   function applyGpuList(text) {
     var data = Model.safeJson(text)
-    if (!data || data.ok !== true) {
-      gpuDetectionError = (data && data.error)
+    if (!data || data.ok !== true || !Array.isArray(data.gpus)) {
+      failGpuList((data && data.error)
         ? "GPU detection failed: " + String(data.error)
-        : "GPU detection returned invalid output"
-      rawGpus = []
-      gpuListFailed = true
-      gpuListReady = true
-      reconcileGpuTopology()
+        : "GPU detection returned invalid output")
       return
     }
     rawGpus = Model.normalizeGpuList(data)
@@ -694,6 +690,18 @@ Item {
     gpuDetectionError = ""
     reconcileGpuTopology()
     Qt.callLater(migrateDevicePins)
+  }
+
+  function failGpuList(message) {
+    gpuDetectionError = message
+    // A refresh failure says nothing about whether a known card vanished.
+    // Keep even a successful empty inventory; only startup failure marks
+    // topology unavailable. A later successful list can remove hardware.
+    if (gpuListReady && !gpuListFailed) return
+    rawGpus = []
+    gpuListFailed = true
+    gpuListReady = true
+    reconcileGpuTopology()
   }
 
   function refreshGpuList() {
@@ -712,11 +720,7 @@ Item {
     timeoutMs: 10000
     onResult: function (text) { store.applyGpuList(text) }
     onFailed: function (message) {
-      store.gpuDetectionError = "GPU detection " + message
-      store.rawGpus = []
-      store.gpuListFailed = true
-      store.gpuListReady = true
-      store.reconcileGpuTopology()
+      store.failGpuList("GPU detection " + message)
     }
   }
 

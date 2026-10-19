@@ -8,7 +8,7 @@ import "lib/index.mjs" as Model
 // refresh re-enumerates devices without touching the host's settings.
 ShellRoot {
   id: harness
-  property int phase: 0
+  property int phase: -2
   property int ticks: 0
   property int waitUntil: 0
   property double now: Date.now() / 1000
@@ -16,6 +16,7 @@ ShellRoot {
   property int cpuCount: 0
   property int diskCount: 0
   property int gpuCount: 0
+  property string inventoryBefore: ""
 
   QtObject {
     id: fakeShell
@@ -30,6 +31,7 @@ ShellRoot {
   FileView { id: stageFile; path: Quickshell.env("QUADRANT_TEST_STAGE"); printErrors: false }
   FileView { id: diskGate; path: Quickshell.env("QUADRANT_TEST_DISK_GATE"); printErrors: false }
   FileView { id: gpuGate; path: Quickshell.env("QUADRANT_TEST_GPU_GATE"); printErrors: false }
+  FileView { id: listGate; path: Quickshell.env("QUADRANT_TEST_LIST_GATE"); printErrors: false }
 
   function check(value, message) {
     if (value) return
@@ -65,6 +67,22 @@ ShellRoot {
     check(store.effectiveDisk === "sdb", "disk pin followed another drive")
     check(store.cfg.gpuDevice === "card1" && store.cfg.diskDevice === "sdb" && store.cfg.integratedGpuDevice === "card0", "compatibility names did not migrate")
   }
+  function rememberInventory() {
+    inventoryBefore = JSON.stringify(store.rawGpus)
+    store.discreteGpuLive = { busy: 34 }
+    store.discreteDrmPrev = { ts: 123 }
+    store.integratedGpuLive = { busy: 21 }
+    store.igpuDrmPrev = { ts: 456 }
+  }
+  function assertInventoryRetained() {
+    assertPins()
+    check(!store.gpuListFailed && store.gpuTopologyReady && store.discreteGpuAvailable, "refresh failure invalidated known topology")
+    check(JSON.stringify(store.rawGpus) === inventoryBefore, "refresh failure dropped raw inventory")
+    check(store.discreteGpuLive.busy === 34 && store.discreteDrmPrev.ts === 123, "refresh failure erased dedicated readings")
+    check(store.integratedGpuLive.busy === 21 && store.igpuDrmPrev.ts === 456, "refresh failure erased integrated readings")
+    check(store.gpuLong[0].b === 88 && store.diskLong[0].r === 71, "refresh failure reset history")
+    check(store.gpuDetectionError !== "", "refresh failure hid its diagnostic")
+  }
 
   Timer {
     interval: 100
@@ -73,8 +91,19 @@ ShellRoot {
     onTriggered: {
       harness.ticks++
       harness.check(harness.ticks < 180, "deadline exceeded")
-      if (harness.phase === 0) {
+      if (harness.phase === -2) {
+        if (!store.gpuListReady || !store.gpuTopologyReady) return
+        harness.check(store.gpuListFailed && store.gpus.length === 0 && !store.gpu && !store.integratedGpu, "startup failure fabricated topology")
+        harness.check(store.gpuDetectionError !== "", "startup failure hid its diagnostic")
+        listGate.setText("ready\n")
+        harness.waitUntil = harness.ticks + 2
+        harness.phase = -1
+      } else if (harness.phase === -1) {
+        harness.readyForRefresh(0)
+      } else if (harness.phase === 0) {
         if (!store.gpuTopologyReady || !store.bootTimeReady) return
+        if (store.gpuListFailed) return
+        harness.check(store.gpuDetectionError === "", "success did not clear startup failure")
         harness.check(!store.diskInfoReady, "disk fixture must arrive after stream rates")
         store.applyHistoryFile(JSON.stringify({ v: 2, saved: harness.now - 10,
           tags: { disk: "by-id:wwn-A" }, disk: [{ t: harness.now - 100, r: 71, w: 4, b: 1 }] }))
@@ -110,11 +139,31 @@ ShellRoot {
         harness.check(store.diskRates === null, "new disk name inherited another device's counters")
         harness.sample(1000010)
         harness.check(store.diskRates && store.diskRates.readBps < 10000, "disk rate baseline did not recover")
+        harness.rememberInventory()
+        store.applyGpuList('{"ok":false,"error":"refresh failed"}')
+        harness.assertInventoryRetained()
+        store.applyGpuList("bad json")
+        harness.assertInventoryRetained()
+        store.applyGpuList('{"ok":true}')
+        harness.assertInventoryRetained()
+        harness.stage("failed-envelope", 30)
+      } else if (harness.phase === 30) {
+        harness.readyForRefresh(31)
+      } else if (harness.phase === 31) {
+        if (store.gpuDetectionError.indexOf("refresh fixture failure") < 0) return
+        harness.assertInventoryRetained()
+        harness.stage("failed-exit", 32)
+      } else if (harness.phase === 32) {
+        harness.readyForRefresh(33)
+      } else if (harness.phase === 33) {
+        if (store.gpuDetectionError.indexOf("code 7") < 0) return
+        harness.assertInventoryRetained()
         harness.stage("missing", 4)
       } else if (harness.phase === 4) {
         harness.readyForRefresh(5)
       } else if (harness.phase === 5) {
         if (store.gpu || store.effectiveDisk !== "") return
+        harness.check(store.gpuDetectionError === "", "successful refresh did not clear the failure diagnostic")
         harness.check(store.gpuDeviceWarning.indexOf("0000:03:00.0") >= 0, "missing GPU warning lost the pin")
         harness.check(store.diskDeviceError.indexOf("wwn-A") >= 0, "missing disk warning lost the pin")
         harness.check(store.cfg.gpuDeviceId === "0000:03:00.0" && store.cfg.diskDeviceId === "wwn-A", "absent pins were rewritten")
@@ -191,7 +240,11 @@ ShellRoot {
       } else if (harness.phase === 13) {
         if (harness.ticks < harness.waitUntil) return
         harness.check(store.cfg.gpuDevice === "auto" && store.cfg.gpuDeviceId === "", "two-key CLI reset re-created a pin")
-        console.log("QIDENTITY ok (delayed inventory, refresh, swaps, missing pins, history, in-flight polls, NVIDIA PCI target)")
+        store.applyGpuList('{"ok":true,"gpus":[]}')
+        harness.check(!store.gpu && !store.integratedGpu && store.gpus.length === 0 && !store.gpuListFailed, "successful empty list retained removed hardware")
+        store.failGpuList("GPU detection timed out")
+        harness.check(!store.gpuListFailed && store.gpus.length === 0, "failed refresh invalidated a successful empty inventory")
+        console.log("QIDENTITY ok (delayed inventory, failed refreshes, swaps, missing pins, history, in-flight polls, NVIDIA PCI target)")
         Qt.quit()
       }
     }

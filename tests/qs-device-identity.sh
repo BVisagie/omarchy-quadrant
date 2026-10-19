@@ -16,7 +16,7 @@ printf 'initial\n' > "$work/stage"
 python3 - "$work/fixtures" <<'PY'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
-for stage in ('initial', 'swapped', 'missing'):
+for stage in ('initial', 'swapped', 'missing', 'failed-envelope', 'failed-exit'):
     gpu = lambda card, slot: dict(card=card, slot=slot, vendor='amd', pciId='1002:744c', path=f'/sys/class/drm/{card}/device')
     disk = lambda name, identity: dict(name=name, deviceIds=[identity], sizeBytes=1000)
     if stage == 'initial':
@@ -25,7 +25,7 @@ for stage in ('initial', 'swapped', 'missing'):
     else:
         gpus = [gpu('card0', '0000:08:00.0')]
         disks = [disk('sda', 'wwn-B')]
-        if stage == 'swapped':
+        if stage != 'missing':
             gpus.append(gpu('card1', '0000:03:00.0'))
             disks.append(disk('sdb', 'wwn-A'))
     (root / f'{stage}-gpu.json').write_text(json.dumps(dict(ok=True, gpus=gpus)))
@@ -35,7 +35,16 @@ cat > "$work/tree/scripts/gpu-stats" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ $1 == list ]]; then
+  if [[ ! -e $QUADRANT_TEST_LIST_GATE ]]; then
+    printf '%s\n' '{"ok":false,"error":"startup fixture failure"}'
+    exit 1
+  fi
   read -r stage < "$QUADRANT_TEST_STAGE"
+  if [[ $stage == failed-envelope ]]; then
+    printf '%s\n' '{"ok":false,"error":"refresh fixture failure"}'
+    exit 0
+  fi
+  if [[ $stage == failed-exit ]]; then exit 7; fi
   cat "$QUADRANT_TEST_FIXTURES/$stage-gpu.json"
 else
   printf '%s %s\n' "$2" "$3" >> "$QUADRANT_TEST_REQUESTS"
@@ -70,6 +79,7 @@ chmod +x "$work/tree/scripts/"{gpu-stats,disk-info,system-info,quadrant-stream}
 if ! QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME="" XDG_STATE_HOME="$work/state" XDG_RUNTIME_DIR="$work/runtime" \
   QUADRANT_TEST_STAGE="$work/stage" QUADRANT_TEST_FIXTURES="$work/fixtures" QUADRANT_TEST_REQUESTS="$work/requests" \
   QUADRANT_TEST_DISK_GATE="$work/disk-ready" QUADRANT_TEST_GPU_GATE="$work/gpu-ready" \
+  QUADRANT_TEST_LIST_GATE="$work/list-ready" \
   timeout --kill-after=2s 25 quickshell -p "$work/tree/shell.qml" > "$work/log" 2>&1; then
   cat "$work/log"
   exit 1
