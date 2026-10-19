@@ -118,12 +118,15 @@ plugin settings.
 and two viewers. It checks cold warm-up, baseline spacing, compact/expanded
 acquisition and release, permission coverage, payload failure, panel close,
 follow-up cancellation when a valid sample arrives first, in-flight mode
-changes, and helper failures without a retry loop.
+changes, helper failures without a retry loop, stateless collection, and
+memory-history accounting boundaries.
 `qs-process-ui.sh` runs Qt Quick Test inside Quickshell (the standalone runner
 cannot load statically linked Quickshell plugins). It exercises the actual
 shell key handler and process list: printable input, staged Esc, Tab,
 pointer controls, identity retention, filtering before caps, virtualization,
-and cursor scrolling at a narrow width, with and without the load-patch pragma. It requires QtTest and shell imports;
+scroll retention across sample/reorder updates, keyboard handoff into
+filtered results, and cursor scrolling at a narrow width, with and without
+the load-patch pragma. It requires QtTest and shell imports;
 the lifecycle test needs only Quickshell. Both use isolated temporary state.
 
 `qmllint.sh` needs qmllint and an Omarchy shell at

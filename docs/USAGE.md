@@ -48,7 +48,10 @@ controls and close the view with the gear or `Esc`. The shell also maps
 lowercase `h` / `l` to tab navigation and `j` / `k` to process-row navigation;
 use uppercase `H` for history. While search has focus, printable keys enter
 the query and normal editing/paste shortcuts apply. `Tab` still switches
-bar panels. Press `Esc` twice to clear a query and return to navigation.
+bar panels. Press `↓`, `Return`, or `Enter` to select the first matching
+group and navigate the filtered results without clearing the query; `/`
+returns to the editor. Press `Esc` twice in the editor to clear a query and
+return to navigation.
 
 The last-used tab survives closing and reopening the panel within the
 running shell. The history-window choice also stays until changed; closing
@@ -76,7 +79,9 @@ short-lived processes can be missing even in the expanded view.
 Click the metric heading to change order. Compact mode cycles stable roster,
 descending value, and name; expanded mode switches value/name order. Selection
 follows a surviving PID/start-time member as values reorder. Filtering out a
-selected group clears the cursor. Expanded results scroll within the list;
+selected group clears the cursor. Samples preserve the first visible group
+and its scroll offset, including when the cursor is elsewhere. Expanded
+results scroll within the list;
 only visible rows have delegates. At most 256 groups are displayed at once,
 after searching the entire collected roster. Refine the query when the result
 count exceeds that limit.
@@ -91,7 +96,9 @@ around 500 ms, instead of waiting for the next panel interval.
 
 CPU, Memory, Drives, and attributed Network rows keep sparklines of up to
 thirty collected samples. Unknown intervals leave gaps; a reused PID starts
-fresh. GPU and **Other traffic** have no sparkline. Network keeps per-process
+fresh. Memory trends also restart when collected mode or PSS/RSS accounting
+changes, so switching measurement bases does not create an artificial step.
+GPU and **Other traffic** have no sparkline. Network keeps per-process
 TCP rows plus **Other traffic**; GPU retains its own limited attribution and
 same-name grouping. These tabs do not offer full-roster search.
 See [measurement limits](METRICS.md) for what each process value represents.

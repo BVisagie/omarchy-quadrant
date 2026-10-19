@@ -2,7 +2,6 @@
 
 CPU, Memory, and Drives support a compact top-consumer view and an expanded,
 searchable roster. Network and GPU retain their own attribution limits.
-This implements Phase 2 of the reviewed monitoring plan.
 
 ## Collection and presentation
 
@@ -13,11 +12,11 @@ This implements Phase 2 of the reviewed monitoring plan.
 | Cadence | Normal panel cadence plus one bounded cold follow-up around 500 ms. The Store waits at least 400 ms after completion before another helper; the helper independently skips intervals below 400 ms without touching its baseline. |
 | Compact source | At most `min(32, max(processCount × 4, 16))` candidates per metric; `processCount` displayed groups. Counts cover those candidates. Naming/PSS work stays limited to candidates. |
 | Expanded source | One row for each readable process stat, carrying identity, naming hints, RSS, and nullable CPU/I/O fields. All eligible members are grouped before search and presentation limits. |
-| Memory | Compact candidates use readable PSS, RSS otherwise. Expanded mode uses RSS, explicitly labelled; shared pages count per process. Mixed compact groups say PSS/RSS. |
+| Memory | Compact candidates use readable PSS, RSS otherwise. Expanded mode uses RSS, explicitly labelled; shared pages count per process. Mixed compact groups say PSS/RSS. A change in collected mode or accounting kind starts a new memory sparkline. |
 | Identity | PID plus kernel start time. A group retains history, position, or cursor selection only while a member identity survives. A name alone cannot transfer identity. |
 | Search | Local normalized group name, desktop display name, and all member PIDs. A PID match identifies the matching members without replacing the group's totals. Search does not sample. |
 | Bounds | At most 1 MiB of encoded envelope JSON; an oversized sample is omitted in full and reported as unavailable coverage. Search runs before the 256-group display cap. Counts and a refinement message expose that cap. |
-| Rendering | Value/name order in expanded mode, sticky/value/name in compact mode. A ListView creates only visible delegates. Installed desktop entries are indexed on inventory changes; icon paths use a 256-name cache. |
+| Rendering | Value/name order in expanded mode, sticky/value/name in compact mode. Samples retain the first visible group and pixel offset; selection is reconciled without scrolling to it. Filter changes and explicit cursor movement reveal the target. A ListView creates only visible delegates. Installed desktop entries are indexed on inventory changes; icon paths use a 256-name cache. |
 | Unknown data | Missing/reset/new CPU and I/O intervals stay null. Restricted I/O stays unavailable. Partial group totals show a lower-bound prefix and measured-member count. Sparkline gaps stay gaps. |
 
 Name grouping describes matching process names; it does not establish
@@ -25,7 +24,10 @@ application ownership or a process tree. CPU remains a share of all machine
 CPUs; I/O remains readable process `read_bytes`/`write_bytes` across all devices.
 Unreadable or vanished stats are counted, rather than silently presented as
 complete coverage. No names or argument hints are persisted in the counter
-cache. Existing helper envelopes and timeout handling are preserved.
+cache. If the state lock cannot be opened or acquired, memory/counts still
+work; CPU/I/O rates are marked unavailable and shared counters are neither
+read nor written unlocked. Existing helper envelopes and timeout handling
+are preserved.
 
 Keyboard and pointer behavior is described in [Usage](USAGE.md). Expansion
 and queries last for the panel session; closing resets them. Settings and
@@ -40,15 +42,21 @@ lifecycle fixture uses the real helper and two viewers: exactly one cold
 sample, one warm-up, one expanded sample, and one return to compact mode.
 Separate cases close the last viewer or inject an earlier valid result and
 verify that the follow-up is cancelled. Oversized output preserves prior
-readings; a reused member starts a new sparkline.
+readings; a reused member starts a new sparkline. Tests also check stateless
+memory collection without a cold retry, failed lock acquisition preserving
+the old baseline, and memory-history resets across modes and PSS/RSS/mixed
+accounting changes.
 
 Qt Quick Test runs inside Quickshell with the real shell key handler and
 process list. It covers printable navigation letters, Space/Enter, staged
-Esc, shell Tab, pointer controls, search beyond the cap, cursor identity,
+Esc, shell Tab, Down/Return/Enter handoff into filtered results, pointer
+controls, search beyond the cap, cursor identity,
 PID-search reuse while another group member survives, sorting in both modes,
 selection after filtering, narrow-width virtualization, and scrolling the
 retained target into view after clearing a filter. The UI suite runs with and
-without the shell load-patch pragma.
+without the shell load-patch pragma. Additional regressions keep wheel/
+scrollbar position across repeated samples with no cursor, a visible cursor,
+an offscreen cursor, and changing value order.
 
 All seven offscreen render targets ran on Qt 6.12 / Quickshell 0.3.2.
 Additional views covered expanded CPU/Memory/Drives, dark/light/monochrome,

@@ -35,7 +35,10 @@ History uses atomic writes and is validated on load. Process-cache writes
 share a private `quadrant-procs.json.lock` file across compact/expanded runs
 and use an atomic rename and a temporary file named `quadrant-procs.json.tmp`;
 a crash during the write can leave it behind. If history cannot be saved,
-live graphs still work and history may start empty after restarting.
+live graphs still work and history may start empty after restarting. If the
+process-state lock cannot be opened or acquired, memory and process counts
+still work with unavailable CPU/I/O rates; the helper does not read or
+write shared counters without the lock.
 
 After disabling or removing Quadrant, delete its history directory if you
 want to remove saved graphs. Remove `quadrant-procs.json`, its `.lock` file,

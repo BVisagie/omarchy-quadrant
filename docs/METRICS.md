@@ -49,7 +49,8 @@ RSS in the rows and scope note. CPU/memory/I/O name groups are formed over
 all eligible source members before search or the 256-group display cap.
 Unknown members are omitted from the known subtotal, marked `≥` with measured
 member coverage. Completely unknown fields remain unavailable. A PID search
-keeps the group's full subtotal and identifies the matching member.
+keeps the group's full subtotal and identifies the matching member. Memory
+sparklines restart on collection-mode or PSS/RSS/mixed accounting changes.
 
 DIMM identity comes from unprivileged udev DMI data; swap devices come
 from `/proc/swaps`. Missing firmware details are omitted.
