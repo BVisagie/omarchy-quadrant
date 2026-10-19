@@ -48,7 +48,7 @@ Column {
     for (var i = 0; i < list.length; i++) {
       var g = list[i]
       var info = store && store.sysInfo && store.sysInfo.gpusByCard ? store.sysInfo.gpusByCard[g.card] : null
-      out.push({ value: g.card, label: g.card + " · " + (info && info.name ? Model.cleanGpuName(info.name) : g.vendor) })
+      out.push({ value: g.card, label: g.card + " · " + (Model.gpuDisplayName(info) || g.vendor) })
     }
     if (cfg.gpuDevice !== "auto" && !out.some(function (o) { return o.value === cfg.gpuDevice }))
       out.push({ value: cfg.gpuDevice, label: cfg.gpuDevice + " · not present" })

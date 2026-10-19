@@ -9,11 +9,12 @@ and installs no daemon or systemd unit.
 
 ## System access
 
-Monitoring reads `/proc`, `/sys`, unprivileged udev DMI data, and output
-from local tools. Quadrant does not change hardware settings or send
-signals to the processes listed in the panel. The stream watchdog can
-terminate and restart **its own sampler**; startup cleanup also probes
-sampler PIDs to remove abandoned FIFO directories.
+Monitoring reads `/proc`, `/sys`, unprivileged udev DMI data, libdrm's
+`amdgpu.ids` product table, and output from local tools. Quadrant does not
+change hardware settings or send signals to the processes listed in the
+panel. The stream watchdog can terminate and restart **its own sampler**;
+startup cleanup also probes sampler PIDs to remove abandoned FIFO
+directories.
 
 Settings are written through Omarchy's `shell.json` writer. A compatibility
 path can call `omarchy bar set --json` when the in-process writer is not

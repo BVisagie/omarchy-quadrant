@@ -57,6 +57,11 @@ test("parseSystemInfo joins lspci names onto cards by slot", () => {
   assert.equal(info.gpus[1].name, "AD102 [GeForce RTX 4090]");
   assert.equal(info.gpusByCard.card0.driver, "amdgpu");
   assert.equal(info.gpusByCard.card0.pciId, "1002:744c");
+  assert.equal(info.gpusByCard.card0.revision, "c8");
+  assert.equal(info.gpusByCard.card0.marketingName, "AMD Radeon RX 7900 XTX");
+  assert.equal(Model.gpuDisplayName(info.gpusByCard.card0), "Radeon RX 7900 XTX");
+  assert.equal(info.gpusByCard.card1.marketingName, "", "amdgpu.ids is AMD-only");
+  assert.equal(Model.gpuDisplayName(info.gpusByCard.card1), "GeForce RTX 4090");
   assert.equal(info.mem.zram[0].alg, "zstd");
   assert.equal(info.mem.swaps[1].kind, "partition");
   assert.equal(info.host.sysVendor, "Framework");

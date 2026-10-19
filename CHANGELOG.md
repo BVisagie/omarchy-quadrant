@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- AMD cards that share a PCI device ID with other models are named
+  exactly: an RX 9070 XT no longer shows as "Radeon RX 9070", nor an RX
+  7900 XTX as "7900 XT". The name comes from libdrm's `amdgpu.ids` by
+  device ID and revision; without a match the panel lists every model
+  that shares the ID instead of the first one.
+  ([#24](https://github.com/BVisagie/omarchy-quadrant/issues/24))
+
 ## 1.0.0 — 2026-10-02
 
 A rebuilt system monitor with a shared data store, saved history, and

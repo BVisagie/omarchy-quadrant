@@ -26,8 +26,8 @@ Item {
   implicitHeight: visible ? column.implicitHeight : 0
 
   readonly property string gpuTitle: {
-    if (gpuInfo && gpuInfo.name) return Model.cleanGpuName(gpuInfo.name)
-    if (gpu && gpu.name) return Model.cleanGpuName(gpu.name)
+    var name = Model.gpuDisplayName(gpuInfo) || Model.gpuDisplayName(gpu)
+    if (name) return name
     if (gpuInfo && gpuInfo.pciId) return Model.gpuVendorLabel(vendor) + " · " + gpuInfo.pciId
     if (vendor) return Model.gpuVendorLabel(vendor)
     return "Graphics"
