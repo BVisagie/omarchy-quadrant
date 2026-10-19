@@ -17,10 +17,19 @@ ShellRoot {
   property int diskCount: 0
   property int gpuCount: 0
   property string inventoryBefore: ""
+  property var writes: []
+  property bool deferWrites: false
+  property var deferredEntry: null
+  property var cliWrites: []
 
   QtObject {
     id: fakeShell
-    function updateEntryInline(id, settings) { store.applySettings(settings); return true }
+    function updateEntryInline(id, settings) {
+      harness.writes.push(settings)
+      if (harness.deferWrites) harness.deferredEntry = settings
+      else store.applySettings(settings)
+      return true
+    }
   }
   Components.Store {
     id: store
@@ -66,6 +75,11 @@ ShellRoot {
     check(store.integratedGpu && store.integratedGpu.card === "card0", "iGPU pin followed another card")
     check(store.effectiveDisk === "sdb", "disk pin followed another drive")
     check(store.cfg.gpuDevice === "card1" && store.cfg.diskDevice === "sdb" && store.cfg.integratedGpuDevice === "card0", "compatibility names did not migrate")
+  }
+  function assertUnpinned() {
+    check(store.cfg.gpuDevice === "auto" && store.cfg.gpuDeviceId === "", "GPU policy reset re-created its ID")
+    check(store.cfg.diskDevice === "auto" && store.cfg.diskDeviceId === "", "disk policy reset re-created its ID")
+    check(store.cfg.integratedGpuDevice === "none" && store.cfg.integratedGpuDeviceId === "", "integrated policy reset re-created its ID")
   }
   function rememberInventory() {
     inventoryBefore = JSON.stringify(store.rawGpus)
@@ -224,22 +238,73 @@ ShellRoot {
         harness.check(store.cfg.gpuDeviceId === "" && store.cfg.gpuDevice === "auto", "auto did not clear GPU pin")
         harness.check(store.cfg.integratedGpuDeviceId === "" && store.cfg.integratedGpuDevice === "none", "none did not clear integrated pin")
         harness.check(store.cfg.diskDeviceId === "" && store.cfg.diskDevice === "auto", "auto did not clear disk pin")
-        store.selectGpu("card7")
-        // CLI/IPC reset: set the policy, then clear the ID. Inventory
-        // refreshes sync compatibility names; a policy edit alone must
-        // remain available for this two-key transition.
-        store.persistSettings({ gpuDevice: "auto" })
+        store.clearViewer("test")
+        store.applyGpuList(JSON.stringify({ ok: true, gpus: JSON.parse(harness.inventoryBefore) }))
+        store.selectGpu("card1")
+        store.selectIntegratedGpu("card0")
+        store.selectDisk("sdb")
+        harness.assertPins()
+        // The shell CLI changes policy keys but leaves IDs in its entry.
+        // Delay the writer's acknowledgement and refresh in between: the
+        // optimistic reset must already hide every old ID from migration.
+        harness.writes = []
+        harness.deferWrites = true
+        store.applySettings(Object.assign({}, store.settingsRaw, {
+          gpuDevice: '"auto"', diskDevice: '"auto"', integratedGpuDevice: '"none"', userNote: "keep"
+        }))
+        harness.assertUnpinned()
+        harness.check(harness.writes.length === 1, "policy resets were not persisted together")
+        harness.check(harness.deferredEntry.userNote === "keep", "policy repair dropped unknown settings")
+        harness.check(!harness.deferredEntry.gpuDeviceId && !harness.deferredEntry.diskDeviceId && !harness.deferredEntry.integratedGpuDeviceId, "writer retained a reset ID")
+        store.refreshHardware()
         harness.waitUntil = harness.ticks + 2
         harness.phase = 12
       } else if (harness.phase === 12) {
         if (harness.ticks < harness.waitUntil) return
-        harness.check(store.cfg.gpuDevice === "auto" && store.cfg.gpuDeviceId !== "", "policy edit was immediately overwritten")
-        store.persistSettings({ gpuDeviceId: "" })
+        harness.assertUnpinned()
+        harness.check(harness.writes.length === 1, "inventory refresh re-pinned an unacknowledged reset")
+        harness.deferWrites = false
+        store.applySettings(harness.deferredEntry)
+        // The plugin's IPC/write path must make the same paired change.
+        store.selectGpu("card1")
+        store.persistSettings({ gpuDevice: "auto" })
+        store.selectIntegratedGpu("card0")
+        store.persistSettings({ integratedGpuDevice: "auto" })
+        harness.check(store.cfg.integratedGpuDeviceId === "" && store.cfg.integratedGpuDevice === "auto", "integrated auto reset failed")
+        store.selectIntegratedGpu("card0")
+        store.persistSettings({ integratedGpuDevice: "none" })
+        store.selectDisk("sdb")
+        store.persistSettings({ diskDevice: "auto" })
+        harness.assertUnpinned()
+        store.refreshHardware()
         harness.waitUntil = harness.ticks + 2
         harness.phase = 13
       } else if (harness.phase === 13) {
         if (harness.ticks < harness.waitUntil) return
-        harness.check(store.cfg.gpuDevice === "auto" && store.cfg.gpuDeviceId === "", "two-key CLI reset re-created a pin")
+        harness.assertUnpinned()
+        // The shell CLI may also set only an ID next to an auto/none
+        // policy. That is a new pin, not a reset of an existing one.
+        store.applySettings(Object.assign({}, store.settingsRaw, {
+          gpuDeviceId: "0000:03:00.0", integratedGpuDeviceId: "0000:08:00.0", diskDeviceId: "wwn-A"
+        }))
+        harness.waitUntil = harness.ticks + 2
+        harness.phase = 14
+      } else if (harness.phase === 14) {
+        if (harness.ticks < harness.waitUntil) return
+        harness.assertPins()
+        // Old shells use command writes. Generated reset keys must reach
+        // that fallback too, rather than existing only optimistically.
+        store.shell = null
+        store.runCommand = function (command) { harness.cliWrites.push(command) }
+        store.persistSettings({ diskDevice: "auto" })
+        harness.check(harness.cliWrites.length === 2, "CLI fallback omitted a paired reset write")
+        harness.check(harness.cliWrites.some(function (command) { return command.indexOf(" diskDeviceId '") >= 0 && command.indexOf("'\"\"' --json") >= 0 }), "CLI fallback did not clear the ID")
+        var persisted = Model.settingsPatch(store.settingsRaw, store.pendingSettings)
+        store.shell = fakeShell
+        store.runCommand = null
+        store.applySettings(persisted)
+        store.migrateDevicePins()
+        harness.check(store.cfg.diskDevice === "auto" && store.cfg.diskDeviceId === "", "fallback reset did not survive acknowledgement")
         store.applyGpuList('{"ok":true,"gpus":[]}')
         harness.check(!store.gpu && !store.integratedGpu && store.gpus.length === 0 && !store.gpuListFailed, "successful empty list retained removed hardware")
         store.failGpuList("GPU detection timed out")

@@ -9,6 +9,9 @@
   refreshes GPU inventory as well as drives. Renumbering keeps matching
   history; previous-boot name-only history and in-flight readings from a
   different device are discarded.
+- Failed GPU inventory refreshes keep the last successful topology and
+  readings while showing the error. Changing a device policy to `auto` or
+  integrated graphics to `none` clears the pin without a second CLI command.
 - Shell palette and style references are namespaced for Qt 6.12. The
   offscreen renderer and local QML lint gate work with the current Qt tools.
   Captures retain the desktop icon theme when a session socket is available.

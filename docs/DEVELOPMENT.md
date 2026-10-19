@@ -50,7 +50,8 @@ before choosing kernel names. GPU pollers capture their command and device
 identity at launch, so a result from a replaced or renumbered card cannot
 seed the new card's live readings or DRM rate state. NVIDIA queries use
 the resolved PCI address instead of inferring its driver index from card
-order.
+order. A failed GPU refresh preserves the last successful inventory and
+live state while reporting its error; startup failures remain unavailable.
 
 See [Measurements](METRICS.md) for calculations and [Security](../SECURITY.md)
 for state paths and failure behavior.
@@ -100,8 +101,11 @@ needs Quickshell.
 inventories. It exercises delayed disk identity, GPU and disk enumeration
 swaps via `refreshHardware()` (the `R` path), absent pins and recovery,
 legacy history across a simulated boot, replacement hardware, stale GPU
-poll results, NVIDIA PCI targeting, and paired settings resets. It skips
-only if Quickshell is missing. Pure tests include a frozen released
+poll results, NVIDIA PCI targeting, and failed GPU refreshes (envelope and
+process failures, startup recovery, and a successful empty scan). Settings
+regressions cover shell/IPC policy resets, inventory refresh before the
+writer acknowledges a reset, and paired writes through the CLI fallback.
+It skips only if Quickshell is missing. Pure tests include a frozen released
 settings reader/writer to check downgrade preservation. Python tests run
 disk/GPU inventory against temporary roots selected by
 `QUADRANT_SYS_PATH` / `QUADRANT_DEV_PATH`; these are fixture hooks, not

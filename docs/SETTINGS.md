@@ -64,6 +64,10 @@ pins remain saved and produce a warning naming the target. `R` re-reads
 GPU and disk inventory, updates the selectors, and resolves reappearing
 devices without a shell restart.
 
+If a GPU refresh fails, Quadrant keeps the last successful inventory and
+readings and shows the detection error. A successful empty scan removes
+the old hardware; a startup failure still reports unavailable inventory.
+
 Choose `auto` in settings to clear both parts of a GPU or disk pin; choose
 `none` to clear an integrated GPU pin and treat all cards as dedicated.
 The Network tab also offers `auto`. Invalid kernel names fall back to
@@ -113,18 +117,24 @@ omarchy bar set dev.bvisagie.quadrant gpuDeviceId '"0000:03:00.0"' --json
 omarchy bar set dev.bvisagie.quadrant diskDeviceId '"wwn-0x5002538e00000000"' --json
 ```
 
-An ID takes precedence even if its legacy name setting says `auto` or
-`none`. To return to automatic selection through the CLI, set the policy
-first, then clear its ID (without an inventory refresh between them):
+An ID takes precedence when loading settings or changing the ID itself,
+even if its legacy name setting says `auto` or `none`. While Quadrant is
+running, changing a name setting to `auto` (or integrated graphics to
+`none`) clears its unchanged ID in the same settings write. Each of these
+commands resets its device pin:
 
 ```sh
 omarchy bar set dev.bvisagie.quadrant diskDevice '"auto"' --json
-omarchy bar set dev.bvisagie.quadrant diskDeviceId '""' --json
+omarchy bar set dev.bvisagie.quadrant gpuDevice '"auto"' --json
+omarchy bar set dev.bvisagie.quadrant integratedGpuDevice '"none"' --json
 ```
 
-Use the same order for `gpuDevice` / `gpuDeviceId` and for
-`integratedGpuDevice` / `integratedGpuDeviceId` (`auto` or `none`). The
-settings view makes these paired changes together.
+If an unresolved ID-only pin already has an `auto`/`none` policy, clear
+its ID key directly or choose `auto` in settings. For example:
+
+```sh
+omarchy bar set dev.bvisagie.quadrant diskDeviceId '""' --json
+```
 
 Use `--json` for typed numbers, booleans, lists, and JSON-quoted strings.
 See [IPC](USAGE.md#ipc) for the plugin's own `set` and `setBarSegment`

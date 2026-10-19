@@ -137,11 +137,43 @@ test("legacy pins migrate only when resolved; existing IDs update only the compa
   });
   const pinned = Model.readSettings({ gpuDevice: "card0", gpuDeviceId: "0000:03:00.0", diskDevice: "sdb", diskDeviceId: "ata-ABC" });
   assert.deepEqual(Model.devicePinMigration(pinned, gpus, diskInfo), { gpuDevice: "card1", diskDevice: "sda" });
-  assert.deepEqual(Model.devicePinMigration(pinned, gpus, diskInfo, false), {});
   const unresolved = Model.readSettings({ gpuDevice: "card9", diskDevice: "sdc", integratedGpuDevice: "card8" });
   assert.deepEqual(Model.devicePinMigration(unresolved, gpus, diskInfo), {});
   assert.deepEqual(Model.devicePinMigration(Model.readSettings({}), gpus, diskInfo), {});
   assert.deepEqual(Model.devicePinMigration(legacy, null, null), {});
+});
+
+test("a live auto/none change clears the unchanged device ID", () => {
+  for (const [key, name, id, policies] of [
+    ["gpuDevice", "card1", "0000:03:00.0", ["auto"]],
+    ["integratedGpuDevice", "card0", "0000:00:02.0", ["auto", "none"]],
+    ["diskDevice", "sda", "ata-ABC", ["auto"]]
+  ]) {
+    const idKey = key + "Id";
+    for (const policy of policies) {
+      const previous = Model.readSettings({ [key]: name, [idKey]: id });
+      const next = Model.readSettings({ [key]: JSON.stringify(policy), [idKey]: JSON.stringify(id) });
+      assert.deepEqual(Model.devicePolicyResetPatch(previous, next), { [idKey]: "" });
+      const persisted = Model.settingsPatch(next, Model.devicePolicyResetPatch(previous, next));
+      assert.equal(Model.readSettings(persisted)[key], policy);
+      assert.equal(Model.readSettings(persisted)[idKey], "");
+      assert.deepEqual(Model.devicePinMigration(Model.readSettings(persisted), inventory([gpu("card1", "0000:03:00.0")]).gpus,
+        disks([{ name: "sda", deviceIds: ["ata-ABC"] }])), {});
+    }
+  }
+});
+
+test("initial settings, ID-only edits, and unchanged policies keep ID precedence", () => {
+  const pinned = Model.readSettings({ gpuDevice: "card1", gpuDeviceId: "0000:03:00.0", diskDevice: "sda", diskDeviceId: "ata-ABC" });
+  assert.deepEqual(Model.devicePolicyResetPatch(null, pinned), {});
+  assert.deepEqual(Model.devicePolicyResetPatch(Model.readSettings({}), Model.readSettings({ gpuDeviceId: "0000:03:00.0" })), {});
+  assert.deepEqual(Model.devicePolicyResetPatch(pinned, Model.readSettings({ ...pinned, processCount: 8 })), {});
+  assert.deepEqual(Model.devicePolicyResetPatch(pinned, Model.readSettings({ ...pinned, gpuDevice: "auto", gpuDeviceId: "0000:08:00.0" })), {});
+  assert.deepEqual(Model.devicePolicyResetPatch(pinned, Model.readSettings({ ...pinned, gpuDevice: "auto", gpuDeviceId: "" })), {});
+  const initial = Model.readSettings({ gpuDeviceId: "0000:03:00.0", integratedGpuDevice: "none", integratedGpuDeviceId: "0000:08:00.0" });
+  assert.deepEqual(Model.devicePolicyResetPatch(initial, { ...initial }), {});
+  const gpus = inventory([gpu("card1", "0000:03:00.0"), gpu("card0", "0000:08:00.0")]).gpus;
+  assert.deepEqual(Model.devicePinMigration(initial, gpus, null), { gpuDevice: "card1", integratedGpuDevice: "card0" });
 });
 
 test("the released settings writer preserves identity keys and usable best-effort pins on downgrade", () => {

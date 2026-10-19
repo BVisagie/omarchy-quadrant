@@ -68,26 +68,24 @@ Item {
 
   onCfgChanged: {
     if (gpuListReady && sysInfoReady) reconcileGpuTopology()
-    Qt.callLater(migrateLegacyPins)
+    Qt.callLater(migrateDevicePins)
   }
 
   function migrateDevicePins() {
-    persistDeviceMigration(true)
-  }
-
-  function migrateLegacyPins() {
-    persistDeviceMigration(false)
-  }
-
-  function persistDeviceMigration(syncNames) {
-    var patch = Model.devicePinMigration(cfg, gpuTopologyReady && !gpuListFailed ? gpus : null, diskInfo, syncNames)
+    var patch = Model.devicePinMigration(cfg, gpuTopologyReady && !gpuListFailed ? gpus : null, diskInfo)
     if (Object.keys(patch).length > 0) persistSettings(patch)
   }
 
   function applySettings(raw) {
-    settingsRaw = raw && typeof raw === "object" ? raw : {}
+    var incoming = raw && typeof raw === "object" ? raw : {}
+    // Compare confirmed shell entries, before optimistic writes or an
+    // inventory result can rewrite the old compatibility name. A policy
+    // edit clears its unchanged ID through the same typed writer.
+    var reset = Model.devicePolicyResetPatch(Model.readSettings(settingsRaw), Model.readSettings(incoming))
+    settingsRaw = incoming
     pendingSettings = null
     pendingSettingsTimer.stop()
+    if (Object.keys(reset).length > 0) persistSettings(reset)
   }
 
   // Persist a partial settings object through the shell's in-process
@@ -96,14 +94,24 @@ Item {
   function persistSettings(patch) {
     if (!patch || typeof patch !== "object") return
     var merged = {}
+    var changes = {}
     var k
     if (pendingSettings) for (k in pendingSettings) merged[k] = pendingSettings[k]
     for (k in patch) {
-      if (Object.prototype.hasOwnProperty.call(Model.SETTING_DEFAULTS, k)) merged[k] = patch[k]
+      if (Object.prototype.hasOwnProperty.call(Model.SETTING_DEFAULTS, k)) {
+        changes[k] = patch[k]
+        merged[k] = patch[k]
+      }
     }
+    var next = Model.settingsPatch(settingsRaw, merged)
+    var reset = Model.devicePolicyResetPatch(cfg, Model.readSettings(next))
+    for (k in reset) {
+      changes[k] = reset[k]
+      merged[k] = reset[k]
+    }
+    if (Object.keys(reset).length > 0) next = Model.settingsPatch(next, reset)
     pendingSettings = merged
     pendingSettingsTimer.restart()
-    var next = Model.settingsPatch(settingsRaw, merged)
     if (shell && typeof shell.updateEntryInline === "function") {
       try {
         var changed = shell.updateEntryInline(moduleName, next)
@@ -118,8 +126,8 @@ Item {
       }
     }
     if (typeof runCommand !== "function") return
-    for (k in patch) {
-      if (!Object.prototype.hasOwnProperty.call(patch, k)) continue
+    for (k in changes) {
+      if (!Object.prototype.hasOwnProperty.call(changes, k)) continue
       if (!/^[A-Za-z][A-Za-z0-9]*$/.test(k)) continue
       var value = Object.prototype.hasOwnProperty.call(next, k) ? next[k] : Model.SETTING_DEFAULTS[k]
       runCommand("omarchy bar set " + shellQuote(moduleName) + " " + k + " "
