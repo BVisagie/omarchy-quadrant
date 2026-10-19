@@ -13,6 +13,7 @@ Item {
 
   property var panel: null
   property var model: null
+  property alias processList: processRoster
 
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "disk"
   readonly property bool longWindow: panel !== null && panel.longWindow === true
@@ -90,22 +91,10 @@ Item {
   }
 
   // ---- rows --------------------------------------------------------------
-  readonly property var rows: {
-    var src = model ? model.ioRows : []
-    var out = []
-    for (var i = 0; i < src.length; i++) {
-      out.push({ pid: src[i].pid, comm: src[i].comm, history: src[i].history, sortKey: src[i].sortKey,
-                 valueText: "R " + Model.formatRate(src[i].read) + "  W " + Model.formatRate(src[i].write) })
-    }
-    return out
-  }
+  readonly property var rows: Model.formatProcessGroups(model ? model.ioRows : [], "io")
+  readonly property var expandedRows: !processRoster.expanded || !root.active ? [] : Model.formatProcessGroups(model ? model.allIoRows : [], "io")
   readonly property string errorText: model ? model.procError : ""
-  readonly property string ioNote: {
-    var s = model ? model.procStats : null
-    if (!s) return ""
-    if (s.ioHidden === 0) return ""
-    return "I/O of " + s.ioHidden + " processes owned by other users is not visible."
-  }
+
 
   Column {
     id: column
@@ -214,27 +203,25 @@ Item {
     PanelSeparator { }
 
     Components.ProcessList {
+      id: processRoster
+      panel: root.panel
+      active: root.active
+      expandable: true
+      expandedRows: root.expandedRows
+      expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
+      scopeText: Model.processScope(root.model ? root.model.procStats : null, "io", expanded)
       width: parent.width
       rows: root.rows
-      cursorIndex: root.panel ? root.panel.cursorIndex : -1
-      cursorActive: root.panel ? root.panel.cursorActive === true : false
-      onRowHovered: function (index, on) { if (root.panel && root.panel.hoverRow) root.panel.hoverRow(index, on) }
       valueHeader: "DISK I/O"
       emptyText: !root.active ? "Open this tab to sample processes"
-                 : !root.model || !root.model.procStats || !(root.model.procStats.dt > 0)
-                   ? "Sampling…" : "No disk activity from your processes"
+                 : !root.model || !root.model.procStats ? "Measuring disk I/O rates…"
+                 : root.model.procStats.ioVisible === 0 ? "Process I/O visibility is restricted"
+                 : root.model.procStats.rateState === "unavailable" ? "Disk I/O rates unavailable without counter state"
+                 : !(root.model.procStats.dt > 0) || root.model.procStats.ioReady === 0 ? "Measuring disk I/O rates…"
+                 : "No disk activity from visible processes"
       errorText: root.errorText
     }
 
-    Text {
-      textFormat: Text.PlainText
-      visible: root.ioNote !== ""
-      text: root.ioNote
-      color: root.pal.dim
-      font.family: Commons.Style.font.family
-      font.pixelSize: Commons.Style.font.caption
-      width: parent.width
-      wrapMode: Text.WordWrap
-    }
+
   }
 }

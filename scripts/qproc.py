@@ -15,13 +15,17 @@ after a cold start has no rates.
              kernel only exposes for processes you own; `ioHidden` counts
              the processes whose I/O could not be read
 
-exe and cmdline are read for the top candidates only, never for every
-pid. comm is /proc/<pid>/comm, never argv. QUADRANT_PROC_PATH overrides
-/proc and QUADRANT_NOW overrides the clock for tests.
+Compact mode reads exe/cmdline and PSS for at most 32 candidates per metric.
+--expanded returns one eligible roster with RSS and nullable CPU/I/O rates.
+All modes share a locked baseline; requests within 400 ms are skipped.
+comm is /proc/<pid>/comm, never argv. QUADRANT_PROC_PATH overrides /proc
+and QUADRANT_NOW overrides the clock for tests.
 """
 from __future__ import annotations
 
+import fcntl
 import json
+import math
 import os
 import sys
 import time
@@ -153,157 +157,167 @@ def save_state(path: str, state: dict) -> None:
             pass
 
 
-def sample(count: int, window: float) -> dict:
-    proc = proc_root()
+def sample(count: int, window: float, expanded: bool = False) -> dict:
+    """Serialize all modes through the same private counter baseline.
+
+    Skipped requests never walk /proc or advance the baseline. The shell has
+    one owner, but the lock also protects manual/overlapping helper runs.
+    """
     runtime = os.environ.get("XDG_RUNTIME_DIR") or os.path.join(os.path.expanduser("~"), ".cache")
     state_path = os.path.join(runtime, "quadrant-procs.json")
+    try:
+        fd = os.open(state_path + ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError:
+        return collect(count, window, expanded, None)
+    with os.fdopen(fd, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        except OSError:
+            return collect(count, window, expanded, None)
+        return collect(count, window, expanded, state_path)
+
+
+def collect(count: int, window: float, expanded: bool, state_path: str | None) -> dict:
+    proc = proc_root()
+    now = now_s()
+    # Degrade to memory/counts when state cannot be locked. Never read or
+    # overwrite shared counters without the lock, even if an old file exists.
+    prev = load_state(state_path) if state_path is not None else None
+    try:
+        elapsed = now - float(prev["t"]) if prev else 0.0
+        if not math.isfinite(elapsed):
+            prev = None
+    except (TypeError, ValueError):
+        prev = None
+        elapsed = 0.0
+    if prev and 0 <= elapsed < 0.4:
+        return {"skipped": True, "retryAfterMs": math.ceil((0.4 - elapsed) * 1000),
+                "cpu": [], "mem": [], "io": []}
+
     clk = os.sysconf("SC_CLK_TCK") or 100
     page = os.sysconf("SC_PAGE_SIZE") or 4096
     ncpu = os.cpu_count() or 1
-    now = now_s()
     limit = min(32, max(count * 4, 16))
+    dt = elapsed if prev and 0.4 <= elapsed <= max(window, 0.4) else 0.0
+    rate_state = "unavailable" if state_path is None else "ready" if dt else ("stale" if prev else "cold")
+    before = prev["p"] if dt else {}
 
     procs_running = 0
-    stat_text = read_text(os.path.join(proc, "stat"))
-    if stat_text:
-        for line in stat_text.splitlines():
-            if line.startswith("procs_running"):
-                parts = line.split()
-                if len(parts) > 1 and parts[1].isdigit():
-                    procs_running = int(parts[1])
+    for line in (read_text(os.path.join(proc, "stat")) or "").splitlines():
+        if line.startswith("procs_running"):
+            parts = line.split()
+            if len(parts) > 1 and parts[1].isdigit():
+                procs_running = int(parts[1])
 
     snap: dict[str, dict] = {}
-    io_hidden = 0
-    io_visible = 0
-    threads = 0
-    try:
-        pids = [p for p in os.listdir(proc) if p.isdigit()]
-    except OSError:
-        pids = []
+    io_hidden = io_visible = threads = cpu_ready = io_ready = 0
+    # An unreadable /proc is an error, never a successful empty roster.
+    pids = [p for p in os.listdir(proc) if p.isdigit()]
     for pid in pids:
-        text = read_text(os.path.join(proc, pid, "stat"), 4096)
-        if not text:
-            continue
-        st = parse_stat(text)
+        st = parse_stat(read_text(os.path.join(proc, pid, "stat"), 4096) or "")
         if not st:
             continue
         comm = (read_text(os.path.join(proc, pid, "comm"), 256) or "").strip().replace("\n", " ")[:128] or pid
         threads += st["threads"]
         rec = {
-            "pid": int(pid),
-            "key": "%s:%d" % (pid, st["start"]),
-            "ticks": st["ticks"],
-            "rss_kb": st["rss_pages"] * page // 1024,
-            "comm": comm,
-            "rb": None,
-            "wb": None,
+            "pid": int(pid), "start": st["start"], "key": "%s:%d" % (pid, st["start"]),
+            "ticks": st["ticks"], "rss_kb": max(0, st["rss_pages"] * page // 1024),
+            "comm": comm, "rb": None, "wb": None, "cpu": None, "core": None,
+            "read": None, "write": None,
         }
-        io_text = read_text(os.path.join(proc, pid, "io"), 1024)
-        if io_text is None:
-            io_hidden += 1
+        try:
+            parsed = parse_io(read_text(os.path.join(proc, pid, "io"), 1024) or "")
+        except ValueError:
+            parsed = None
+        if parsed and min(parsed) >= 0:
+            rec["rb"], rec["wb"] = parsed
+            io_visible += 1
         else:
-            parsed = parse_io(io_text)
-            if parsed:
-                rec["rb"], rec["wb"] = parsed
-                io_visible += 1
-            else:
-                io_hidden += 1
+            io_hidden += 1
+        old = before.get(rec["key"])
+        if isinstance(old, dict):
+            try:
+                delta = rec["ticks"] - int(old["tk"])
+                if delta >= 0:
+                    rec["cpu_ticks"] = delta
+                    rec["core"] = round(100.0 * delta / clk / dt, 1)
+                    rec["cpu"] = round(100.0 * delta / clk / dt / ncpu, 2)
+                    cpu_ready += 1
+                if rec["rb"] is not None and old.get("rb") is not None:
+                    dr, dw = rec["rb"] - int(old["rb"]), rec["wb"] - int(old["wb"])
+                    if min(dr, dw) >= 0:
+                        rec["read"], rec["write"] = round(dr / dt), round(dw / dt)
+                        io_ready += 1
+            except (KeyError, TypeError, ValueError):
+                pass  # A corrupt counter or a reset requires another interval.
         snap[rec["key"]] = rec
 
-    prev = load_state(state_path)
-    save_state(state_path, {
-        "t": now,
-        "p": {k: {"tk": v["ticks"], "rb": v["rb"], "wb": v["wb"]} for k, v in snap.items()},
-    })
-
-    dt = 0.0
-    cpu_rows: list[tuple] = []
-    io_rows: list[tuple] = []
-    if prev:
-        dt = now - float(prev["t"])
-        before = prev["p"]
-        if 0.4 <= dt <= max(window, 0.4):
-            for key, cur in snap.items():
-                old = before.get(key)
-                if not old or old.get("tk") is None:
-                    continue
-                delta = cur["ticks"] - int(old["tk"])
-                if delta >= 0:
-                    core_pct = 100.0 * delta / float(clk) / dt
-                    cpu_rows.append((core_pct, cur))
-                if cur["rb"] is not None and old.get("rb") is not None:
-                    dr = cur["rb"] - int(old["rb"])
-                    dw = cur["wb"] - int(old["wb"] or 0)
-                    if dr >= 0 and dw >= 0 and (dr > 0 or dw > 0):
-                        io_rows.append((dr / dt, dw / dt, cur))
-        else:
-            dt = 0.0
-
-    cpu_rows.sort(key=lambda r: (-r[0], r[1]["pid"]))
-    io_rows.sort(key=lambda r: (-(r[0] + r[1]), r[2]["pid"]))
-    mem_rows = sorted(snap.values(), key=lambda r: (-r["rss_kb"], r["pid"]))
-
-    # exe/cmdline (and PSS for memory) only for the rows that can show.
+    if state_path is not None:
+        save_state(state_path, {
+            "t": now,
+            "p": {k: {"tk": v["ticks"], "rb": v["rb"], "wb": v["wb"]} for k, v in snap.items()},
+        })
     details: dict[str, dict] = {}
 
-    def detail(rec: dict) -> dict:
+    def row(rec: dict) -> dict:
         key = rec["key"]
         if key not in details:
             pid = str(rec["pid"])
             argv = cmdline_argv(proc, pid)
-            details[key] = {
-                "exe": exe_base(proc, pid),
-                "cmd": " ".join(argv)[:160],
-                "script": script_name(rec["comm"], argv),
-            }
-        return details[key]
+            details[key] = {"pid": rec["pid"], "start": rec["start"], "comm": rec["comm"],
+                            "exe": exe_base(proc, pid), "cmd": " ".join(argv)[:160],
+                            "script": script_name(rec["comm"], argv)}
+        return dict(details[key])
 
-    def row(rec: dict) -> dict:
-        d = detail(rec)
-        return {"pid": rec["pid"], "comm": rec["comm"], "exe": d["exe"], "cmd": d["cmd"], "script": d["script"]}
+    result = {
+        "mode": "expanded" if expanded else "compact", "dt": round(dt, 3), "rateState": rate_state,
+        "ncpu": ncpu, "procs": len(snap), "observed": len(pids), "unreadable": len(pids) - len(snap),
+        "running": procs_running, "threads": threads, "cpuReady": cpu_ready, "ioReady": io_ready,
+        "ioVisible": io_visible, "ioHidden": io_hidden, "candidateLimit": 0 if expanded else limit,
+        "cpu": [], "mem": [], "io": [],
+    }
+    if expanded:
+        # One roster, not three copies. RSS avoids opening every smaps_rollup
+        # at panel cadence. Shared pages count for each process; the UI says so.
+        rows = []
+        for rec in snap.values():
+            r = row(rec)
+            r.update(cpu=rec["cpu"], core=rec["core"], memory=rec["rss_kb"], kind="rss",
+                     read=rec["read"], write=rec["write"], ioVisible=rec["rb"] is not None)
+            rows.append(r)
+        result["rows"] = rows
+        return result
 
-    out_cpu = []
-    for core_pct, rec in cpu_rows[:limit]:
+    cpu = sorted((r for r in snap.values() if r["cpu"] is not None), key=lambda r: (-r["cpu_ticks"], r["pid"]))
+    mem = sorted(snap.values(), key=lambda r: (-r["rss_kb"], r["pid"]))
+    io = sorted((r for r in snap.values() if r["read"] is not None and r["read"] + r["write"] > 0),
+                key=lambda r: (-(r["read"] + r["write"]), r["pid"]))
+    for rec in cpu[:limit]:
         r = row(rec)
-        r["value"] = round(core_pct / ncpu, 2)
-        r["core"] = round(core_pct, 1)
-        out_cpu.append(r)
-    out_mem = []
-    for rec in mem_rows[:limit]:
+        r.update(value=rec["cpu"], core=rec["core"])
+        result["cpu"].append(r)
+    for rec in mem[:limit]:
         r = row(rec)
         pss = parse_pss_kb(read_text(os.path.join(proc, str(rec["pid"]), "smaps_rollup"), 8192) or "")
-        r["value"] = pss if pss is not None else rec["rss_kb"]
-        r["kind"] = "pss" if pss is not None else "rss"
-        out_mem.append(r)
-    out_io = []
-    for rbps, wbps, rec in io_rows[:limit]:
+        r.update(value=pss if pss is not None else rec["rss_kb"], kind="pss" if pss is not None else "rss")
+        result["mem"].append(r)
+    for rec in io[:limit]:
         r = row(rec)
-        r["read"] = round(rbps)
-        r["write"] = round(wbps)
-        r["value"] = round(rbps + wbps)
-        out_io.append(r)
-
-    return {
-        "dt": round(dt, 3),
-        "ncpu": ncpu,
-        "procs": len(snap),
-        "running": procs_running,
-        "threads": threads,
-        "ioVisible": io_visible,
-        "ioHidden": io_hidden,
-        "cpu": out_cpu,
-        "mem": out_mem,
-        "io": out_io,
-    }
+        r.update(read=rec["read"], write=rec["write"], value=rec["read"] + rec["write"])
+        result["io"].append(r)
+    return result
 
 
 def main(argv: list[str]) -> int:
     count = 5
     window = 15.0
+    expanded = False
     args = list(argv)
     while args:
         a = args.pop(0)
-        if a == "--window" and args:
+        if a == "--expanded":
+            expanded = True
+        elif a == "--window" and args:
             try:
                 window = float(args.pop(0))
             except ValueError:
@@ -312,7 +326,7 @@ def main(argv: list[str]) -> int:
             count = int(a)
     count = max(1, min(10, count))
     window = max(0.4, min(600.0, window))
-    json.dump(sample(count, window), sys.stdout, separators=(",", ":"))
+    json.dump(sample(count, window, expanded), sys.stdout, separators=(",", ":"))
     print()
     return 0
 

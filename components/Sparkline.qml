@@ -38,21 +38,31 @@ Canvas {
     var step = w / (slots - 1)
     var x0 = w - (n - 1) * step
     function px(i) { return x0 + i * step }
-    function py(i) { var y = Number(v[i]); if (!isFinite(y) || y < 0) y = 0; return h - 1 - (Math.min(y, max) / max) * (h - 2) }
+    function valid(i) { return v[i] !== null && v[i] !== undefined && isFinite(Number(v[i])) && Number(v[i]) >= 0 }
+    function py(i) { return h - 1 - (Math.min(Number(v[i]), max) / max) * (h - 2) }
+    // Unknown rate intervals break the line instead of drawing idle zeros.
     ctx.fillStyle = root.color
-    ctx.globalAlpha = 0.22
-    ctx.beginPath()
-    ctx.moveTo(px(0), h)
-    for (var j = 0; j < n; j++) ctx.lineTo(px(j), py(j))
-    ctx.lineTo(px(n - 1), h)
-    ctx.closePath()
-    ctx.fill()
-    ctx.globalAlpha = 1
     ctx.strokeStyle = root.color
     ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(px(0), py(0))
-    for (var k = 1; k < n; k++) ctx.lineTo(px(k), py(k))
-    ctx.stroke()
+    var start = 0
+    while (start < n) {
+      while (start < n && !valid(start)) start++
+      if (start >= n) break
+      var end = start
+      while (end + 1 < n && valid(end + 1)) end++
+      ctx.globalAlpha = 0.22
+      ctx.beginPath()
+      ctx.moveTo(px(start), h)
+      for (var j = start; j <= end; j++) ctx.lineTo(px(j), py(j))
+      ctx.lineTo(px(end), h)
+      ctx.closePath()
+      ctx.fill()
+      ctx.globalAlpha = 1
+      ctx.beginPath()
+      ctx.moveTo(px(start), py(start))
+      for (var k = start + 1; k <= end; k++) ctx.lineTo(px(k), py(k))
+      ctx.stroke()
+      start = end + 1
+    }
   }
 }

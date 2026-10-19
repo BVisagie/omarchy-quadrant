@@ -112,3 +112,7 @@ jobs:
         run: bash tests/qs-smoke.sh
       - name: Device identity wiring (skips without quickshell)
         run: bash tests/qs-device-identity.sh
+      - name: Shared process lifecycle (skips without quickshell)
+        run: bash tests/qs-process-lifecycle.sh
+      - name: Process UI and keyboard (skips without quickshell and shell imports)
+        run: bash tests/qs-process-ui.sh

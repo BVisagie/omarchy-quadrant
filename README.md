@@ -13,6 +13,7 @@ lists the processes behind the numbers.
 - CPU topology and per-core load, RAM composition and pressure, GPU
   usage, drive throughput and mount capacity, and network traffic.
 - Last-minute graphs and an hour of saved history, shared across monitors.
+- Searchable CPU, memory, and disk I/O process groups, with memory sizes and member counts.
 - Per-process CPU, memory, disk I/O, TCP traffic, and GPU metrics where
   available; see [measurement sources and limits](docs/METRICS.md).
 - Independent bar segments, keyboard navigation, device pickers, and an

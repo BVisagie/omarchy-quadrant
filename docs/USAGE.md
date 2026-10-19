@@ -39,17 +39,24 @@ when a dedicated card is selected and available.
 | uppercase `H` | every graph: last hour ↔ last minute (clicking the graph header or scrolling over the graph does the same) |
 | `S` | settings view (gear in the header) |
 | `R` | re-read system, GPU, and disk inventory and refresh the active tab |
-| `Esc` | close settings, then the panel |
+| `/` | open process search on CPU, Memory, or Drives |
+| `Esc` | clear a search query, leave its editor, then close settings or the panel |
 | `Tab` | keeps its Quattro meaning: switch to the adjacent bar panel |
 
 These shortcuts apply while a metric tab is visible. In settings, use the
 controls and close the view with the gear or `Esc`. The shell also maps
 lowercase `h` / `l` to tab navigation and `j` / `k` to process-row navigation;
-use uppercase `H` for history.
+use uppercase `H` for history. While search has focus, printable keys enter
+the query and normal editing/paste shortcuts apply. `Tab` still switches
+bar panels. Press `↓`, `Return`, or `Enter` to select the first matching
+group and navigate the filtered results without clearing the query; `/`
+returns to the editor. Press `Esc` twice in the editor to clear a query and
+return to navigation.
 
 The last-used tab survives closing and reopening the panel within the
 running shell. The history-window choice also stays until changed; closing
-the panel closes the settings view and clears the process cursor.
+the panel closes the settings view and resets process search, expansion,
+and the cursor.
 
 ## Graphs and processes
 
@@ -60,14 +67,47 @@ stack total, memory usage, GPU busy, drive **read** rate, or network
 **download** rate. In the hour view, peak means the highest 10 s bucket
 average, so short spikes can be lower than in the minute view.
 
-Click a process-list heading to cycle between the stable roster order,
-descending value, and name. CPU, GPU, Memory, and Drives sum rows with
-the same display name; a grouped row's tooltip uses the lowest PID in the
-group. Network keeps separate process rows plus **Other traffic**. CPU,
-Memory, Drives, and attributed Network rows keep sparklines of up to thirty
-samples while they remain in the roster. GPU and **Other traffic** rows
-have no sparkline.
+CPU, Memory, and Drives start with a compact top-consumer list. **Show all**
+opens a searchable roster; **Show less** returns to the compact list. Search
+matches the grouped name, desktop application name, or any member PID. A PID
+match identifies that member while keeping the entire group's totals.
+The `×N` badge counts covered processes with the same normalized name; it does
+not establish application ownership or parent/child relationships. Compact
+counts cover only the candidates named in the scope note. Unreadable and
+short-lived processes can be missing even in the expanded view.
+
+Click the metric heading to change order. Compact mode cycles stable roster,
+descending value, and name; expanded mode switches value/name order. Selection
+follows a surviving PID/start-time member as values reorder. Filtering out a
+selected group clears the cursor. Samples preserve the first visible group
+and its scroll offset when it moves less than one viewport, including when
+the cursor is elsewhere. Larger rank changes keep the scroll position;
+keyboard navigation and filtering still reveal the selected row. Expanded
+results scroll within the list;
+only visible rows have delegates. At most 256 groups are displayed at once,
+after searching the entire collected roster. Refine the query when the result
+count exceeds that limit.
+
+Memory rows show size, percentage of usable RAM, and PSS/RSS accounting.
+Expanded memory uses RSS; shared pages count in each process. Compact memory
+uses PSS where readable, RSS otherwise; mixed groups say **PSS/RSS**. A `≥`
+prefix and a measured-member count identify partial totals. **Measuring**,
+**Restricted**, no activity, no match, and sampler errors are separate states.
+A cold CPU/I/O reading normally becomes available after one shared follow-up
+around 500 ms, instead of waiting for the next panel interval.
+
+CPU, Memory, Drives, and attributed Network rows keep sparklines of up to
+thirty collected samples. Unknown intervals leave gaps; a reused PID starts
+fresh. Memory trends also restart when collected mode or PSS/RSS accounting
+changes, so switching measurement bases does not create an artificial step.
+GPU and **Other traffic** have no sparkline. Network keeps per-process
+TCP rows plus **Other traffic**; GPU retains its own limited attribution and
+same-name grouping. These tabs do not offer full-roster search.
 See [measurement limits](METRICS.md) for what each process value represents.
+
+<p align="center">
+  <a href="screenshots/process-exploration.png"><img src="screenshots/process-exploration.png" alt="Expanded memory process list with search, grouped counts, resident sizes and percentages in a light theme" width="420"></a>
+</p>
 
 ## IPC
 

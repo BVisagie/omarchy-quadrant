@@ -32,9 +32,14 @@ Panel {
   property bool settingsOpen: false
 
   // Single cursor over the active tab's process rows, driven by ↑/↓ and
-  // by the mouse (ProcessList reports hover).
-  property int cursorIndex: -1
-  property bool cursorActive: false
+  // by the mouse. The list retains the selected member identity.
+  readonly property var currentProcessList: {
+    var item = activeTabItem()
+    return item ? item.processList : null
+  }
+  readonly property bool expandedProcesses: opened && !settingsOpen && currentProcessList
+                                            ? currentProcessList.expandable && currentProcessList.expanded : false
+  readonly property bool searchFocused: currentProcessList ? currentProcessList.searchFocused : false
 
   readonly property bool gpuAvailable: store ? store.discreteGpuAvailable === true : false
   readonly property var tabs: {
@@ -54,10 +59,13 @@ Panel {
   onTabsChanged: {
     if (tabs.indexOf(currentTab) < 0) currentTab = tabs[0]
   }
-  onCurrentTabChanged: clearCursor()
+  onCurrentTabChanged: { clearCursor(); focusProcessKeys() }
+  onSettingsOpenChanged: {
+    if (settingsOpen && currentProcessList) currentProcessList.suspendSearch()
+  }
   onOpenedChanged: {
     if (opened) refreshActiveTab()
-    else { settingsOpen = false; clearCursor() }
+    else { settingsOpen = false; resetProcessViews() }
   }
 
   function open() { controller.show() }
@@ -99,27 +107,22 @@ Panel {
     if (item && item.refresh) item.refresh()
   }
 
-  function rowCount() {
-    var item = activeTabItem()
-    return item && item.rows ? item.rows.length : 0
-  }
-
   function moveCursor(delta) {
-    var n = rowCount()
-    if (n === 0) { clearCursor(); return }
-    cursorActive = true
-    if (cursorIndex < 0) cursorIndex = delta > 0 ? 0 : n - 1
-    else cursorIndex = Math.max(0, Math.min(n - 1, cursorIndex + delta))
+    if (currentProcessList) currentProcessList.moveCursor(delta)
   }
-
   function clearCursor() {
-    cursorActive = false
-    cursorIndex = -1
+    if (currentProcessList) currentProcessList.clearCursor()
   }
-
-  function hoverRow(index, on) {
-    if (on) { cursorActive = true; cursorIndex = index }
-    else if (cursorIndex === index) clearCursor()
+  function resetProcessViews() {
+    var items = [cpuTab, memTab, diskTab, gpuTab, netTab]
+    for (var i = 0; i < items.length; i++) if (items[i] && items[i].processList) items[i].processList.reset()
+  }
+  function focusProcessKeys() { if (keyCatcher) keyCatcher.forceActiveFocus() }
+  function scrollProcessCursor(item) {
+    var y = item.mapToItem(bodyColumn, 0, item.cursorY()).y
+    if (y < bodyFlick.contentY) bodyFlick.contentY = Math.max(0, y)
+    else if (y + item.rowHeight > bodyFlick.contentY + bodyFlick.height)
+      bodyFlick.contentY = Math.min(Math.max(0, bodyFlick.contentHeight - bodyFlick.height), y + item.rowHeight - bodyFlick.height)
   }
 
   IpcHandler {
@@ -164,7 +167,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.settingsOpen
+      blocked: root.settingsOpen || root.searchFocused
       onCloseRequested: root.close()
       onTabRequested: function (direction) { root.switchPanel(direction) }
       onMoveRequested: function (dx, dy) {
@@ -172,6 +175,7 @@ Panel {
         if (dy !== 0) root.moveCursor(dy)
       }
       onTextKey: function (t) {
+        if (t === "/" && root.currentProcessList) { root.currentProcessList.focusSearch(); return }
         if (t === "r" || t === "R") {
           if (root.store) {
             root.store.refreshHardware()
