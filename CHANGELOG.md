@@ -4,6 +4,12 @@
 
 ### Added
 
+- Copy buttons for collected local IPv4/IPv6 and MAC values, plus Open actions
+  for mounted volumes. A/arrow/Enter navigation keeps shell Tab and staged Esc;
+  success, missing tools, inaccessible/unmounted paths, and timeouts have visible
+  feedback. Copied bytes use stdin and mount URIs use literal argument lists.
+  Known inaccessible volumes have disabled buttons with explanatory tooltips;
+  file-manager requests use `uwsm-app` when available.
 - Optional graph-plus-text bar with bounded minute trends from shared history;
   text remains the default. Segment switches now have ordering arrows, and
   disabled or absent devices retain their saved positions.
@@ -20,6 +26,8 @@
 
 ### Changed
 
+- Network addresses appear as individual Copy rows in the Interface section,
+  replacing the first two addresses previously shown in the hero summary.
 - Bar styles reserve fixed slots through 100%, estimated GPU prefixes, and
   compact network rate changes. Vertical trends fit within the strip, with
   complete download/upload rates beneath them. Drives fallback follows its
@@ -34,6 +42,8 @@
 
 ### Fixed
 
+- Mount paths retain up to 4096 characters, including spaces, backslashes and
+  trailing whitespace, replacing the previous 128-character display limit.
 - Horizontal bar values stay beside their own labels and trends within fixed
   slots. Only Intel reserves the GPU estimate prefix, and visible vertical
   percentage values share a font size without shrinking AMD/NVIDIA needlessly.

@@ -3,7 +3,7 @@
 #
 # Emits one JSON envelope on stdout:
 #   {"ok":true,"disks":[{name,deviceIds,model,rotational,sizeBytes,tempC}],
-#    "backing":{"dm-0":"nvme0n1",...},"dfPayload":"..."}
+#    "backing":{"dm-0":"nvme0n1",...},"dfPayload":"...","mountAccess":{"/":true,...}}
 #
 # Disks are whole block devices under /sys/block (loop/ram/zram/fd/nbd/sr
 # dropped, matching quadrant-stream). Mapper/md devices with a single
@@ -43,6 +43,7 @@ resolve_bin() {
 
 JQ=$(resolve_bin jq) || fail "jq not found"
 DF=$(resolve_bin df) || fail "df not found"
+BASE64=$(resolve_bin base64) || fail "base64 not found"
 
 # Fixture roots use the same convention as gpu-drm; IDs still resolve only
 # to whole devices directly under the selected device root.
@@ -196,6 +197,47 @@ physical_parent() {
   return 1
 }
 
+read_mounts() {
+  dfPayload=""
+  if ! dfPayload=$("$DF" -P -B1 -T 2>/dev/null); then
+    fail "df failed"
+  fi
+  if (( ${#dfPayload} > 65536 )); then
+    dfPayload=${dfPayload:0:65536}
+    # The last target may have been cut into a different valid mount path.
+    # Retain only rows whose terminating newline was within the bound.
+    if [[ $dfPayload == *$'\n'* ]]; then dfPayload=${dfPayload%$'\n'*}
+    else dfPayload=""
+    fi
+  fi
+  mount_access=()
+  local row target accessible
+  local df_row='^[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+%[[:space:]]+(/.*)$'
+  while IFS= read -r row; do
+    [[ $row =~ $df_row ]] || continue
+    target=${BASH_REMATCH[1]}
+    (( ${#target} <= 4096 )) || continue
+    accessible=false
+    if [[ -d $target && -r $target && -x $target ]]; then accessible=true; fi
+    mount_access+=("$target" "$accessible")
+  done <<< "$dfPayload"
+}
+
+emit_mounts() {
+  # Stream literal paths and the payload rather than placing large UTF-8
+  # strings in a jq argv. NUL separates fields and cannot occur in a path.
+  # Older jq raw readers replace UTF-8 split across input buffers. Transport
+  # ASCII base64, then decode the complete value before splitting fields.
+  {
+    printf '%s\0' "$dfPayload"
+    if (( ${#mount_access[@]} > 0 )); then printf '%s\0' "${mount_access[@]}"; fi
+  } | "$BASE64" -w0 | "$JQ" -Rs "$@" '
+    @base64d | split("\u0000") as $fields | $ARGS.named + {
+      dfPayload: $fields[0],
+      mountAccess: (reduce range(1; ($fields | length) - 1; 2) as $i ({};
+        .[$fields[$i]] = ($fields[$i + 1] == "true"))) }'
+}
+
 # --- disks -----------------------------------------------------------------
 
 if [[ $mode == usage ]]; then
@@ -215,15 +257,8 @@ if [[ $mode == usage ]]; then
       reduce range(0; $ARGS.positional | length; 2) as $i ({};
         .[$ARGS.positional[$i]] = ($ARGS.positional[$i + 1] | tonumber))' "${temp_fields[@]}")
   fi
-  dfPayload=""
-  if ! dfPayload=$("$DF" -P -B1 -T 2>/dev/null); then
-    fail "df failed"
-  fi
-  if (( ${#dfPayload} > 65536 )); then
-    dfPayload=${dfPayload:0:65536}
-  fi
-  "$JQ" -n --argjson temps "$temps_json" --arg dfPayload "$dfPayload" \
-    '{ ok: true, usage: true, temps: $temps, dfPayload: $dfPayload }'
+  read_mounts
+  emit_mounts --argjson ok true --argjson usage true --argjson temps "$temps_json"
   exit 0
 fi
 
@@ -332,16 +367,5 @@ fi
 
 # --- mounts ----------------------------------------------------------------
 
-dfPayload=""
-if ! dfPayload=$("$DF" -P -B1 -T 2>/dev/null); then
-  fail "df failed"
-fi
-if (( ${#dfPayload} > 65536 )); then
-  dfPayload=${dfPayload:0:65536}
-fi
-
-"$JQ" -n \
-  --argjson disks "$disk_json" \
-  --argjson backing "$backing_json" \
-  --arg dfPayload "$dfPayload" \
-  '{ ok: true, disks: $disks, backing: $backing, dfPayload: $dfPayload }'
+read_mounts
+emit_mounts --argjson ok true --argjson disks "$disk_json" --argjson backing "$backing_json"

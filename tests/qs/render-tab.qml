@@ -15,6 +15,7 @@ ShellRoot {
   property string tab: Quickshell.env("QUADRANT_RENDER_TAB") || "cpu"
   property string gpuFixtureMode: Quickshell.env("QUADRANT_RENDER_GPU_FIXTURE")
   property string palette: Quickshell.env("QUADRANT_RENDER_PALETTE")
+  property bool actionFixtureEnabled: Quickshell.env("QUADRANT_RENDER_ACTION_FIXTURE") === "1"
   property bool showHeader: Quickshell.env("QUADRANT_RENDER_HEADER") === "1" && tab !== "bar"
 
   // Palette fixtures affect this throwaway process only; the installed theme
@@ -36,6 +37,14 @@ ShellRoot {
       networkGraphLayout: Quickshell.env("QUADRANT_RENDER_NETWORK_LAYOUT") || "overlay",
       diskGraphLayout: Quickshell.env("QUADRANT_RENDER_DISK_LAYOUT") || "overlay"
     })
+  }
+
+  ActionFixture {
+    id: actionFixture
+    netHistory: Fixture.history(false, "normal")
+    netLong: Fixture.history(true, "normal")
+    diskHistory: Fixture.history(false, "normal")
+    diskLong: Fixture.history(true, "normal")
   }
 
   // Optional telemetry for dedicated-GPU presentation on machines without a
@@ -141,8 +150,8 @@ ShellRoot {
   Component { id: cpuC; Tabs.CpuTab { width: col.width; panel: fakePanel; model: renderStore } }
   Component { id: memC; Tabs.MemoryTab { width: col.width; panel: fakePanel; model: renderStore } }
   Component { id: gpuC; Tabs.GpuTab { width: col.width; panel: fakePanel; model: harness.gpuFixtureMode ? gpuFixture : renderStore } }
-  Component { id: diskC; Tabs.DiskTab { width: col.width; panel: fakePanel; model: renderStore } }
-  Component { id: netC; Tabs.NetworkTab { width: col.width; panel: fakePanel; model: renderStore } }
+  Component { id: diskC; Tabs.DiskTab { width: col.width; panel: fakePanel; model: harness.actionFixtureEnabled ? actionFixture : renderStore } }
+  Component { id: netC; Tabs.NetworkTab { width: col.width; panel: fakePanel; model: harness.actionFixtureEnabled ? actionFixture : renderStore } }
   Component { id: settingsC; Components.SettingsView { width: col.width; store: renderStore } }
   // The bar slot itself, on a strip the height of the bar, driven by the
   // real BarWidget root (its Panel loader fails offscreen; that is fine).

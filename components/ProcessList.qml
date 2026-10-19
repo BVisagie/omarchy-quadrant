@@ -74,6 +74,7 @@ Column {
   function clearCursor() { cursorActive = false; cursorIndex = -1; selectedRow = null }
   function selectRow(index, reveal) {
     if (index < 0 || index >= displayRows.length || errorText !== "") { clearCursor(); return }
+    if (panel && panel.currentActions && panel.currentActions.keyboardActive) panel.currentActions.leaveFocus()
     selectedRow = displayRows[index]
     cursorIndex = index
     cursorActive = true

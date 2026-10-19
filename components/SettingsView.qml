@@ -420,12 +420,13 @@ Column {
       Repeater {
         model: [
           "← →  or  1–" + (root.store && root.store.discreteGpuAvailable ? 5 : 4), "switch tab",
-          "↑ ↓", "move through the process rows",
+          "↑ ↓", "process rows or selected actions",
           "H", "last hour / last minute on every graph",
           "S", "settings",
           "R", "re-read hardware identity",
           "/", "search processes (CPU, Memory, Drives)",
-          "Esc", "clear search, leave editor, close view",
+          "A", "copy/open actions (Network, Drives)",
+          "Esc", "leave actions/search, close view",
           "Tab", "next bar panel (the shell's own binding)"
         ]
         delegate: Text {

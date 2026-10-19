@@ -44,6 +44,7 @@ self-held FIFO provides timing. Setup and cleanup use external tools.
 | `gpu-stats sample nvidia` | NVIDIA segment or GPU tab visible |
 | `gpu-stats sample amd/intel` → `gpu-drm` | GPU tab open, or GPU segment visible when DRM polling is needed for busy; integrated GPU while CPU tab is open |
 | `disk-info usage` | Drives tab open; mount capacity and NVMe temperatures |
+| `panel-action.py` | Explicit Copy/Open activation only; clipboard stdin or a validated mount URI passed to the desktop tool |
 
 `panelIntervalMs` controls poll timers, including GPU polls needed by a
 visible bar segment. `barIntervalMs` controls the stream and graph ticks.
@@ -69,8 +70,8 @@ checks need the runtime tools, ShellCheck, Ruff, mawk, and gawk.
 ```sh
 node --test tests/lib/*.test.js
 python3 -m unittest discover -s tests/py -t . -v
-ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py tests/py tests/bench-bar.py
-python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py tests/bench-bar.py
+ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py tests/py tests/bench-bar.py tests/qs/action-helper.py
+python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py tests/bench-bar.py tests/qs/action-helper.py
 bash tests/intel-freq-paths.sh
 bash tests/stream-forks.sh
 shellcheck -x scripts/quadrant-stream scripts/system-info scripts/disk-info scripts/gpu-stats scripts/gpu-intel-paths.sh scripts/process-sample scripts/process-net tests/*.sh
@@ -94,6 +95,7 @@ bash tests/qs-process-ui.sh
 bash tests/qs-panel-ui.sh
 bash tests/qs-graph-ui.sh
 bash tests/qs-bar-ui.sh
+bash tests/qs-actions-ui.sh
 bash tests/qmllint.sh
 bash tests/render.sh cpu /tmp/quadrant-cpu.png
 ```
@@ -173,6 +175,40 @@ Store, including QML's initial QVariantList settings. The panel is a small contr
 offscreen cases establish routing, not layer-shell popup placement. Pure
 tests exercise all 120 segment orders through fallback and hardware recovery.
 
+`qs-actions-ui.sh` runs 19 cases in each load-patch mode against the real Network
+and Drives tabs, shared action controls, panel dispatcher, and native Process
+stdin. Its echo/failure helper never reads or writes the desktop clipboard or
+opens a file manager. It covers mouse and A/arrow/Enter activation, staged Esc,
+shell Tab, search handoff, adjacent selectors, literal MAC/IPv4/IPv6/path values,
+selection across inventory changes, visible errors, helper exit/mismatch/timeout,
+and stale responses. Process selection leaves action navigation; late feedback
+preserves settings and other views. A usage refresh between mouse press and
+release preserves the same Open button while updating its usage text and bar.
+Access hints disable known inaccessible targets with a working hover explanation,
+keyboard feedback, and recovery on the next inventory update. The explanation
+wraps within a 320 px panel at font size 18 and spacing scale 2.
+Layout cases use 320/440 px, font size 18 and spacing scales
+1/1.5/2. Python tests cover actual helper validation and argv/stdin boundaries,
+including bind-mount escapes, missing tools, permissions, unmounted targets,
+and literal URI arguments through `uwsm-app --` with a direct-launch fallback.
+Both disk inventory modes discard a cut final `df` row while retaining rows
+whose terminating newline fits within the 65,536-character bound. Fixtures
+cover a truncated target matching another mount, exact newline boundaries,
+and UTF-8 payloads larger than a single argv argument permits.
+Mount fields travel as ASCII base64 on stdin before jq decodes the complete
+value, avoiding UTF-8 corruption in older jq raw-input readers.
+
+`PanelActions.qml` keeps mount identity entries separate from a target-keyed
+details map. Capacity and access updates therefore do not replace delegates.
+`disk-info` reports read/search access hints with the existing mount polls;
+the action helper still checks current mount membership and access at activation.
+
+`LocalAction.qml` captures each request in its own job. It serializes requests
+within a panel action group; a device-context change drops the previous result
+and lets its accepted desktop request finish before enabling another. Status
+is panel-local and never belongs to the sampling Store. The tool timeout is
+five seconds; a separate eight-second QML watchdog covers a stuck helper.
+
 `qmllint.sh` needs qmllint and an Omarchy shell at
 `${OMARCHY_PATH:-/usr/share/omarchy}/shell`; it skips when either is
 missing. The regular CI runner therefore does not establish that the QML
@@ -215,6 +251,13 @@ documentation capture uses fixture telemetry because this machine has no
 dedicated card. Set `QUADRANT_RENDER_GPU_FIXTURE=percent` for that reproducible
 sample or `bytes` for a card without a VRAM denominator. These fixtures do not
 establish driver or power-management behavior.
+
+Set `QUADRANT_RENDER_ACTION_FIXTURE=1` for deterministic Network and Drives
+captures with documentation-range addresses and literal mount-path characters.
+The fixture supplies existing history data and never triggers clipboard or
+launcher actions. `QUADRANT_RENDER_FIT=1 QUADRANT_RENDER_HEADER=1` includes the
+panel header and fits the full content. These captures check presentation;
+they do not establish access to a physical removable volume.
 
 ### Matched graph comparisons
 

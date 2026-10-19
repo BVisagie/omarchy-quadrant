@@ -15,6 +15,7 @@ Item {
   property var panel: null
   property var model: null
   property alias processList: processRoster
+  property alias actionList: addressControls
 
   readonly property bool active: panel !== null && panel.opened === true && panel.currentTab === "net"
   readonly property bool longWindow: panel !== null && panel.longWindow === true
@@ -43,7 +44,7 @@ Item {
   // ---- identity ----------------------------------------------------------
   readonly property string netTitle: ifname !== "" ? ifname : "Network"
   readonly property string netMeta: {
-    if (iface) return Model.interfaceSummary(iface)
+    if (iface) return Model.interfaceSummary(iface, false)
     if (ifname === "") return "No default route"
     return pinned ? "Pinned interface" : "Default route"
   }
@@ -117,6 +118,7 @@ Item {
     }
 
     Components.DeviceChoices {
+      objectName: "interfaceChoices"
       width: parent.width
       visible: root.interfaceOptions.length > 2
       options: root.interfaceOptions
@@ -158,17 +160,13 @@ Item {
         label: "Received / sent"
         value: root.totals ? Model.formatBytes(root.totals.rx) + " / " + Model.formatBytes(root.totals.tx) : "--"
       }
-      Components.StatRow {
+      Components.PanelActions {
+        id: addressControls
+        objectName: "networkActions"
         width: parent.width
-        visible: root.iface && root.iface.mac !== ""
-        label: "MAC"
-        value: root.iface ? root.iface.mac : ""
-      }
-      Components.StatRow {
-        width: parent.width
-        visible: root.iface && root.iface.addrs.length > 2
-        label: "Addresses"
-        value: root.iface ? root.iface.addrs.join("  ") : ""
+        panel: root.panel
+        context: root.ifname
+        entries: Model.addressActions(root.iface)
       }
     }
 

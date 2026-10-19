@@ -102,8 +102,15 @@ md RAID with one physical parent fold onto it (a LUKS root can show as
 Busy percentage is `io_ticks` over wall time, not a throughput percentage.
 
 Mounts come from `df -P -B1 -T`; bind mounts collapse to the shortest path.
-The tab lists mounts on the selected device with capacity bars. Drive
-temperature comes only from the device's `nvme` hwmon sensor.
+The tab lists mounts on the selected device with capacity bars and Open actions.
+Complete target strings are retained up to 4096 characters, including literal
+spaces and backslashes; a clipped target cannot be launched. The helper limits
+`df` output to 65,536 characters and drops a partial final row. Mount inventory
+includes directory read/search access for the current user; known inaccessible
+volumes have disabled Open buttons. Activation rechecks the exact target in
+`/proc/self/mountinfo` and directory access.
+It does not change mount discovery or mount a volume. Drive temperature comes
+only from the device's `nvme` hwmon sensor.
 
 Process I/O comes from readable `/proc/<pid>/io` counters, normally those
 of your own processes. The panel reports how many it could not read.
@@ -115,7 +122,10 @@ to the selected drive** and need not sum to its throughput.
 The stream supplies selected-interface rates and received/sent totals.
 Identity adds link speed, Ethernet/Wi-Fi/virtual type, MAC, and global
 addresses, using sysfs and an `ip -j addr` call when system identity is
-refreshed (startup, `R`, and GPU-tab refresh).
+refreshed (startup, `R`, and GPU-tab refresh). It retains up to eight
+global-scope IPv4/IPv6 addresses per interface. Copy rows show each host address
+without its CIDR prefix and send exactly that displayed value from the same
+inventory snapshot.
 
 Process attribution uses established TCP socket counters from `ss`,
 matched against the interface's local addresses when available. Each

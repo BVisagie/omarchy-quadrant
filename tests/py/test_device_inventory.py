@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -40,6 +41,83 @@ class DeviceInventory(unittest.TestCase):
         result = subprocess.run([str(Path(SCRIPTS) / helper), *args], env=self.env, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         return json.loads(result.stdout)
+
+    def fixture_df(self, payload):
+        """Substitute only df's fixed executable; run the actual helper body."""
+        data = self.root / "df.txt"
+        data.write_text(payload)
+        tool = self.root / "df-fixture"
+        tool.write_text(f"#!{os.sys.executable}\nfrom pathlib import Path\nimport sys\nsys.stdout.write(Path({str(data)!r}).read_text())\n")
+        tool.chmod(0o755)
+        source = (Path(SCRIPTS) / "disk-info").read_text()
+        assignment = 'DF=$(resolve_bin df) || fail "df not found"'
+        self.assertEqual(source.count(assignment), 1)
+        script = self.root / "disk-info-fixture"
+        script.write_text(source.replace(assignment, "DF=" + shlex.quote(str(tool)), 1))
+        script.chmod(0o755)
+        self.env["LC_ALL"] = "C.UTF-8"
+        return str(script)
+
+    def test_mount_access_preserves_literal_paths_and_checks_read_and_search(self):
+        paths = [self.root / 'space "quote" \\ $(touch NO) café  ', self.root / "no-read", self.root / "no-search"]
+        for path in paths:
+            path.mkdir()
+        paths[1].chmod(0o300)
+        paths[2].chmod(0o600)
+        missing = self.root / "missing"
+        regular = self.root / "file"
+        regular.touch()
+        paths.extend([missing, regular])
+        payload = "Filesystem Type 1B-blocks Used Available Capacity Mounted on\n" + "".join(
+            f"/dev/sda{i + 1} ext4 {1000 + i} 100 900 10% {path}\n" for i, path in enumerate(paths))
+        helper = self.fixture_df(payload)
+        try:
+            for mode in ["identity", "usage"]:
+                with self.subTest(mode=mode):
+                    data = self.run_helper(helper, mode)
+                    expected = {str(path): path.is_dir() and os.access(path, os.R_OK | os.X_OK) for path in paths}
+                    self.assertEqual(data["mountAccess"], expected)
+                    self.assertEqual(data["dfPayload"], payload.rstrip("\n"))
+                    self.assertFalse((self.root / "NO").exists())
+        finally:
+            for path in paths[:3]:
+                path.chmod(0o700)
+
+    def test_df_cap_keeps_only_complete_rows_in_both_inventory_modes(self):
+        header = "Filesystem Type 1B-blocks Used Available Capacity Mounted on\n"
+        retained = self.root / "retained"
+        retained.mkdir()
+        partial = self.root / "prefix"
+        partial.mkdir()
+        first = f"/dev/sda1 ext4 1000 100 900 10% {retained}\n"
+        last = f"/dev/sda2 ext4 2000 100 1900 5% {partial}"
+        padding_start = "tmpfs tmpfs 1 0 1 0% /"
+        for character in ["x", "🦉"]:
+            padding = padding_start + character * (65536 - len(header + first + padding_start + last) - 1) + "\n"
+            payload = header + first + padding + last + "/different-mount\n"
+            self.assertEqual(payload[65536 - len(str(partial)):65536], str(partial))
+            helper = self.fixture_df(payload)
+            for mode in ["identity", "usage"]:
+                with self.subTest(mode=mode, character=character):
+                    data = self.run_helper(helper, mode)
+                    self.assertEqual(data["dfPayload"], (header + first + padding).rstrip("\n"))
+                    self.assertEqual(data["mountAccess"], {str(retained): True})
+            # If the bound includes the newline, the whole final row survives.
+            padding = padding_start + character * (65536 - len(header + first + padding_start + last) - 2) + "\n"
+            complete = header + first + padding + last + "\n"
+            self.assertEqual(len(complete), 65536)
+            helper = self.fixture_df(complete + "/dev/sda3 ext4 3000 100 2900 4% /another\n")
+            for mode in ["identity", "usage"]:
+                with self.subTest(mode=mode, character=character, boundary="newline"):
+                    data = self.run_helper(helper, mode)
+                    self.assertEqual(data["dfPayload"], complete.rstrip("\n"))
+                    self.assertEqual(data["mountAccess"], {str(retained): True, str(partial): True})
+        helper = self.fixture_df("/dev/sda1 ext4 1000 100 900 10% /" + "x" * 65536)
+        for mode in ["identity", "usage"]:
+            with self.subTest(mode=mode, boundary="no completed row"):
+                data = self.run_helper(helper, mode)
+                self.assertEqual(data["dfPayload"], "")
+                self.assertEqual(data["mountAccess"], {})
 
     def test_disk_aliases_only_resolve_to_whole_devices_inside_dev(self):
         self.disk("sda")
