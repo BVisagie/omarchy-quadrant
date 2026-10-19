@@ -55,13 +55,19 @@ Item {
       property var argv: []
       property int timeout: 8000
       property bool finished: false
+      property bool cleanupQueued: false
+      function releaseWhenStopped() {
+        if (process.running || cleanupQueued) return
+        cleanupQueued = true
+        Qt.callLater(job.destroy)
+      }
       function finish(response) {
         if (finished) return
         finished = true
         watchdog.stop()
         if (process.running) process.signal(9)
         root.finish(token, kind, value, response)
-        Qt.callLater(job.destroy)
+        releaseWhenStopped()
       }
       Process {
         id: process
@@ -75,6 +81,7 @@ Item {
         }
         onExited: function (exitCode) {
           if (!job.finished) job.finish(Model.safeJson(output.text) || { ok: false, error: "The action helper exited (" + exitCode + ")" })
+          job.releaseWhenStopped()
         }
       }
       Timer {

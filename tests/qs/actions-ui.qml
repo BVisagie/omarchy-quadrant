@@ -189,6 +189,7 @@ ShellRoot {
       runner.timeoutMs = 80
       check(runner.run("copy", "SLOW")); tryCompare(runner, "busy", false)
       check(runner.error); check(runner.message.indexOf("timed out") >= 0)
+      tryVerify(function () { return runner.children.length === 0 }, 1000, "the timed-out job is reaped after process exit")
       runner.timeoutMs = 2000
       runner.run("copy", "SLOW"); runner.clear()
       check(!runner.run("copy", "new"), "an old desktop request finishes before another is accepted")
