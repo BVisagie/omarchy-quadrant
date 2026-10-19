@@ -4,6 +4,9 @@
 
 ### Added
 
+- Optional graph-plus-text bar with bounded minute trends from shared history;
+  text remains the default. Segment switches now have ordering arrows, and
+  disabled or absent devices retain their saved positions.
 - Optional aligned GPU and mirrored Network/Drives plots, saved independently
   in Panel graphs settings. Overlays remain the default. Each series has a
   named average/peak summary; hour plots label their 10 s mean buckets.
@@ -17,6 +20,10 @@
 
 ### Changed
 
+- Bar styles reserve fixed slots through 100%, estimated GPU prefixes, and
+  compact network rate changes. Vertical trends fit within the strip, with
+  complete download/upload rates beneath them. Drives fallback follows its
+  saved position, after Memory in the default order, without duplicate cells.
 - Graphs show a time axis ending at the last sample's local clock time,
   explicit floor labels, and timestamped hover readings in reserved summary
   space above the plot. Hovering leaves the curves visible and the layout steady.
@@ -27,6 +34,12 @@
 
 ### Fixed
 
+- Horizontal bar values stay beside their own labels and trends within fixed
+  slots. Only Intel reserves the GPU estimate prefix, and visible vertical
+  percentage values share a font size without shrinking AMD/NVIDIA needlessly.
+- Compact network rates promote before rounding exceeds their reserved width.
+  Typed QML list settings are read correctly during initial object creation.
+  The Drives switch can enable an explicit segment when GPU is disabled.
 - Unknown graph values remain gaps instead of becoming zero. Incomplete CPU
   stacks are unknown, and hovering a long collection gap shows no old reading.
 - Cards without a VRAM percentage show only the busy series. A retained

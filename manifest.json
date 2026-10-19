@@ -43,7 +43,16 @@
       "diskDeviceId": "",
       "gpuGraphLayout": "overlay",
       "networkGraphLayout": "overlay",
-      "diskGraphLayout": "overlay"
+      "diskGraphLayout": "overlay",
+      "barOrder": [
+        "cpu",
+        "gpu",
+        "memory",
+        "disk",
+        "network"
+      ],
+      "barStyle": "text",
+      "barGraphWidth": 32
     },
     "schema": [
       {
@@ -157,7 +166,7 @@
         "key": "diskFallbackWithoutGpu",
         "type": "boolean",
         "label": "Show Drives in the bar when no dedicated GPU",
-        "description": "When true, the configured gpu bar token is displayed as Drives if no dedicated GPU is detected. Turning off the in bar switch on the Drives tab sets this to false. Does not rewrite the segments list.",
+        "description": "When true, a configured gpu token enables Drives at its saved barOrder position if no dedicated GPU is detected (after Memory by default). The Drives in bar switch disables fallback and explicit Drives membership together. Does not rewrite the GPU preference or order.",
         "defaultValue": true
       },
       {
@@ -241,6 +250,62 @@
           "mirrored"
         ],
         "defaultValue": "overlay"
+      },
+      {
+        "key": "barStyle",
+        "type": "enum",
+        "label": "Bar style",
+        "description": "Text only, or a minute trend alongside each value. Uses existing shared history.",
+        "options": [
+          "text",
+          "graph-text"
+        ],
+        "defaultValue": "text"
+      },
+      {
+        "key": "barGraphWidth",
+        "type": "integer",
+        "label": "Bar graph width",
+        "description": "Trend width in logical pixels; vertical bars limit it to the strip width.",
+        "min": 16,
+        "max": 64,
+        "step": 1,
+        "defaultValue": 32
+      },
+      {
+        "key": "barOrder",
+        "type": "multiselect",
+        "label": "Bar segment order",
+        "description": "Order of all five segments, including hidden devices; this is not an enabled set. Reorder with the panel arrows or an ordered JSON array through the CLI. Missing names append in canonical order; use segments to enable or disable resources.",
+        "options": [
+          {
+            "value": "cpu",
+            "label": "CPU"
+          },
+          {
+            "value": "gpu",
+            "label": "GPU"
+          },
+          {
+            "value": "memory",
+            "label": "Memory"
+          },
+          {
+            "value": "disk",
+            "label": "Drives"
+          },
+          {
+            "value": "network",
+            "label": "Network"
+          }
+        ],
+        "defaultValue": [
+          "cpu",
+          "gpu",
+          "memory",
+          "disk",
+          "network"
+        ]
       }
     ]
   }
