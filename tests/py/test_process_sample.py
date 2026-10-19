@@ -213,6 +213,52 @@ class Sampling(unittest.TestCase):
             outputs.append(json.loads(out))
         self.assertEqual(sum(r.get("skipped", False) for r in outputs), 1)
 
+    def test_missing_runtime_keeps_memory_and_never_uses_unlocked_state(self):
+        self.process(1, "worker", ticks=0, start=1, io=(0, 0), pss=123)
+        os.environ["XDG_RUNTIME_DIR"] = os.path.join(self.tmp.name, "missing", "runtime")
+        with patch.object(qproc, "load_state", side_effect=AssertionError("unlocked read")), \
+                patch.object(qproc, "save_state", side_effect=AssertionError("unlocked write")):
+            compact = self.run_at(1000)
+            self.process(1, "worker", ticks=100, start=1, io=(1000, 1000))
+            expanded = self.run_at(1001, expanded=True)
+        self.assertEqual(compact["mem"][0]["value"], 123)
+        self.assertEqual(compact["rateState"], "unavailable")
+        self.assertEqual(compact["cpu"], [])
+        self.assertEqual(expanded["dt"], 0)
+        self.assertIsNone(expanded["rows"][0]["cpu"])
+        self.assertIsNone(expanded["rows"][0]["read"])
+        self.assertGreater(expanded["rows"][0]["memory"], 0)
+        out = subprocess.run([os.path.join(SCRIPTS, "process-sample"), "--expanded"],
+                             capture_output=True, text=True, env=dict(os.environ), check=False)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        envelope = json.loads(out.stdout)
+        self.assertTrue(envelope["ok"])
+        self.assertEqual(json.loads(envelope["payload"])["rateState"], "unavailable")
+
+    def test_missing_cache_fallback_is_rate_less(self):
+        self.process(1, "worker", ticks=0, start=1)
+        with patch.dict(os.environ):
+            os.environ.pop("XDG_RUNTIME_DIR", None)
+            with patch.object(qproc.os.path, "expanduser", return_value=self.tmp.name):
+                sample = self.run_at(1000)
+        self.assertEqual(sample["rateState"], "unavailable")
+        self.assertEqual(len(sample["mem"]), 1)
+
+    def test_failed_lock_acquisition_cannot_reuse_or_replace_baseline(self):
+        self.process(1, "worker", ticks=0, start=1, io=(0, 0))
+        self.run_at(1000)
+        path = os.path.join(self.runtime, "quadrant-procs.json")
+        with open(path, encoding="utf-8") as fh:
+            before = fh.read()
+        self.process(1, "worker", ticks=100, start=1, io=(1000, 1000))
+        with patch.object(qproc.fcntl, "flock", side_effect=OSError("lock unavailable")):
+            sample = self.run_at(1001, expanded=True)
+        self.assertEqual(sample["rateState"], "unavailable")
+        self.assertIsNone(sample["rows"][0]["cpu"])
+        with open(path, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), before)
+        self.assertEqual(self.run_at(1002)["dt"], 2)
+
     def test_wrapper_envelope(self):
         self.process(1, "a", ticks=0, start=1)
         env = dict(os.environ)

@@ -165,16 +165,24 @@ def sample(count: int, window: float, expanded: bool = False) -> dict:
     """
     runtime = os.environ.get("XDG_RUNTIME_DIR") or os.path.join(os.path.expanduser("~"), ".cache")
     state_path = os.path.join(runtime, "quadrant-procs.json")
-    fd = os.open(state_path + ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fd = os.open(state_path + ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError:
+        return collect(count, window, expanded, None)
     with os.fdopen(fd, "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        except OSError:
+            return collect(count, window, expanded, None)
         return collect(count, window, expanded, state_path)
 
 
-def collect(count: int, window: float, expanded: bool, state_path: str) -> dict:
+def collect(count: int, window: float, expanded: bool, state_path: str | None) -> dict:
     proc = proc_root()
     now = now_s()
-    prev = load_state(state_path)
+    # Degrade to memory/counts when state cannot be locked. Never read or
+    # overwrite shared counters without the lock, even if an old file exists.
+    prev = load_state(state_path) if state_path is not None else None
     try:
         elapsed = now - float(prev["t"]) if prev else 0.0
         if not math.isfinite(elapsed):
@@ -191,7 +199,7 @@ def collect(count: int, window: float, expanded: bool, state_path: str) -> dict:
     ncpu = os.cpu_count() or 1
     limit = min(32, max(count * 4, 16))
     dt = elapsed if prev and 0.4 <= elapsed <= max(window, 0.4) else 0.0
-    rate_state = "ready" if dt else ("stale" if prev else "cold")
+    rate_state = "unavailable" if state_path is None else "ready" if dt else ("stale" if prev else "cold")
     before = prev["p"] if dt else {}
 
     procs_running = 0
@@ -244,10 +252,11 @@ def collect(count: int, window: float, expanded: bool, state_path: str) -> dict:
                 pass  # A corrupt counter or a reset requires another interval.
         snap[rec["key"]] = rec
 
-    save_state(state_path, {
-        "t": now,
-        "p": {k: {"tk": v["ticks"], "rb": v["rb"], "wb": v["wb"]} for k, v in snap.items()},
-    })
+    if state_path is not None:
+        save_state(state_path, {
+            "t": now,
+            "p": {k: {"tk": v["ticks"], "rb": v["rb"], "wb": v["wb"]} for k, v in snap.items()},
+        })
     details: dict[str, dict] = {}
 
     def row(rec: dict) -> dict:

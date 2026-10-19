@@ -242,3 +242,20 @@ test("process presentation labels accounting, missing rates and partial totals",
   assert.match(scope, /Measuring rates/);
   assert.equal(Model.processScope({ mode: "compact" }, "mem", true), "Collecting the full eligible roster…");
 });
+
+
+test("unusable counter state leaves memory usable and labels rates unavailable", () => {
+  const sample = Model.parseProcessSample({ mode: "expanded", rateState: "unavailable", dt: 0,
+    procs: 1, ioVisible: 1, ioHidden: 0, rows: [{ pid: 1, start: 1, comm: "worker", memory: 1024,
+    kind: "rss", cpu: null, core: null, read: null, write: null, ioVisible: true }] });
+  const cpu = Model.formatProcessGroups(Model.processGroups(sample, "cpu"), "cpu")[0];
+  assert.equal(cpu.valueText, "Unavailable");
+  assert.match(cpu.hint, /CPU rates unavailable/);
+  const io = Model.formatProcessGroups(Model.processGroups(sample, "io"), "io")[0];
+  assert.equal(io.valueText, "Unavailable");
+  const mem = Model.formatProcessGroups(Model.processGroups(sample, "mem", 10240), "mem")[0];
+  assert.equal(mem.valueText, "1 MiB");
+  assert.equal(mem.secondaryValueText, "10.0% · RSS");
+  assert.match(Model.processScope(sample, "cpu", true), /Rates unavailable/);
+  assert.doesNotMatch(Model.processScope(sample, "cpu", true), /Measuring/);
+});

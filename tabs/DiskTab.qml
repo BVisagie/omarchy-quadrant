@@ -216,6 +216,7 @@ Item {
       emptyText: !root.active ? "Open this tab to sample processes"
                  : !root.model || !root.model.procStats ? "Measuring disk I/O rates…"
                  : root.model.procStats.ioVisible === 0 ? "Process I/O visibility is restricted"
+                 : root.model.procStats.rateState === "unavailable" ? "Disk I/O rates unavailable without counter state"
                  : !(root.model.procStats.dt > 0) || root.model.procStats.ioReady === 0 ? "Measuring disk I/O rates…"
                  : "No disk activity from visible processes"
       errorText: root.errorText

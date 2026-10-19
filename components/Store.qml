@@ -1076,7 +1076,7 @@ Item {
     memRows = Model.mergeRoster(memRows, allMemRows.slice(0, processCount), processCount)
     ioRows = Model.mergeRoster(ioRows, allIoRows.filter(function (r) { return r.value > 0 }).slice(0, processCount), processCount)
     procError = ""
-    if (parsed.dt > 0) {
+    if (parsed.dt > 0 || parsed.rateState === "unavailable") {
       procWarmupAvailable = false
       procWarmupTimer.stop()
     } else if (procSampleWanted && procWarmupAvailable) {

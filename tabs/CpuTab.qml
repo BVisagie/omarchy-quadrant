@@ -202,7 +202,11 @@ Item {
       width: parent.width
       rows: root.rows
       valueHeader: "CPU"
-      emptyText: !root.active ? "Open this tab to sample processes" : !root.model || !root.model.procStats || !(root.model.procStats.dt > 0) || (root.model.procStats.procs > 0 && root.model.procStats.cpuReady === 0) ? "Measuring CPU rates…" : "No eligible CPU processes"
+      emptyText: !root.active ? "Open this tab to sample processes"
+                 : !root.model || !root.model.procStats ? "Measuring CPU rates…"
+                 : root.model.procStats.rateState === "unavailable" ? "CPU rates unavailable without counter state"
+                 : !(root.model.procStats.dt > 0) || (root.model.procStats.procs > 0 && root.model.procStats.cpuReady === 0)
+                   ? "Measuring CPU rates…" : "No eligible CPU processes"
       errorText: root.errorText
     }
 
