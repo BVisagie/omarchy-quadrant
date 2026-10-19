@@ -69,8 +69,8 @@ checks need the runtime tools, ShellCheck, Ruff, mawk, and gawk.
 ```sh
 node --test tests/lib/*.test.js
 python3 -m unittest discover -s tests/py -t . -v
-ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py tests/py
-python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py
+ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py tests/py tests/bench-bar.py
+python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py tests/bench-bar.py
 bash tests/intel-freq-paths.sh
 bash tests/stream-forks.sh
 shellcheck -x scripts/quadrant-stream scripts/system-info scripts/disk-info scripts/gpu-stats scripts/gpu-intel-paths.sh scripts/process-sample scripts/process-net tests/*.sh
@@ -93,6 +93,7 @@ bash tests/qs-process-lifecycle.sh
 bash tests/qs-process-ui.sh
 bash tests/qs-panel-ui.sh
 bash tests/qs-graph-ui.sh
+bash tests/qs-bar-ui.sh
 bash tests/qmllint.sh
 bash tests/render.sh cpu /tmp/quadrant-cpu.png
 ```
@@ -159,6 +160,18 @@ height or covers a curve, including unknown and differently sized values.
 At 320/440 px, font size 18 and spacing scales 1/1.5/2, axes, time labels, duration controls and readouts
 stay inside the graph. Both load-patch modes run.
 
+`qs-bar-ui.sh` runs 44 native cases in each load-patch mode. Two actual widgets
+resolve the same synthetic service and histories, with no embedded Store or
+extra collectors. Checks cover all values through 100%, estimated GPU prefixes,
+compact rate extremes, horizontal/vertical styles, glyph/letter/no labels,
+live font and spacing changes, fixed segment positions, dynamic click-target
+registration, icon-only mode, scale tooltips/offline history, and hardware
+loss/return. Settings tests use mouse and keyboard ordering, retained focus,
+effective Drives switches, style/width/reset, and persistence through the real Store, including QML's
+initial QVariantList settings. The panel is a small contract stand-in; these
+offscreen cases establish routing, not layer-shell popup placement. Pure
+tests exercise all 120 segment orders through fallback and hardware recovery.
+
 `qmllint.sh` needs qmllint and an Omarchy shell at
 `${OMARCHY_PATH:-/usr/share/omarchy}/shell`; it skips when either is
 missing. The regular CI runner therefore does not establish that the QML
@@ -224,6 +237,37 @@ It reports graph-block heights and rejects QML runtime errors.
 See [Graph layouts](GRAPH_LAYOUTS.md) for the recorded comparisons and the
 default decision. These fixtures verify presentation; they do not establish
 GPU driver or power-management behavior.
+
+### Bar comparisons and rendering cost
+
+```sh
+bash tests/render-bar.sh /tmp/quadrant-bar-trends.png
+QUADRANT_RENDER_BAR_STYLE=text bash tests/render-bar.sh /tmp/quadrant-bar-text.png
+QUADRANT_RENDER_VERTICAL=1 QUADRANT_RENDER_PALETTE=light \
+  bash tests/render-bar.sh /tmp/quadrant-bar-vertical.png
+python3 tests/bench-bar.py --baseline a260bf2 --cases baseline,text,graph,graph2
+```
+
+The bar renderer uses the actual widget with deterministic minute histories
+from `BarFixture.qml`, one shared service, isolated runtime/state, and a panel
+contract stand-in. It fails on QML runtime errors. Its defaults show all five
+segments with Network first; `QUADRANT_RENDER_ORDER` accepts comma-separated
+segment names. `QUADRANT_RENDER_GRAPH_WIDTH`, `QUADRANT_RENDER_LABELS`,
+`QUADRANT_RENDER_BAR_SIZE`, `QUADRANT_RENDER_MISSING_GPU=1`, and
+`QUADRANT_RENDER_MONITORS=2` select additional cases. Use
+`QUADRANT_RENDER_TAB=settings` for the settings view. Palettes and device
+scaling use the same variables as the tab renderer. These are process-local
+fixtures and never change installed settings.
+
+The benchmark applies identical 1 Hz synthetic readings and samples the
+Quickshell process's CPU time, RSS, and child count after a three-second warmup.
+Cases are merged text, current text, one graph widget, and two graph widgets.
+`--seconds` selects a 3–20 s observation window (default 10 s).
+`QUADRANT_RENDER_BAR_REF` replaces only the widget source with the baseline
+revision; both runs use the same current model and fixture. The measurement
+therefore isolates bar rendering, including common harness cost, and does not
+profile the complete sampler or idle power. See [Bar trends](BAR_TRENDS.md)
+for recorded results, the local comparison budget, and limits.
 
 ## Before publishing
 

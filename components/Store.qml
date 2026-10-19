@@ -50,6 +50,9 @@ Item {
     return Model.readSettings(merged)
   }
   readonly property var segmentsSetting: cfg.segments
+  readonly property var barOrder: cfg.barOrder
+  readonly property string barStyle: cfg.barStyle
+  readonly property int barGraphWidth: cfg.barGraphWidth
   readonly property int barIntervalMs: cfg.barIntervalMs
   readonly property int panelIntervalMs: cfg.panelIntervalMs
   // Enough for a minute at the fastest supported cadence (250 ms), even
@@ -155,14 +158,8 @@ Item {
   }
 
   function setBarSegment(name, enabled) {
-    if (name === "disk" && gpuTopologyReady && !discreteGpuAvailable && !gpuListFailed) {
-      var patch = { diskFallbackWithoutGpu: enabled === true }
-      if (enabled !== true && segmentsSetting.indexOf("disk") !== -1)
-        patch.segments = Model.toggleSegment(segmentsSetting, "disk", false)
-      persistSettings(patch)
-      return
-    }
-    persistSettings({ segments: Model.toggleSegment(segmentsSetting, name, enabled) })
+    persistSettings(Model.barSegmentPatch(cfg, name, enabled,
+      gpuTopologyReady && !discreteGpuAvailable && !gpuListFailed))
   }
 
   // ---- viewers ---------------------------------------------------------
@@ -216,7 +213,7 @@ Item {
 
   // ---- derived bar lists -----------------------------------------------
   readonly property var effectiveBarSegments: Model.effectiveSegments(
-    segmentsSetting, gpuTopologyReady, discreteGpuAvailable, diskFallbackWithoutGpu, gpuListFailed !== true)
+    segmentsSetting, gpuTopologyReady, discreteGpuAvailable, diskFallbackWithoutGpu, gpuListFailed !== true, barOrder)
   readonly property var visibleBarCells: Model.visibleBarCells(effectiveBarSegments, discreteGpuAvailable, diskAvailable)
 
   // ---- stream state ----------------------------------------------------

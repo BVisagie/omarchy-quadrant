@@ -21,6 +21,9 @@ time any setting is saved.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `segments` | `["cpu","gpu","memory","network"]` | Bar segments to show; any subset of `cpu gpu memory disk network`. An empty list keeps a compact icon. |
+| `barOrder` | `["cpu","gpu","memory","disk","network"]` | Saved order of all five resources, independent of enabled segments and hardware presence |
+| `barStyle` | `"text"` | `text` or `graph-text`: optional minute trends beside values |
+| `barGraphWidth` | `32` | Trend width in logical pixels (16–64), scaled by shell spacing; vertical bars clamp it to the strip width |
 | `processCount` | `5` | Top-process rows per tab (1–10) |
 | `barIntervalMs` | `1000` | Stream cadence feeding the bar and the graphs (250–60000) |
 | `panelIntervalMs` | `2000` | On-demand helper cadence (500–60000), including GPU polling for a visible bar segment |
@@ -29,7 +32,7 @@ time any setting is saved.
 | `gpuDeviceId` | `""` | Persistent dedicated GPU pin, as a PCI address (`0000:03:00.0`); takes precedence over `gpuDevice` |
 | `integratedGpuDevice` | `"auto"` | Which card is integrated graphics: `auto` (Intel at `00:02.x` or a known AMD APU), `none` (treat all cards as dedicated), or a `cardN` (force that card to be integrated) |
 | `integratedGpuDeviceId` | `""` | Persistent integrated GPU pin, as a PCI address; takes precedence over `integratedGpuDevice`, including `auto` and `none` |
-| `diskFallbackWithoutGpu` | `true` | Show Drives after Memory instead of GPU when no dedicated card is detected |
+| `diskFallbackWithoutGpu` | `true` | Substitute Drives at its saved position when a configured GPU is unavailable; default position is after Memory |
 | `diskDevice` | `"auto"` | `auto` = physical disk backing `/` (LUKS/LVM folded), else the largest; or a sysfs name such as `nvme0n1` |
 | `diskDeviceId` | `""` | Persistent whole-disk pin, as a basename from `/dev/disk/by-id`; takes precedence over `diskDevice` |
 | `barPalette` | `"theme"` | `theme`, `heat`, or `vivid` (see [Bar](USAGE.md#bar)) |
@@ -56,6 +59,38 @@ at most 255 safe basename characters and cannot contain paths, `..`, or a
 only resolved kernel names and device paths reach the samplers.
 Unknown keys already present in the entry are preserved; settings at their
 defaults are omitted when Quadrant saves. The helper scripts check their arguments again before touching anything.
+
+## Bar styles and ordering
+
+In **Bar segments**, switches select what appears and the up/down arrows save
+its order. Disabled resources and missing devices remain in the ordered list.
+Moving one keeps keyboard focus on that resource's movement control. The
+manifest's list field declares the setting's array type; use the panel arrows
+or an ordered CLI array to change position.
+
+`barOrder` keeps the first occurrence of each recognized segment, drops unknown
+names, and appends missing names in canonical order: CPU, GPU, Memory, Drives,
+Network. It accepts typed arrays, JSON-encoded arrays, and comma lists.
+`segments` remains an enabled set in canonical order; changing membership
+never changes the saved order. Older entries without the new keys retain
+text and the existing order. Older Quadrant releases ignore these keys while
+preserving them on save. **Reset to defaults** restores text, 32 px trends,
+the canonical order, and the default enabled set.
+
+Choose **graph + text** under **Appearance** to add trends. Trend width applies
+only in that style; the stored choice survives returning to text. Every style
+reserves the widest value before rendering, including the estimated GPU
+prefix and both compact network rates. In a vertical bar, the plot sits above
+its value and text uses a fixed font size chosen to fit the available strip.
+The bar's minute window does not follow the panel's **1 hour** selection.
+
+```sh
+omarchy bar set dev.bvisagie.quadrant barStyle '"graph-text"' --json
+omarchy bar set dev.bvisagie.quadrant barGraphWidth 32 --json
+omarchy bar set dev.bvisagie.quadrant barOrder '["network","disk","cpu","gpu","memory"]' --json
+```
+
+See [style captures, fallback decisions, and rendering cost](BAR_TRENDS.md).
 
 ## Graph layouts
 
@@ -132,10 +167,12 @@ changing that connection name keeps the selection and its history.
 
 Without a dedicated GPU, `diskFallbackWithoutGpu` replaces a configured
 `gpu` token with Drives for display without rewriting `segments`. Drives
-uses its canonical position after Memory, rather than the GPU position. The
-Drives tab's **in bar** switch controls that fallback in this case. It
-also removes an explicit `disk` segment when switched off. To restore a
-fallback segment, the configured list must still contain `gpu`.
+uses its own saved position, after Memory in the default order. The Drives
+tab's **in bar** switch and the settings Drives switch control the effective
+segment in this case. Switching off disables fallback and removes an explicit
+`disk` token. Switching on enables fallback if `gpu` is configured, or adds an
+explicit `disk` token otherwise. Neither action rewrites `barOrder` or the
+saved GPU preference. Missing disks remain hidden without losing their position.
 
 Changing the selected interface or hardware identity starts that metric's
 history afresh. Renumbering the same identified disk or GPU keeps its
@@ -177,12 +214,12 @@ methods.
 
 ## Settings view
 
-The settings view groups bar segments, appearance, sampling, and devices,
+The settings view groups ordered bar segments, appearance, panel graphs, sampling, and devices,
 with keyboard help and a **Reset to defaults** action at the bottom.
 
 <details>
   <summary>Show the full settings screenshot</summary>
   <p align="center">
-    <a href="screenshots/settings.png"><img src="screenshots/settings.png" alt="Full Quadrant settings view showing bar segment switches, appearance and panel graph controls, sampling intervals, device selectors, keyboard shortcuts, and Reset to defaults" width="520"></a>
+    <a href="screenshots/settings.png"><img src="screenshots/settings.png" alt="Full Quadrant settings view showing segment switches and ordering arrows, bar trends and width, panel graphs, sampling, devices, keyboard shortcuts, and Reset to defaults" width="520"></a>
   </p>
 </details>

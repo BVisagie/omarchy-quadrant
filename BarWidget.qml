@@ -117,6 +117,8 @@ BarWidget {
   readonly property var visibleBarCells: store ? store.visibleBarCells : []
   readonly property string barPaletteMode: store ? store.barPaletteMode : "theme"
   readonly property string barLabelsMode: store ? store.barLabelsMode : "glyph"
+  readonly property bool showTrends: store ? store.barStyle === "graph-text" : false
+  readonly property int trendWidth: Commons.Style.space(store ? store.barGraphWidth : 32)
   readonly property string rateUnit: store ? store.rateUnit : "bytes"
   function segmentEnabled(name) {
     return store ? store.segmentEnabled(name) : false
@@ -170,7 +172,7 @@ BarWidget {
   readonly property string netDownText: ifaceRates ? Model.formatRateCompact(ifaceRates.rxBps) : "--"
 
   // ---- per-segment tooltips ----------------------------------------------
-  function tooltipFor(metric) {
+  function readingTooltipFor(metric) {
     if (!streamLive) return "Quadrant: sampler offline"
     if (metric === "cpu") return Model.cpuBarTooltip(cpuPct)
     if (metric === "gpu") return gpuDisplay ? "GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (frequency estimate)" : "") : "GPU --"
@@ -184,6 +186,17 @@ BarWidget {
     return "Quadrant"
   }
 
+  function tooltipFor(metric) {
+    var text = readingTooltipFor(metric)
+    if (!showTrends || !streamLive) return text
+    if (metric === "net") {
+      var points = Model.barTrendPoints(historyFor("net"), "net")
+      var ceiling = Model.graphAxis(points, ["rx", "tx"], { minimumMax: 1024 }).max
+      return text + "\nMinute trend: down / up · 0–" + Model.formatRateUnit(ceiling, rateUnit)
+    }
+    return text + "\nMinute trend: 0–100%"
+  }
+
   readonly property string slotTooltip: {
     if (!streamLive) return "Quadrant: sampler offline"
     if (!showMonitorFallback) return ""
@@ -191,56 +204,78 @@ BarWidget {
   }
 
   // ---- sizing ----------------------------------------------------------
-  // Cells size to their content with one constant gap between them, so a
-  // one-digit value never leaves a hole before the next glyph. The slot
-  // itself stays at a fixed width — the sum of every visible cell at its
-  // widest ("100%") — so neighbouring bar widgets never move; the slack
-  // collects at the end of the slot, and a cell that changes digit count
-  // slides its neighbours smoothly.
+  // Each value and trend has a fixed slot. Sample changes cannot move this
+  // widget's neighbours or the segments within it.
   readonly property real labelGap: Commons.Style.space(3)
   readonly property real segmentGap: Commons.Style.space(8)
   readonly property real outerPad: Commons.Style.spaceReal(6)
+  readonly property int verticalSlot: root.bar ? root.bar.barSize : Commons.Style.bar.sizeVertical
+  readonly property var trendPalette: Model.seriesPalette(String(Commons.Color.accent), String(barUrgent), String(barFg), String(barBg))
 
-  FontMetrics { id: captionFm; font.family: button.fontFamily; font.pixelSize: Commons.Style.font.caption }
+  FontMetrics { id: captionFm; font.family: button.fontFamily; font.pixelSize: Commons.Style.font.caption; font.features: ({ "tnum": 1 }) }
   FontMetrics { id: glyphFm; font.family: button.fontFamily; font.pixelSize: root.glyphFontSize }
 
-  function labelFor(metric) {
-    return root.vertical ? "" : Model.barLabelFor(root.barLabelsMode, metric)
-  }
+  function labelFor(metric) { return root.vertical ? "" : Model.barLabelFor(root.barLabelsMode, metric) }
   function labelWidthFor(metric) {
     var label = labelFor(metric)
-    return label === "" ? 0 : Math.ceil(glyphFm.advanceWidth(label))
+    return label === "" || glyphFm.font.pixelSize <= 0 ? 0 : Math.ceil(glyphFm.advanceWidth(label))
   }
   readonly property int lineBoxHeight: Math.ceil(Math.max(captionFm.height, root.vertical ? 0 : glyphFm.height))
-  readonly property bool reserveEstimatePrefix: {
-    if (!root.segmentEnabled("gpu") || !root.discreteGpuAvailable) return false
-    return root.gpu && root.gpu.vendor === "intel"
+  readonly property int trendHeight: root.vertical ? Commons.Style.space(14) : Math.max(2, Math.min(lineBoxHeight, root.barSize - Commons.Style.space(4)))
+  // Include both directions and every compact unit; font widths can differ
+  // even when the digit count is fixed. A rate never exceeds four characters.
+  readonly property real rateReserve: {
+    // FontMetrics methods do not notify bindings when their font changes.
+    if (captionFm.font.pixelSize <= 0) return 0
+    var widest = 0
+    var values = ["--", ">99E"]
+    for (var unit of ["B", "K", "M", "G", "T", "P", "E"]) { values.push("999" + unit); values.push("9.9" + unit) }
+    for (var value of values) widest = Math.max(widest, captionFm.advanceWidth("↓" + value), captionFm.advanceWidth("↑" + value))
+    return Math.ceil(widest) + 1
   }
-  // Widest a cell can get; the slot reserves this much per visible cell.
-  function metricReserveFor(metric) {
-    var w = Math.ceil(captionFm.advanceWidth("100%"))
-    if (metric === "gpu" && root.reserveEstimatePrefix) w += Math.ceil(captionFm.advanceWidth("~"))
-    var lw = labelWidthFor(metric)
-    if (lw > 0) w += labelGap + lw
-    return w
+  readonly property real rateGap: captionFm.font.pixelSize > 0 ? Math.ceil(captionFm.advanceWidth(" ")) : 0
+  function valueReserveFor(metric) {
+    if (captionFm.font.pixelSize <= 0) return 0
+    if (metric === "net") return root.vertical ? rateReserve : rateReserve * 2 + rateGap
+    return Math.ceil(captionFm.advanceWidth(metric === "gpu" ? "~100%" : "100%"))
   }
-  readonly property real networkRateReserve: Math.ceil(captionFm.advanceWidth(root.vertical ? "↓999K" : "↓999K ↑999K")) + 1
-  readonly property real networkReserve: {
-    var w = root.networkRateReserve
-    var lw = labelWidthFor("net")
-    if (lw > 0) w += labelGap + lw
-    return w
-  }
-  readonly property real reservedWidth: {
-    var cells = root.visibleBarCells
-    var w = 0
-    for (var i = 0; i < cells.length; i++) {
-      if (i > 0) w += segmentGap
-      w += cells[i] === "net" ? networkReserve : metricReserveFor(cells[i])
-    }
+  function cellReserveFor(metric) {
+    var w = valueReserveFor(metric), labelWidth = labelWidthFor(metric)
+    if (labelWidth > 0) w += labelGap + labelWidth
+    if (showTrends) w += trendWidth + labelGap
     return Math.ceil(w)
   }
-  readonly property int verticalSlot: root.bar ? root.bar.barSize : Commons.Style.bar.sizeVertical
+  function valueFontSizeFor(metric) {
+    if (!root.vertical) return Commons.Style.font.caption
+    return Math.max(1, Math.min(Commons.Style.font.caption,
+      Math.floor(Commons.Style.font.caption * Math.max(1, verticalSlot) / valueReserveFor(metric))))
+  }
+  readonly property real reservedWidth: {
+    var cells = root.visibleBarCells, width = 0
+    for (var i = 0; i < cells.length; i++) width += cellReserveFor(cells[i]) + (i > 0 ? segmentGap : 0)
+    return Math.ceil(width)
+  }
+  function valueTextFor(metric) {
+    if (metric === "cpu") return cpuValueText
+    if (metric === "gpu") return gpuValueText
+    if (metric === "mem") return memValueText
+    return diskValueText
+  }
+  function percentFor(metric) {
+    if (metric === "cpu") return cpuPct ? cpuPct.nonIdle : null
+    if (metric === "gpu") return gpuDisplay ? gpuDisplay.pct : null
+    if (metric === "mem") return memComp ? memComp.usedPct : null
+    return metric === "disk" && diskRates ? diskRates.utilPct : null
+  }
+  function hotFor(metric) { return metric === "cpu" ? cpuHot : metric === "gpu" ? gpuHot : metric === "mem" ? memHot : metric === "disk" ? diskHot : false }
+  function historyFor(metric) {
+    if (!store) return []
+    if (metric === "cpu") return store.cpuHistory
+    if (metric === "gpu") return store.gpuHistory
+    if (metric === "mem") return store.memHistory
+    if (metric === "disk") return store.diskHistory
+    return store.netHistory
+  }
 
   // ---- panel contract (Quattro bar-widget shape) -----------------------
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
@@ -290,18 +325,21 @@ BarWidget {
   // Segment cells are registered as click targets after the slot button
   // so they sit above it in the bar's hit test (the bar walks targets
   // newest first).
+  property var registeredCellsBar: null
   function registerCells() {
+    if (registeredCellsBar && registeredCellsBar !== root.bar) unregisterCells()
+    registeredCellsBar = root.bar
     if (!root.bar || typeof root.bar.registerClickTarget !== "function") return
-    var cells = [cpuCell, gpuCell, memCell, diskCell, netCell]
-    for (var i = 0; i < cells.length; i++) {
-      if (typeof root.bar.unregisterClickTarget === "function") root.bar.unregisterClickTarget(cells[i])
-      root.bar.registerClickTarget(cells[i])
+    for (var i = 0; i < cells.count; i++) {
+      var cell = cells.itemAt(i)
+      if (!cell) continue
+      if (typeof root.bar.unregisterClickTarget === "function") root.bar.unregisterClickTarget(cell)
+      root.bar.registerClickTarget(cell)
     }
   }
   function unregisterCells() {
-    if (!root.bar || typeof root.bar.unregisterClickTarget !== "function") return
-    var cells = [cpuCell, gpuCell, memCell, diskCell, netCell]
-    for (var i = 0; i < cells.length; i++) root.bar.unregisterClickTarget(cells[i])
+    if (!registeredCellsBar || typeof registeredCellsBar.unregisterClickTarget !== "function") return
+    for (var i = 0; i < cells.count; i++) registeredCellsBar.unregisterClickTarget(cells.itemAt(i))
   }
 
   implicitWidth: button.implicitWidth
@@ -366,152 +404,44 @@ BarWidget {
       horizontalItemAlignment: Grid.AlignLeft
       move: Transition { NumberAnimation { properties: "x,y"; duration: 160; easing.type: Easing.OutCubic } }
 
-      MetricCell {
-        id: cpuCell
-        visible: root.segmentEnabled("cpu")
-        tab: "cpu"
-        metric: "cpu"
-        valueText: root.cpuValueText
-        valueColor: root.valueColorFor("cpu", root.cpuPct ? root.cpuPct.nonIdle : null, root.cpuHot)
-      }
-      MetricCell {
-        id: gpuCell
-        visible: root.segmentEnabled("gpu") && root.discreteGpuAvailable
-        tab: "gpu"
-        metric: "gpu"
-        valueText: root.gpuValueText
-        valueColor: root.valueColorFor("gpu", root.gpuDisplay ? root.gpuDisplay.pct : null, root.gpuHot)
-      }
-      MetricCell {
-        id: memCell
-        visible: root.segmentEnabled("memory")
-        tab: "mem"
-        metric: "mem"
-        valueText: root.memValueText
-        valueColor: root.valueColorFor("mem", root.memComp ? root.memComp.usedPct : null, root.memHot)
-      }
-      MetricCell {
-        id: diskCell
-        visible: root.segmentEnabled("disk") && root.diskAvailable
-        tab: "disk"
-        metric: "disk"
-        valueText: root.diskValueText
-        valueColor: root.valueColorFor("disk", root.diskRates ? root.diskRates.utilPct : null, root.diskHot)
-      }
-
-      // Network: glyph + inline rates; two lines on vertical bars.
-      Item {
-        id: netCell
-        visible: root.segmentEnabled("network")
-        implicitWidth: {
-          var w = Math.ceil(netCol.implicitWidth)
-          if (netLabel.visible) w += root.labelGap + Math.ceil(netLabel.implicitWidth)
-          if (root.vertical) return Math.min(w, root.verticalSlot)
-          return w
+      Repeater {
+        id: cells
+        model: root.visibleBarCells
+        onItemAdded: Qt.callLater(root.registerCells)
+        onItemRemoved: function (index, item) {
+          if (root.registeredCellsBar && typeof root.registeredCellsBar.unregisterClickTarget === "function")
+            root.registeredCellsBar.unregisterClickTarget(item)
         }
-        implicitHeight: root.vertical ? netCol.implicitHeight : root.lineBoxHeight
-        readonly property bool pressable: true
-        readonly property bool interactive: true
-        readonly property bool tooltipHovered: netHover.containsMouse
-        function triggerPress(buttonCode) {
-          if (buttonCode === Qt.RightButton) root.launchBtop()
-          else root.segmentClicked("net")
-        }
-
-        Text {
-          id: netLabel
-          visible: !root.vertical && root.labelFor("net") !== ""
-          textFormat: Text.PlainText
-          text: root.labelFor("net")
-          color: root.mutedLabelColor
-          font.family: button.fontFamily
-          font.pixelSize: root.glyphFontSize
-          anchors.left: parent.left
-          anchors.verticalCenter: parent.verticalCenter
-        }
-
-        Column {
-          id: netCol
-          anchors.left: netLabel.visible ? netLabel.right : parent.left
-          anchors.leftMargin: netLabel.visible ? root.labelGap : 0
-          anchors.verticalCenter: parent.verticalCenter
-          width: root.vertical ? parent.width : implicitWidth
-          spacing: 0
-
-          // Down first: it is the number people glance at.
-          Text {
-            visible: root.vertical
-            textFormat: Text.PlainText
-            width: parent.width
-            elide: Text.ElideRight
-            text: "↓" + root.netDownText
-            color: root.valueColorFor("net", null, false)
-            font.family: button.fontFamily
-            font.pixelSize: Commons.Style.font.caption
-            font.features: ({ "tnum": 1 })
-          }
-          Text {
-            visible: !root.vertical
-            textFormat: Text.PlainText
-            text: "↓" + root.netDownText + " ↑" + root.netUpText
-            color: root.valueColorFor("net", null, false)
-            font.family: button.fontFamily
-            font.pixelSize: Commons.Style.font.caption
-            font.features: ({ "tnum": 1 })
-          }
-          Text {
-            visible: root.vertical
-            textFormat: Text.PlainText
-            width: parent.width
-            elide: Text.ElideRight
-            text: "↑" + root.netUpText
-            color: root.valueColorFor("net", null, false)
-            font.family: button.fontFamily
-            font.pixelSize: Commons.Style.font.caption
-            font.features: ({ "tnum": 1 })
-          }
-        }
-
-        MouseArea {
-          id: netHover
-          anchors.fill: parent
-          hoverEnabled: true
-          acceptedButtons: Qt.NoButton
-          onEntered: if (root.bar) root.bar.showTooltip(netCell, root.tooltipFor("net"))
-          onExited: if (root.bar) root.bar.hideTooltip(netCell)
+        delegate: MetricCell {
+          required property string modelData
+          metric: modelData
+          objectName: "barCell_" + metric
         }
       }
     }
   }
 
-  // Metric cell: this cell's glyph/letter plus its value, sized to content. It is
-  // a registered click target (triggerPress) and a tooltip target
-  // (tooltipHovered); the bar routes clicks and shows tooltips for it.
+  // Click targets follow the effective order. The shell routes presses to
+  // them; the plot itself never owns input or starts a sampler.
   component MetricCell: Item {
     id: cell
-
-    property string tab: ""
     property string metric: ""
-    property string valueText: "--"
-    property color valueColor: root.barFg
-
+    readonly property string tab: metric
+    readonly property color valueColor: root.valueColorFor(metric, root.percentFor(metric), root.hotFor(metric))
     readonly property bool pressable: true
     readonly property bool interactive: true
     readonly property bool tooltipHovered: cellHover.containsMouse
     readonly property string label: root.labelFor(metric)
+    readonly property color downColor: root.showTrends ? root.trendPalette.primary : root.valueColorFor("net", null, false)
+    readonly property color upColor: root.showTrends ? root.trendPalette.secondary : root.valueColorFor("net", null, false)
 
     function triggerPress(buttonCode) {
       if (buttonCode === Qt.RightButton) root.launchBtop()
       else root.segmentClicked(cell.tab)
     }
-
-    implicitWidth: {
-      var w = Math.ceil(valueLabel.implicitWidth)
-      if (labelText.visible) w += root.labelGap + Math.ceil(labelText.implicitWidth)
-      if (root.vertical && root.bar) return Math.min(w, root.bar.barSize)
-      return w
-    }
-    implicitHeight: root.lineBoxHeight
+    implicitWidth: root.vertical ? root.verticalSlot : root.cellReserveFor(metric)
+    implicitHeight: root.lineBoxHeight * (metric === "net" && root.vertical ? 2 : 1)
+      + (root.vertical && root.showTrends ? root.trendHeight + root.labelGap : 0)
 
     Text {
       id: labelText
@@ -524,21 +454,74 @@ BarWidget {
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
     }
-
-    Text {
-      id: valueLabel
-      textFormat: Text.PlainText
-      text: cell.valueText
-      color: cell.valueColor
-      font.family: button.fontFamily
-      font.pixelSize: Commons.Style.font.caption
-      font.features: ({ "tnum": 1 })
-      anchors.verticalCenter: parent.verticalCenter
-      anchors.left: labelText.visible ? labelText.right : parent.left
-      anchors.leftMargin: labelText.visible ? root.labelGap : 0
-      Behavior on color { ColorAnimation { duration: 320 } }
+    Loader {
+      id: trend
+      objectName: "barTrendLoader"
+      active: root.showTrends
+      width: root.vertical ? Math.min(root.trendWidth, cell.width) : root.trendWidth
+      height: root.trendHeight
+      x: root.vertical ? (cell.width - width) / 2 : labelText.visible ? labelText.width + root.labelGap : 0
+      y: root.vertical ? 0 : (cell.height - height) / 2
+      sourceComponent: Components.BarTrend {
+        objectName: "barTrend"
+        points: root.historyFor(cell.metric)
+        metric: cell.metric
+        color: cell.metric === "net" ? cell.downColor : cell.valueColor
+        secondaryColor: cell.upColor
+        gapSeconds: Model.graphGapSeconds(root.store ? root.store.barIntervalMs / 1000 : 1, false)
+      }
     }
-
+    Item {
+      id: values
+      x: root.vertical ? 0 : trend.active ? trend.x + trend.width + root.labelGap : labelText.visible ? labelText.width + root.labelGap : 0
+      y: root.vertical && trend.active ? root.trendHeight + root.labelGap : 0
+      width: root.vertical ? cell.width : root.valueReserveFor(cell.metric)
+      height: root.lineBoxHeight * (cell.metric === "net" && root.vertical ? 2 : 1)
+      Text {
+        objectName: "barValue"
+        visible: cell.metric !== "net"
+        textFormat: Text.PlainText
+        text: root.valueTextFor(cell.metric)
+        color: cell.valueColor
+        font.family: button.fontFamily
+        font.pixelSize: root.valueFontSizeFor(cell.metric)
+        font.features: ({ "tnum": 1 })
+        anchors.fill: parent
+        horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignRight
+        verticalAlignment: Text.AlignVCenter
+        Behavior on color { ColorAnimation { duration: 320 } }
+      }
+      Text {
+        objectName: "barDown"
+        visible: cell.metric === "net"
+        textFormat: Text.PlainText
+        text: "↓" + root.netDownText
+        color: cell.downColor
+        font.family: button.fontFamily
+        font.pixelSize: root.valueFontSizeFor("net")
+        font.features: ({ "tnum": 1 })
+        width: root.vertical ? parent.width : root.rateReserve
+        height: root.lineBoxHeight
+        horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignRight
+        verticalAlignment: Text.AlignVCenter
+      }
+      Text {
+        objectName: "barUp"
+        visible: cell.metric === "net"
+        textFormat: Text.PlainText
+        text: "↑" + root.netUpText
+        color: cell.upColor
+        font.family: button.fontFamily
+        font.pixelSize: root.valueFontSizeFor("net")
+        font.features: ({ "tnum": 1 })
+        x: root.vertical ? 0 : root.rateReserve + root.rateGap
+        y: root.vertical ? root.lineBoxHeight : 0
+        width: root.vertical ? parent.width : root.rateReserve
+        height: root.lineBoxHeight
+        horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignRight
+        verticalAlignment: Text.AlignVCenter
+      }
+    }
     MouseArea {
       id: cellHover
       anchors.fill: parent

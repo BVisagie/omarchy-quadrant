@@ -29,6 +29,24 @@ Column {
     store.persistSettings(patch)
   }
 
+  function segmentChecked(name) {
+    if (name === "disk" && store && typeof store.segmentEnabled === "function") return store.segmentEnabled(name)
+    return cfg.segments.indexOf(name) >= 0
+  }
+  function toggleSegment(name, enabled) {
+    if (name === "disk" && store && typeof store.setBarSegment === "function") store.setBarSegment(name, enabled)
+    else set("segments", Model.toggleSegment(cfg.segments, name, enabled))
+  }
+
+  readonly property var segmentLabels: ({ cpu: "CPU", gpu: "GPU", memory: "Memory", disk: "Drives", network: "Network" })
+  function moveSegment(name, direction) {
+    set("barOrder", Model.moveBarSegment(cfg.barOrder, name, direction))
+    Qt.callLater(function () {
+      var row = orderRows.itemAt(root.cfg.barOrder.indexOf(name))
+      if (row) row.focusMove(direction)
+    })
+  }
+
   function intervalOptions(list) {
     var out = []
     for (var i = 0; i < list.length; i++)
@@ -141,46 +159,92 @@ Column {
     fontFamily: Commons.Style.font.family
   }
 
-  // ---- bar segments: five compact switches on one line ------------------
+  // Enabled membership and saved order stay independent of device presence.
   Section {
     title: "BAR SEGMENTS"
-
-    Grid {
-      width: parent.width
-      columns: 5
-      rowSpacing: Commons.Style.space(6)
-
-      Repeater {
-        model: [
-          { key: "cpu", label: "CPU" }, { key: "gpu", label: "GPU" }, { key: "memory", label: "Memory" },
-          { key: "disk", label: "Drives" }, { key: "network", label: "Network" }
-        ]
-        delegate: Row {
-          required property var modelData
-          width: Math.floor(root.width / 5)
-          spacing: Commons.Style.space(6)
-          ToggleSwitch {
-            checked: root.cfg.segments.indexOf(parent.modelData.key) !== -1
-            cursorRing: false
-            trackHeight: root.switchHeight
-            anchors.verticalCenter: parent.verticalCenter
-            onToggled: root.set("segments", Model.toggleSegment(root.cfg.segments, parent.modelData.key, !checked))
+    Repeater {
+      id: orderRows
+      model: root.cfg.barOrder
+      delegate: Item {
+        id: segmentRow
+        required property string modelData
+        required property int index
+        width: root.width
+        implicitHeight: Math.max(moveButtons.implicitHeight, segmentSwitch.implicitHeight)
+        function focusMove(direction) {
+          var target = direction < 0 ? earlierButton : laterButton
+          if (!target.enabled) target = direction < 0 ? laterButton : earlierButton
+          target.forceActiveFocus()
+        }
+        ToggleSwitch {
+          id: segmentSwitch
+          objectName: "segmentSwitch_" + segmentRow.modelData
+          checked: root.segmentChecked(segmentRow.modelData)
+          cursorRing: false
+          trackHeight: root.switchHeight
+          anchors.verticalCenter: parent.verticalCenter
+          Accessible.name: "Show " + root.segmentLabels[segmentRow.modelData] + " in bar"
+          onToggled: root.toggleSegment(segmentRow.modelData, !checked)
+        }
+        Text {
+          textFormat: Text.PlainText
+          text: (segmentRow.index + 1) + " · " + root.segmentLabels[segmentRow.modelData]
+          color: Commons.Color.foreground
+          font.family: Commons.Style.font.family
+          font.pixelSize: Commons.Style.font.body
+          anchors.left: segmentSwitch.right
+          anchors.leftMargin: Commons.Style.space(6)
+          anchors.right: moveButtons.left
+          anchors.rightMargin: Commons.Style.space(6)
+          anchors.verticalCenter: parent.verticalCenter
+          elide: Text.ElideRight
+        }
+        Row {
+          id: moveButtons
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Commons.Style.space(4)
+          Button {
+            id: earlierButton
+            objectName: "moveEarlier_" + segmentRow.modelData
+            text: "↑"
+            enabled: segmentRow.index > 0
+            opacity: enabled ? 1 : 0.35
+            focusable: true
+            bordered: true
+            fontSize: Commons.Style.font.caption
+            tooltipText: "Move " + root.segmentLabels[segmentRow.modelData] + " earlier"
+            Accessible.name: tooltipText
+            onClicked: root.moveSegment(segmentRow.modelData, -1)
           }
-          Text {
-            textFormat: Text.PlainText
-            text: parent.modelData.label
-            color: Commons.Color.foreground
-            font.family: Commons.Style.font.family
-            font.pixelSize: Commons.Style.font.caption
-            anchors.verticalCenter: parent.verticalCenter
+          Button {
+            id: laterButton
+            objectName: "moveLater_" + segmentRow.modelData
+            text: "↓"
+            enabled: segmentRow.index < root.cfg.barOrder.length - 1
+            opacity: enabled ? 1 : 0.35
+            focusable: true
+            bordered: true
+            fontSize: Commons.Style.font.caption
+            tooltipText: "Move " + root.segmentLabels[segmentRow.modelData] + " later"
+            Accessible.name: tooltipText
+            onClicked: root.moveSegment(segmentRow.modelData, 1)
           }
         }
       }
     }
-
+    Text {
+      textFormat: Text.PlainText
+      width: parent.width
+      wrapMode: Text.WordWrap
+      text: "Missing or disabled devices keep their saved positions."
+      color: root.dim
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
+    }
     FormRow {
-      label: "Drives in place of GPU"
-      hint: "When no dedicated card is detected, the GPU segment shows Drives."
+      label: "Drives fallback"
+      hint: "When GPU is unavailable, show Drives at its saved position."
       ToggleSwitch {
         checked: root.cfg.diskFallbackWithoutGpu
         cursorRing: false
@@ -194,6 +258,30 @@ Column {
   // ---- appearance --------------------------------------------------------
   Section {
     title: "APPEARANCE"
+    FormRow {
+      label: "Bar style"
+      Pick {
+        objectName: "barStyleChoice"
+        value: root.cfg.barStyle
+        options: [{ value: "text", label: "text" }, { value: "graph-text", label: "graph + text" }]
+        onChanged: function (v) { root.set("barStyle", v) }
+      }
+    }
+    FormRow {
+      visible: root.cfg.barStyle === "graph-text"
+      label: "Trend width"
+      hint: "16–64 px; vertical bars fit the strip."
+      NumberField {
+        objectName: "barGraphWidthChoice"
+        width: root.controlColumn
+        fieldWidth: root.controlColumn
+        value: root.cfg.barGraphWidth
+        from: 16
+        to: 64
+        fontFamily: Commons.Style.font.family
+        onModified: function (v) { root.set("barGraphWidth", v) }
+      }
+    }
     FormRow {
       label: "Value colour"
       Pick {

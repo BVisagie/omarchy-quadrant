@@ -19,6 +19,7 @@ lists the processes behind the numbers.
   available; see [measurement sources and limits](docs/METRICS.md).
 - Independent bar segments, keyboard navigation, device pickers, and an
   inline settings view that follows the active Omarchy theme.
+- Optional minute trends beside bar values, with saved segment ordering.
 
 <p align="center">
   <img src="docs/screenshots/bar.png" alt="Quadrant CPU, GPU, memory, and network segments beside Omarchy’s clock and weather" width="486">
@@ -111,6 +112,11 @@ The default bar shows CPU, dedicated GPU, memory, and network. Without a
 dedicated GPU, Drives appears after Memory instead of the GPU segment;
 integrated graphics appear on the CPU tab. Use each tab's **Show … in bar** switch
 to change what appears.
+
+In settings, use the segment arrows to change their order and choose
+**graph + text** to add minute trends. Text remains the default; hidden or
+temporarily missing devices keep their saved positions. See
+[bar styles and ordering](docs/SETTINGS.md#bar-styles-and-ordering).
 
 ## Documentation
 

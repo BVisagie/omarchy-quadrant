@@ -164,6 +164,32 @@ produces no readout. Aligned GPU readouts follow the same timestamp. Hover
 readings replace the summary in space reserved above the plot; they never
 cover its curves.
 
+### Bar trends
+
+The optional graph-plus-text bar projects the same shared minute samples used
+by the panel; it adds no collection or independent history. CPU is the complete
+non-idle total (user + system + iowait + steal), Memory is used percentage,
+GPU is busy percentage, and Drives is busy percentage, not throughput. Each
+uses a fixed 0–100% scale matching its numeric value. An incomplete CPU total
+is unknown. Estimated GPU readings retain the live `~` prefix.
+
+Network draws download and upload as positive rates on one shared scale,
+with a minimum ceiling of 1024 B/s. The tooltip names the minute window and
+its current scale ceiling in the chosen tooltip unit. Compact values always
+use bytes with binary `B/K/M/G/T/P/E` markers, at most four characters including
+the marker; rounding promotes before overflowing the slot. Beyond the last
+unit's range, `>99E` is a bounded lower bound. Full rates remain in tooltips
+and the panel. Direction colours match the two curves.
+
+Bar trends end at the last retained sample and use the existing
+cadence-dependent gap threshold. Unknown values break a series; measured
+zeros remain points. Stopping collection does not turn the retained trend
+into a current reading; the tooltip reports an offline sampler. Trends do
+not acquire any panel viewer flags and do not change device selection,
+history persistence, or the panel's selected window.
+
+### Retained device history
+
 GPU graphs include VRAM only when the selected card has a current or retained
 percentage measurement. Bytes without a total do not establish a percentage.
 Retained history keeps an established series through a failed poll without

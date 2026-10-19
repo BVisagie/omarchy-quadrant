@@ -10,6 +10,14 @@
   stack the segments and drop the glyphs. `barLabels none` hides labels.
   Each segment toggles independently from its tab's **in bar** switch or the settings view; unchecking every segment leaves a
   compact system-monitor glyph.
+- **Style and order**: text is the default. Choose **graph + text** in settings
+  for a minute trend beside each value, with a 16–64 px graph width. Vertical
+  bars put the graph above the value and fit its width to the strip. Both
+  network directions retain their units; vertical value text uses a fixed
+  smaller font when necessary. Value slots reserve their widest reading,
+  including `100%`, so samples do not move adjacent segments or widgets.
+  Use the segment arrows in settings to reorder; disabled and missing
+  resources keep their positions. Arrows support keyboard focus and activation.
 - **Left- or middle-click a segment** to open its tab, switch to it, or
   close the panel when that tab is already showing. Left- or middle-click
   the slot padding or icon-only fallback to toggle the panel on the
@@ -17,14 +25,24 @@
   over the slot to switch tabs while the panel is open. Hovering a segment
   shows its tooltip.
 - **GPU** is dedicated cards only; integrated graphics live on the CPU tab.
-  When no dedicated card is detected, **Drives** appears after Memory instead
-  (`diskFallbackWithoutGpu`). A separate drives segment is off by default.
+  When no dedicated card is detected, **Drives** substitutes at Drives' saved
+  position (`diskFallbackWithoutGpu`), after Memory in the default order.
+  An explicit Drives segment and a substitute produce one cell. A separate
+  drives segment is off by default.
 - **Colour** (`barPalette`): for percentage segments, `theme` uses the
   urgent colour at 90 % until the value drops below 80 %; `heat` ramps
   from muted through accent to urgent; `vivid` uses a fixed metric hue
   until the same hot threshold switches it to urgent. Network rates use
   the foreground in `theme`, the muted floor colour in `heat`, and a fixed
-  network hue in `vivid`. Network rates never trigger hot colouring.
+  network hue in `vivid`. With trends enabled, down and up use distinct theme
+  colours matching their curves. Network rates never trigger hot colouring.
+
+Bar trends always show the shared last-minute history, independently of the
+panel's duration choice. CPU, GPU, memory, and Drives use a fixed 0–100% scale;
+network down/up share a rate scale whose ceiling is shown in the tooltip.
+Unknown values and long collection gaps leave breaks. See
+[bar trend measurements](METRICS.md#bar-trends) and
+[matched style captures](BAR_TRENDS.md).
 
 ## Panel
 
