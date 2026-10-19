@@ -5,10 +5,12 @@
 # qmllint needs an import path that contains a `qs` entry pointing at
 # $OMARCHY_PATH/shell. A temporary symlink provides that.
 #
-# Disabled categories:
+# Category overrides:
 #   unqualified       – the shell's own widgets rely on unqualified ids.
 #   missing-property  – Style.font / Style.bar are QtObject groups the
 #                       linter types as QObject, so every token read trips it.
+#   block-scope-var-declaration – Qt 6.12 added this style warning; the
+#                       existing JS uses function-scoped var deliberately.
 #
 # Usage: bash tests/qmllint.sh            (skips when no Omarchy shell is present)
 set -euo pipefail
@@ -35,7 +37,12 @@ files=()
 # imports resolve there, not here), so they are linted by running them.
 while IFS= read -r f; do files+=("$f"); done < <(find . \( -path ./.git -o -path ./tests/qs \) -prune -o -name '*.qml' -print | sort)
 
-"$lint" -W 0 \
+compat=()
+if "$lint" --help | grep -- '--block-scope-var-declaration' >/dev/null; then
+  compat+=(--block-scope-var-declaration info)
+fi
+
+"$lint" -W 0 "${compat[@]}" \
   --unqualified disable \
   --missing-property disable \
   --signal-handler-parameters disable \

@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import "../lib/index.mjs" as Model
 
 // Small uppercase section label with an optional right-aligned note.
@@ -8,9 +8,9 @@ Item {
 
   property string text: ""
   property string note: ""
-  property color foreground: Color.foreground
-  property string fontFamily: Style.font.family
-  readonly property color dim: Model.dimColor(String(foreground), String(Color.background))
+  property color foreground: Commons.Color.foreground
+  property string fontFamily: Commons.Style.font.family
+  readonly property color dim: Model.dimColor(String(foreground), String(Commons.Color.background))
 
   signal noteClicked()
 
@@ -23,7 +23,7 @@ Item {
     text: root.text
     color: root.dim
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Commons.Style.font.caption
     font.bold: true
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
@@ -36,7 +36,7 @@ Item {
     text: root.note
     color: noteMouse.containsMouse ? root.foreground : root.dim
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Commons.Style.font.caption
     font.features: ({ "tnum": 1 })
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter

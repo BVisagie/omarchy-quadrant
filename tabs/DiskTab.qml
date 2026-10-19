@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../lib/index.mjs" as Model
 import "../components" as Components
@@ -21,7 +21,7 @@ Item {
   readonly property var mounts: info ? info.mounts : []
   readonly property string diskName: model ? model.effectiveDisk : ""
   readonly property var rates: model ? model.diskRates : null
-  readonly property var pal: Model.seriesPalette(String(Color.accent), String(Color.urgent), String(Color.foreground), String(Color.background))
+  readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(Commons.Color.foreground), String(Commons.Color.background))
 
   readonly property var selectedDisk: {
     if (!diskName || !disks) return null
@@ -110,7 +110,7 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Style.space(10)
+    spacing: Commons.Style.space(10)
 
     Components.Hero {
       width: parent.width
@@ -123,9 +123,9 @@ Item {
       textFormat: Text.PlainText
       visible: root.diskError !== ""
       text: root.diskError
-      color: Color.urgent
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      color: Commons.Color.urgent
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
       width: parent.width
       wrapMode: Text.WordWrap
     }
@@ -134,7 +134,7 @@ Item {
       visible: root.diskOptions.length > 1
       options: root.diskOptions
       value: root.diskName
-      fontSize: Style.font.caption
+      fontSize: Commons.Style.font.caption
       onChanged: function (value) { if (root.model) root.model.selectDisk(value) }
     }
 
@@ -159,7 +159,7 @@ Item {
 
     Column {
       width: parent.width
-      spacing: Style.space(6)
+      spacing: Commons.Style.space(6)
 
       Components.StatRow {
         width: parent.width
@@ -175,7 +175,7 @@ Item {
 
     Column {
       width: parent.width
-      spacing: Style.space(8)
+      spacing: Commons.Style.space(8)
       visible: root.diskMounts.length > 0
 
       Components.SectionHeader {
@@ -191,20 +191,20 @@ Item {
           required property var modelData
           readonly property real pct: Math.max(0, Math.min(100, Number(modelData.pct) || 0))
           width: parent.width
-          spacing: Style.space(3)
+          spacing: Commons.Style.space(3)
 
           Components.StatRow {
             width: parent.width
             label: String(mountRow.modelData.target || "mount")
             value: Model.formatBytes(mountRow.modelData.used) + " of " + Model.formatBytes(mountRow.modelData.size)
                    + " · " + Model.formatPct(mountRow.pct)
-            labelColor: Color.foreground
+            labelColor: Commons.Color.foreground
             valueColor: root.pal.dim
             labelMaximumRatio: 0.5
           }
           Components.CompositionBar {
             width: parent.width
-            barHeight: Style.space(4)
+            barHeight: Commons.Style.space(4)
             segments: [{ fraction: mountRow.pct / 100, color: Model.heatColor(mountRow.pct, root.pal.primary, root.pal.primary, root.pal.hot, 80) }]
           }
         }
@@ -220,7 +220,9 @@ Item {
       cursorActive: root.panel ? root.panel.cursorActive === true : false
       onRowHovered: function (index, on) { if (root.panel && root.panel.hoverRow) root.panel.hoverRow(index, on) }
       valueHeader: "DISK I/O"
-      emptyText: root.active ? "No disk activity from your processes" : "Open this tab to sample processes"
+      emptyText: !root.active ? "Open this tab to sample processes"
+                 : !root.model || !root.model.procStats || !(root.model.procStats.dt > 0)
+                   ? "Sampling…" : "No disk activity from your processes"
       errorText: root.errorText
     }
 
@@ -229,8 +231,8 @@ Item {
       visible: root.ioNote !== ""
       text: root.ioNote
       color: root.pal.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
       width: parent.width
       wrapMode: Text.WordWrap
     }

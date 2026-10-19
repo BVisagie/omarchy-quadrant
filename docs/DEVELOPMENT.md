@@ -58,13 +58,15 @@ checks need the runtime tools, ShellCheck, Ruff, mawk, and gawk.
 ```sh
 node --test tests/lib/*.test.js
 python3 -m unittest discover -s tests/py -t . -v
-ruff check --no-cache scripts/gpu-drm scripts/qproc.py tests/py
-python3 -m py_compile scripts/gpu-drm scripts/qproc.py
+ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py tests/py
+python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py
 bash tests/intel-freq-paths.sh
 bash tests/stream-forks.sh
 shellcheck -x scripts/quadrant-stream scripts/system-info scripts/disk-info scripts/gpu-stats scripts/gpu-intel-paths.sh scripts/process-sample scripts/process-net tests/*.sh
 mawk -f tests/check-plaintext.awk *.qml components/*.qml tabs/*.qml tests/qs/*.qml
 gawk -f tests/check-plaintext.awk *.qml components/*.qml tabs/*.qml tests/qs/*.qml
+mawk -f tests/check-qml-imports.awk *.qml components/*.qml tabs/*.qml tests/qs/*.qml
+gawk -f tests/check-qml-imports.awk *.qml components/*.qml tabs/*.qml tests/qs/*.qml
 ```
 
 [CI](../.github/workflows/test.yml) also parses the manifest, checks Bash
@@ -94,6 +96,11 @@ missing. The regular CI runner therefore does not establish that the QML
 passes this local gate. The harnesses under `tests/qs/` run from copied
 trees and are excluded from qmllint.
 
+Shell singletons use the `Commons` import namespace to avoid Qt type-name
+collisions. CI checks this in plugin and harness QML. On Qt 6.12 and later,
+qmllint's block-scope `var` style diagnostic is informational; other enabled
+warnings still fail the gate.
+
 `render.sh` needs Quickshell and Omarchy's shell imports. It uses Qt's
 offscreen platform and temporary state to render `cpu`, `gpu`, `mem`,
 `disk`, `net`, `settings`, or `bar`. Missing shell imports are an error,
@@ -103,6 +110,14 @@ and any reported QML errors before using it. Public screenshot files are
 The hero's editable layout is [artwork/hero.html](artwork/hero.html), rendered
 at 1920 × 1320 with the original CPU, GPU, and Memory captures. It frames
 the screenshots without changing their UI text, colours, or measurements.
+
+Use `QUADRANT_RENDER_PALETTE=dark`, `light`, or `mono` for temporary palette
+fixtures in the render process. These do not change the installed theme.
+The renderer uses isolated state and runtime directories and requires a fresh
+capture before replacing the output file. When a session Wayland socket is
+available, it links only that socket into the temporary runtime and retains
+the desktop platform theme so process icons match the live panel. Without a
+socket it disables the platform theme for headless rendering.
 
 ## Before publishing
 

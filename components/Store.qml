@@ -911,6 +911,10 @@ Item {
       procError = "process sampler failed: " + ((env && env.error) ? String(env.error) : "bad output")
       return
     }
+    if (env.truncated === true) {
+      procError = "Process sample exceeds the 1 MiB limit; process coverage is unavailable"
+      return
+    }
     var parsed = Model.parseProcessSample(env.payload)
     if (!parsed) {
       procError = "process sampler returned bad output"
@@ -990,6 +994,14 @@ Item {
     var env = Model.safeJson(text)
     if (!env || env.ok !== true) {
       netError = "network sampler failed: " + ((env && env.error) ? String(env.error) : "bad output")
+      return
+    }
+    if (env.truncated === true) {
+      netPrevSockets = null
+      netPrevIf = null
+      netPrevTs = 0
+      netRows = []
+      netError = "Traffic sample exceeds the 1 MiB limit; process attribution is unavailable"
       return
     }
     var sockets = Model.parseSs(env.payload)

@@ -1,6 +1,5 @@
 import QtQuick
-import qs.Commons
-import qs.Ui
+import qs.Commons as Commons
 import "../lib/index.mjs" as Model
 import "." as Components
 
@@ -14,12 +13,12 @@ Item {
   property var gpuInfo: null
   property var live: null
   property string errorText: ""
-  property color foreground: Color.foreground
-  property string fontFamily: Style.font.family
+  property color foreground: Commons.Color.foreground
+  property string fontFamily: Commons.Style.font.family
 
   readonly property string vendor: gpu ? gpu.vendor : ""
   readonly property bool intel: vendor === "intel"
-  readonly property var pal: Model.seriesPalette(String(Color.accent), String(Color.urgent), String(foreground), String(Color.background))
+  readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(foreground), String(Commons.Color.background))
 
   visible: gpu !== null
   implicitWidth: 200
@@ -66,7 +65,7 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Style.space(8)
+    spacing: Commons.Style.space(8)
 
     Components.SectionHeader {
       width: parent.width
@@ -80,20 +79,20 @@ Item {
       textFormat: Text.PlainText
       visible: root.errorText !== ""
       text: root.errorText
-      color: Color.urgent
+      color: Commons.Color.urgent
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Commons.Style.font.caption
       width: parent.width
       wrapMode: Text.WordWrap
     }
 
     Row {
       width: parent.width
-      spacing: Style.space(14)
+      spacing: Commons.Style.space(14)
 
       Components.RingGauge {
-        size: Style.space(72)
-        thickness: Style.space(7)
+        size: Commons.Style.space(72)
+        thickness: Commons.Style.space(7)
         fraction: root.busyPct < 0 ? 0 : root.busyPct / 100
         color: root.pal.primary
         centerText: root.busyPct < 0 ? "--" : Model.formatPct(root.busyPct)
@@ -104,8 +103,8 @@ Item {
       }
 
       Column {
-        width: Math.max(0, parent.width - Style.space(72) - parent.spacing)
-        spacing: Style.space(4)
+        width: Math.max(0, parent.width - Commons.Style.space(72) - parent.spacing)
+        spacing: Commons.Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
 
         Text {
@@ -113,7 +112,7 @@ Item {
           text: root.gpuTitle
           color: root.foreground
           font.family: root.fontFamily
-          font.pixelSize: Style.font.subtitle
+          font.pixelSize: Commons.Style.font.subtitle
           font.bold: true
           width: parent.width
           elide: Text.ElideRight
@@ -123,7 +122,7 @@ Item {
           text: root.gpuMeta
           color: root.pal.dim
           font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Commons.Style.font.caption
           width: parent.width
           elide: Text.ElideRight
         }

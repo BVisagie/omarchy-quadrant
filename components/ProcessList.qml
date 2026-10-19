@@ -1,6 +1,6 @@
 import QtQuick
 import Quickshell
-import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../lib/index.mjs" as Model
 
@@ -22,8 +22,8 @@ Column {
   property string valueHeader: ""
   property string emptyText: "No activity"
   property string errorText: ""
-  property color foreground: Color.foreground
-  property string fontFamily: Style.font.family
+  property color foreground: Commons.Color.foreground
+  property string fontFamily: Commons.Style.font.family
   property bool showSparkline: true
   property real sparklineMax: 0
   // "sticky" keeps the store's order; "value" and "name" re-sort locally.
@@ -33,10 +33,10 @@ Column {
 
   signal rowHovered(int index, bool isHovered)
 
-  readonly property color dim: Model.dimColor(String(foreground), String(Color.background))
-  readonly property color sparkColor: Color.accent
+  readonly property color dim: Model.dimColor(String(foreground), String(Commons.Color.background))
+  readonly property color sparkColor: Commons.Color.accent
 
-  spacing: Style.spacing.xxs
+  spacing: Commons.Style.spacing.xxs
 
   readonly property var displayRows: {
     var src = Array.isArray(rows) ? rows.slice() : []
@@ -93,7 +93,7 @@ Column {
       if (entry) {
         var icon = String(entry.icon || "")
         var source = ""
-        if (icon.charAt(0) === "/") source = Util.fileUrl(icon)
+        if (icon.charAt(0) === "/") source = Commons.Util.fileUrl(icon)
         else if (icon !== "") source = Quickshell.iconPath(icon, true)
         if (source === "") source = Quickshell.iconPath("application-x-executable", true)
         found = { icon: source, name: String(entry.name || "") }
@@ -128,7 +128,7 @@ Column {
       text: "TOP PROCESSES"
       color: root.dim
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Commons.Style.font.caption
       font.bold: true
       anchors.left: parent.left
     }
@@ -139,9 +139,9 @@ Column {
       text: root.sortMode === "sticky" ? "" : (root.sortMode === "value" ? "by value" : "by name")
       color: root.dim
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Commons.Style.font.caption
       anchors.left: headerLabel.right
-      anchors.leftMargin: Style.space(8)
+      anchors.leftMargin: Commons.Style.space(8)
     }
 
     Text {
@@ -150,7 +150,7 @@ Column {
       text: root.valueHeader
       color: headerMouse.containsMouse ? root.foreground : root.dim
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Commons.Style.font.caption
       font.bold: true
       anchors.right: parent.right
       horizontalAlignment: Text.AlignRight
@@ -169,9 +169,9 @@ Column {
     textFormat: Text.PlainText
     visible: root.errorText !== ""
     text: root.errorText
-    color: Color.urgent
+    color: Commons.Color.urgent
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Commons.Style.font.caption
     width: root.width
     wrapMode: Text.WordWrap
   }
@@ -182,7 +182,7 @@ Column {
     text: root.emptyText
     color: root.dim
     font.family: root.fontFamily
-    font.pixelSize: Style.font.bodySmall
+    font.pixelSize: Commons.Style.font.bodySmall
   }
 
   Repeater {
@@ -210,7 +210,7 @@ Column {
       }
 
       width: root.width
-      implicitHeight: rowContent.implicitHeight + Style.space(4)
+      implicitHeight: rowContent.implicitHeight + Commons.Style.space(4)
       hasCursor: root.cursorActive && root.cursorIndex === index
       foreground: root.foreground
       color: hasCursor ? fill : "transparent"
@@ -219,17 +219,17 @@ Column {
         id: rowContent
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.leftMargin: Style.space(4)
-        anchors.rightMargin: Style.space(4)
+        anchors.leftMargin: Commons.Style.space(4)
+        anchors.rightMargin: Commons.Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.spacing.controlGap
+        spacing: Commons.Style.spacing.controlGap
 
         Image {
           source: delegateRoot.isOther
                   ? Quickshell.iconPath("network-transmit-receive", true)
                   : (delegateRoot.entry ? delegateRoot.entry.icon : Quickshell.iconPath("application-x-executable", true))
-          width: Style.space(16)
-          height: Style.space(16)
+          width: Commons.Style.space(16)
+          height: Commons.Style.space(16)
           sourceSize.width: width
           sourceSize.height: height
           anchors.verticalCenter: parent.verticalCenter
@@ -242,9 +242,9 @@ Column {
           text: delegateRoot.displayName
           color: root.foreground
           font.family: root.fontFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Commons.Style.font.body
           elide: Text.ElideRight
-          width: Math.max(0, rowContent.width - Style.space(16) - rowContent.spacing * (root.showSparkline ? 3 : 2)
+          width: Math.max(0, rowContent.width - Commons.Style.space(16) - rowContent.spacing * (root.showSparkline ? 3 : 2)
                  - valueText.implicitWidth - (root.showSparkline ? spark.width : 0))
           anchors.verticalCenter: parent.verticalCenter
         }
@@ -255,8 +255,8 @@ Column {
           values: delegateRoot.modelData && delegateRoot.modelData.history ? delegateRoot.modelData.history : []
           maxValue: root.sparklineMax
           color: root.sparkColor
-          width: Style.space(36)
-          height: Style.space(12)
+          width: Commons.Style.space(36)
+          height: Commons.Style.space(12)
           anchors.verticalCenter: parent.verticalCenter
         }
 
@@ -266,7 +266,7 @@ Column {
           text: delegateRoot.modelData && delegateRoot.modelData.valueText || ""
           color: root.foreground
           font.family: root.fontFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Commons.Style.font.body
           font.features: ({ "tnum": 1 })
           horizontalAlignment: Text.AlignRight
           anchors.verticalCenter: parent.verticalCenter

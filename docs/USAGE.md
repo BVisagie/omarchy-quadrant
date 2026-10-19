@@ -17,7 +17,7 @@
   over the slot to switch tabs while the panel is open. Hovering a segment
   shows its tooltip.
 - **GPU** is dedicated cards only; integrated graphics live on the CPU tab.
-  When no dedicated card is detected the GPU slot shows **Drives** instead
+  When no dedicated card is detected, **Drives** appears after Memory instead
   (`diskFallbackWithoutGpu`). A separate drives segment is off by default.
 - **Colour** (`barPalette`): for percentage segments, `theme` uses the
   urgent colour at 90 % until the value drops below 80 %; `heat` ramps

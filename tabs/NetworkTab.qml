@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../lib/index.mjs" as Model
 import "../components" as Components
@@ -26,7 +26,7 @@ Item {
   readonly property string unit: model ? model.rateUnit : "bytes"
   readonly property var netInfo: model && model.sysInfo && model.sysInfo.net ? model.sysInfo.net : null
   readonly property var iface: netInfo && netInfo.byName ? (netInfo.byName[ifname] || null) : null
-  readonly property var pal: Model.seriesPalette(String(Color.accent), String(Color.urgent), String(Color.foreground), String(Color.background))
+  readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(Commons.Color.foreground), String(Commons.Color.background))
 
   implicitWidth: 200
   implicitHeight: column.implicitHeight
@@ -95,7 +95,7 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Style.space(10)
+    spacing: Commons.Style.space(10)
 
     Components.Hero {
       width: parent.width
@@ -108,9 +108,9 @@ Item {
       textFormat: Text.PlainText
       visible: root.interfaceError !== ""
       text: root.interfaceError
-      color: Color.urgent
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      color: Commons.Color.urgent
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
       width: parent.width
       wrapMode: Text.WordWrap
     }
@@ -119,7 +119,7 @@ Item {
       visible: root.interfaceOptions.length > 2
       options: root.interfaceOptions
       value: root.pinned ? (root.model ? root.model.networkInterface : "auto") : "auto"
-      fontSize: Style.font.caption
+      fontSize: Commons.Style.font.caption
       onChanged: function (value) { if (root.model) root.model.selectInterface(value) }
     }
 
@@ -144,7 +144,7 @@ Item {
 
     Column {
       width: parent.width
-      spacing: Style.space(6)
+      spacing: Commons.Style.space(6)
 
       Components.StatRow {
         width: parent.width
@@ -184,8 +184,8 @@ Item {
       visible: root.attributionEmpty
       text: "Traffic is moving, but no TCP socket of yours carried it this interval (UDP, or other users' sockets)."
       color: root.pal.dim
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
       width: parent.width
       wrapMode: Text.WordWrap
     }

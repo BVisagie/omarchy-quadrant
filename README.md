@@ -106,8 +106,9 @@ the last minute and last hour, `S` or the gear to open settings, and `Esc`
 to close settings or the panel.
 
 The default bar shows CPU, dedicated GPU, memory, and network. Without a
-dedicated GPU, Drives fills the GPU slot; integrated graphics appear on
-the CPU tab. Use each tab's **in bar** switch to change what appears.
+dedicated GPU, Drives appears after Memory instead of the GPU segment;
+integrated graphics appear on the CPU tab. Use each tab's **in bar** switch
+to change what appears.
 
 ## Documentation
 

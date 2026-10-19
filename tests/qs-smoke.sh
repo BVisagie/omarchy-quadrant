@@ -67,6 +67,11 @@ p = a["procs"]
 assert p["error"] == "" and p["stats"]["procs"] > 0 and p["stats"]["threads"] > 0, p
 assert p["cpuRows"] > 0 and p["memRows"] > 0 and p["memKind"] in ("pss", "rss"), p
 assert p["netError"] == "" and p["netRows"] >= 1, p
+for run in (a, b):
+    limited = run["coverage-limit"]
+    assert "coverage" in limited["procError"] and limited["cpuRowsPreserved"], limited
+    assert "attribution" in limited["netError"] and limited["netBaselineCleared"] and limited["netRows"] == 0, limited
+    assert run["coverage-recovery"] == {"procError": "", "cpuRowsRecovered": True, "error": "", "baseline": 1, "value": 0}, run["coverage-recovery"]
 assert a["viewers-after"] == {"gpuSeg": 1, "gpuTab": 0, "open": 1}, a["viewers-after"]
 hist = json.load(open(sys.argv[3]))
 assert hist["v"] == 1 and len(hist["cpu"]) >= 1 and len(hist["mem"]) >= 1, hist.keys()

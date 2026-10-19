@@ -1,5 +1,5 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 import "../lib/index.mjs" as Model
 
 // Time-series graph for n fields sharing one x axis.
@@ -24,18 +24,18 @@ Item {
   property bool band: false
   property real gapSeconds: 30
   property var formatValue: function (v) { return Model.formatPct(v) }
-  property color foreground: Color.foreground
-  property string fontFamily: Style.font.family
+  property color foreground: Commons.Color.foreground
+  property string fontFamily: Commons.Style.font.family
   property bool showAxis: true
 
-  readonly property var pal: Model.seriesPalette(String(Color.accent), String(Color.urgent), String(foreground), String(Color.background))
+  readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(foreground), String(Commons.Color.background))
   readonly property color dim: pal.dim
 
   property int hoverIndex: -1
   readonly property var hoverInfo: hoverIndex >= 0 && hoverIndex < points.length ? points[hoverIndex] : null
 
   implicitWidth: 200
-  implicitHeight: Style.space(96)
+  implicitHeight: Commons.Style.space(96)
 
   // ---- scale -----------------------------------------------------------
   function valueOf(p, key) {
@@ -82,7 +82,7 @@ Item {
     return nice * exp
   }
 
-  readonly property real axisWidth: showAxis ? Math.ceil(Math.max(axisTop.implicitWidth, axisMid.implicitWidth)) + Style.space(6) : 0
+  readonly property real axisWidth: showAxis ? Math.ceil(Math.max(axisTop.implicitWidth, axisMid.implicitWidth)) + Commons.Style.space(6) : 0
 
   onPointsChanged: canvas.requestPaint()
   onFieldsChanged: canvas.requestPaint()
@@ -103,7 +103,7 @@ Item {
     text: root.formatValue(root.axis.max)
     color: root.dim
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Commons.Style.font.caption
     font.features: ({ "tnum": 1 })
     anchors.right: parent.right
     anchors.top: parent.top
@@ -115,7 +115,7 @@ Item {
     text: root.formatValue((root.axis.max + root.axis.min) / 2)
     color: root.dim
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Commons.Style.font.caption
     font.features: ({ "tnum": 1 })
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
@@ -126,7 +126,7 @@ Item {
     text: root.formatValue(root.axis.min)
     color: root.dim
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Commons.Style.font.caption
     font.features: ({ "tnum": 1 })
     anchors.right: parent.right
     anchors.bottom: parent.bottom
@@ -285,10 +285,10 @@ Item {
     text: root.hoverText
     color: root.foreground
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Commons.Style.font.caption
     font.features: ({ "tnum": 1 })
     anchors.left: parent.left
-    anchors.leftMargin: Style.space(4)
+    anchors.leftMargin: Commons.Style.space(4)
     anchors.top: parent.top
   }
 }
