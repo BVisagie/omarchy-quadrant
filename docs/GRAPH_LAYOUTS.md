@@ -23,7 +23,18 @@ These are graph blocks, including controls, summaries, time axis and legend;
 they exclude the tab's hardware details and process list. Plot heights are
 88 px for an overlay, two 88 px plots for aligned GPU, and 132 px for a
 mirrored plot. Text wrapping, font and spacing settings can increase totals.
-The same fixture at 320 px outer width retained these heights.
+The same two-series fixture at 320 px outer width retained these heights.
+Compared with the previous implementation's 162 px blocks at standard style and
+408 px graph width, the default CPU/Memory blocks are now 182 px (+20 px),
+and two-series GPU/Network/Drives blocks are 196 px (+34 px). The time axis
+and additional series summary account for that default growth. Narrow or
+larger-text layouts can reserve additional space for wrapped hover readings.
+
+A GPU that has never reported a VRAM percentage shows only busy. Its aligned
+setting falls back to the same 182 px single plot as the overlay. A known
+percentage in the selected card's retained history keeps the VRAM series
+through a failed poll; its live legend shows `--`. Changing hardware resets
+that evidence through Store's existing history reset.
 
 Overlays allow direct comparison of coincident peaks with the least panel
 height. The alternatives separate overlapping curves more clearly,
@@ -48,6 +59,7 @@ comparing overlaid shapes.
 | Missing values | Null, missing and negative/unavailable values break the affected series. Measured zero is a real point. An incomplete CPU stack is unknown. |
 | Collection gaps | The existing cadence-dependent threshold breaks runs. A lone reading remains a dot; long blank time gaps produce no hover reading. |
 | Stale history | The axis ends at the last sample's local clock time, rather than “now.” The layout never extends a cached reading to the current clock. |
+| Hover | Timestamped readings replace the summary above each plot. Space is reserved for the visible data before hover, keeping curves unobscured and the layout steady. |
 | Controls | Duration buttons, uppercase H, summary click and plot wheel retain the panel's shared window. GPU hover on either aligned plot moves both readouts. |
 
 ## Matched captures
@@ -62,8 +74,8 @@ Dark, 440 px, one minute, overlapping series:
 [![Dark graph layout comparison](screenshots/graph-layouts-dark.png)](screenshots/graph-layouts-dark.png)
 
 Light, 320 px, one hour, collection gaps, unknown values in the first series,
-and the same hovered timestamp in each plot. A hole in busy/down/read does
-not erase the other series:
+and the same hovered timestamp in each plot, shown in place of the summary.
+A hole in busy/down/read does not erase the other series:
 
 [![Light narrow hour comparison with gaps and hover](screenshots/graph-layouts-light-hour.png)](screenshots/graph-layouts-light-hour.png)
 

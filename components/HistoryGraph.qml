@@ -205,27 +205,4 @@ Item {
     }
     return bits.join(" · ")
   }
-  Rectangle {
-    visible: root.hoverText !== ""
-    x: Commons.Style.space(2)
-    y: Commons.Style.space(2)
-    width: Math.min(canvas.width - x, readout.implicitWidth + Commons.Style.space(8))
-    height: readout.implicitHeight + Commons.Style.space(4)
-    color: Commons.Color.background
-    opacity: 0.95
-    Text {
-      id: readout
-      objectName: "graphReadout"
-      x: Commons.Style.space(4)
-      y: Commons.Style.space(2)
-      width: parent.width - Commons.Style.space(8)
-      textFormat: Text.PlainText
-      text: root.hoverText
-      wrapMode: Text.WordWrap
-      color: root.foreground
-      font.family: root.fontFamily
-      font.pixelSize: Commons.Style.font.caption
-      font.features: ({ "tnum": 1 })
-    }
-  }
 }

@@ -151,8 +151,12 @@ rather than by the new cadence's point count. Both load-patch modes run.
 positive mirrored readouts (including bit units), blank gaps, real zero and
 unknown values, visible-window summaries, bucket captions, summary click and
 wheel controls, and per-resource settings/reset without hardware. It also
-checks real Store settings reaching all three tabs. At 320/440 px, font size
-18 and spacing scales 1/1.5/2, axes, time labels, duration controls and readouts
+checks real Store settings reaching all three tabs, cards without a VRAM
+percentage, retained support through failed polls, and hardware changes.
+Hover readings occupy reserved summary space above the plot; CPU, Memory,
+GPU and rate fixtures check that moving the pointer never changes block
+height or covers a curve, including unknown and differently sized values.
+At 320/440 px, font size 18 and spacing scales 1/1.5/2, axes, time labels, duration controls and readouts
 stay inside the graph. Both load-patch modes run.
 
 `qmllint.sh` needs qmllint and an Omarchy shell at
@@ -194,7 +198,9 @@ Use `QUADRANT_RENDER_HEADER=1` to include the shared panel header and
 `QUADRANT_RENDER_DISK_LAYOUT=mirrored` to render the corresponding setting
 without writing shell configuration. The dedicated-GPU
 documentation capture uses fixture telemetry because this machine has no
-dedicated card; it does not establish driver or power-management behavior.
+dedicated card. Set `QUADRANT_RENDER_GPU_FIXTURE=percent` for that reproducible
+sample or `bytes` for a card without a VRAM denominator. These fixtures do not
+establish driver or power-management behavior.
 
 ### Matched graph comparisons
 

@@ -64,8 +64,12 @@ are saved, apply immediately, and remain available when the corresponding
 device or bar segment is absent. Reset restores overlays. CPU's stack and
 Memory's band keep their existing layouts.
 
-Aligned GPU plots give each series a full-height plot. Mirrored Network and
-Drives plots separate direction around zero; the lower half still measures a
+Aligned GPU plots give each available series a full-height plot. A card
+without a VRAM percentage shows only busy. A current or retained percentage
+in that card's history enables the VRAM series, so a failed poll does not
+remove its plot; the live legend shows `--` while the current value is missing.
+
+Mirrored Network and Drives plots separate direction around zero; the lower half still measures a
 positive rate. Network's rate-unit setting applies to both layouts. Rate plots
 share a ceiling of at least 1 KiB/s (8.2 kb/s when displayed in bits); they scale
 up together when either series needs more room. See the

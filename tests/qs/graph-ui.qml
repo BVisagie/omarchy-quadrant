@@ -56,7 +56,7 @@ ShellRoot {
       Commons.Style.applyShellValues(initialStyle)
       graph.graphLayout = "overlay"; graph.longWindow = false; graph.hoverFraction = -1
       graph.finePoints = Fixture.history(false, "normal"); graph.longPoints = Fixture.history(true, "normal")
-      graph.fixedMax = 100; graph.minimumMax = 0
+      graph.fixedMax = 100; graph.minimumMax = 0; graph.stacked = false; graph.band = false
       graph.fields = [{ key: "b", label: "busy", color: "#70b7be" }, { key: "v", label: "VRAM", color: "#9070be" }]
       graph.formatValue = function (v) { return Model.formatPct(v) }
       graph.sampleSeconds = 1
@@ -175,9 +175,108 @@ ShellRoot {
       verify(bucket.x > 0 && bucket.x + bucket.width <= end.x, "time and bucket captions fit")
       mouseMove(view, view.plotWidth * 0.7, view.height / 2)
       wait(10)
-      var readout = findChild(view, "graphReadout")
-      verify(readout.width <= view.plotWidth)
+      var summary = findChild(graph, data.layout === "aligned" ? "graphSeriesSummary_0" : "graphSummary")
+      var readout = findChild(summary, "graphReadout")
+      verify(readout.width <= graph.width)
+      verify(summary.mapToItem(view, 0, summary.height).y <= 0, "hover readout stays outside the plot")
+      verify(readout.implicitHeight <= summary.height, "reserved summary fits the readout")
       if (data.layout === "aligned") compare(view.plotWidth, plot(1).plotWidth)
+    }
+    function test_hover_readout_reserves_height_data() {
+      var cases = []
+      for (var width of [320, 440]) for (var kind of ["cpu", "memory", "gpu", "aligned", "network", "mirrored"])
+        cases.push({ tag: width + " " + kind, width: width, kind: kind })
+      return cases
+    }
+    function test_hover_readout_reserves_height(data) {
+      win.width = data.width
+      Commons.Style.applyShellValues({ "font.base-size": 18, "spacing.scale": 1.5 })
+      var fields = [{ key: "b", label: "busy", color: "#70b7be" }, { key: "v", label: "VRAM", color: "#9070be" }]
+      if (data.kind === "cpu") {
+        graph.stacked = true
+        fields = ["user", "system", "iowait", "steal"].map(function (label) { return { key: label, label: label, color: "#70b7be" } })
+      } else if (data.kind === "memory") { fields = [{ key: "b", label: "used", color: "#70b7be" }]; graph.band = true }
+      else if (data.kind === "network" || data.kind === "mirrored") {
+        fields = [{ key: "b", label: "down", color: "#70b7be" }, { key: "v", label: "up", color: "#9070be" }]
+        graph.fixedMax = 0; graph.minimumMax = 1024
+        graph.formatValue = function (v) { return Model.formatRate(v) }
+      }
+      graph.fields = fields
+      graph.graphLayout = data.kind === "aligned" || data.kind === "mirrored" ? data.kind : "overlay"
+      var rates = data.kind === "network" || data.kind === "mirrored"
+      graph.finePoints = [{ t: 100, b: 0, v: rates ? 1048576 : 90, user: 10, system: 20, iowait: 30, steal: 40 },
+        { t: 101, b: 100, v: rates ? 1023 : 0, user: 0, system: 0, iowait: 0, steal: 0 },
+        { t: 102, b: null, v: 99, user: null, system: 10, iowait: 20, steal: 30 }]
+      wait(20)
+      // Keep the physical pointer outside while setting shared hover directly.
+      mouseMove(win.contentItem, win.width - 2, win.height - 2)
+      wait(20)
+      var view = plot(0), blockHeight = graph.implicitHeight
+      var summary = findChild(graph, graph.aligned ? "graphSeriesSummary_0" : "graphSummary")
+      var readout = findChild(summary, "graphReadout"), summaryHeight = summary.height
+      for (var point of graph.points) {
+        graph.hoverFraction = xAt(point.t, view) / (view.plotWidth - 1)
+        wait(5)
+        if (readout.text !== view.hoverText || graph.implicitHeight !== blockHeight || readout.implicitHeight > summary.height)
+          console.error("QGRAPHUI readout mismatch " + JSON.stringify({ kind: data.kind, time: point.t, text: readout.text, hover: view.hoverText,
+            height: graph.implicitHeight, reserved: blockHeight, readoutHeight: readout.implicitHeight, summaryHeight: summary.height }))
+        compare(graph.implicitHeight, blockHeight, "hovering cannot move the graph")
+        compare(summary.height, summaryHeight)
+        compare(readout.text, view.hoverText)
+        verify(readout.implicitHeight <= summary.height)
+        verify(summary.mapToItem(view, 0, summary.height).y <= 0, "readout cannot cover a curve")
+        verify(findChild(view, "graphReadout") === null, "no hover box remains inside HistoryGraph")
+        if (graph.aligned) {
+          var secondSummary = findChild(graph, "graphSeriesSummary_1")
+          var secondReadout = findChild(secondSummary, "graphReadout")
+          compare(secondReadout.text, plot(1).hoverText)
+          verify(secondReadout.implicitHeight <= secondSummary.height)
+        }
+      }
+      graph.hoverFraction = -1
+      compare(graph.implicitHeight, blockHeight)
+      compare(readout.text, graph.aligned ? graph.seriesNote(graph.fields[0]) : graph.note)
+    }
+    function test_gpu_without_percentage_and_temporary_poll_failure() {
+      var model = { gpu: { card: "card1", vendor: "intel" }, gpuLive: { vramUsed: 4096, vramTotal: null },
+        gpuDisplay: { pct: 30, estimated: false }, gpuRows: [], discreteGpus: [], nvidiaError: "", barIntervalMs: 1000,
+        cfg: { gpuGraphLayout: "aligned" }, gpuHistory: [{ t: 100, b: 30, v: null }], gpuLong: [{ t: 100, b: 30, v: null }] }
+      var view = createTemporaryObject(gpuComponent, win.contentItem, { width: 408, model: model })
+      verify(view)
+      wait(20)
+      var history = findChild(view, "gpuHistory")
+      verify(!view.vramSeriesAvailable)
+      compare(history.fields.length, 1)
+      verify(!history.aligned)
+      verify(findChild(history, "historyPlot_1") === null)
+      verify(history.note.indexOf("VRAM") < 0)
+      compare(history.legend[1].visible, false)
+      var height = history.implicitHeight
+      view.model = Object.assign({}, model, { cfg: { gpuGraphLayout: "overlay" } })
+      wait(10)
+      compare(history.implicitHeight, height, "unsupported VRAM adds no plot or summary in either layout")
+      // Zero is a known percentage, even before history has collected it.
+      view.model = Object.assign({}, model, { gpuLive: { vramUsed: 0, vramTotal: 1000 } })
+      wait(10)
+      verify(view.vramSeriesAvailable && history.aligned)
+      compare(history.fields.length, 2)
+      model = Object.assign({}, model, { gpuHistory: [{ t: 100, b: 30, v: 0 }], gpuLive: null })
+      view.model = model
+      wait(10)
+      verify(view.vramSeriesAvailable && history.aligned, "a failed poll retains a previously measured series")
+      compare(history.legend[1].visible, true)
+      compare(history.legend[1].value, "--", "missing live data never reuses a cached percentage")
+      compare(Model.graphStats(history.points, ["v"]).avg, 0)
+      // The hour history can establish support after a restart as well.
+      view.model = Object.assign({}, model, { gpuHistory: [], gpuLong: [{ t: 100, b: 30, v: 20 }] })
+      wait(10)
+      verify(view.vramSeriesAvailable)
+      // Store clears the histories and live state when the selected card changes.
+      view.model = Object.assign({}, model, { gpu: { card: "card2", vendor: "amd" }, gpuHistory: [], gpuLong: [] })
+      wait(10)
+      verify(!view.vramSeriesAvailable)
+      compare(history.fields.length, 1)
+      verify(!history.aligned)
     }
     function test_real_store_settings_reach_all_three_tabs() {
       var store = createTemporaryObject(storeComponent, this, { settingsRaw: {}, saveIntervalMs: 60000 })

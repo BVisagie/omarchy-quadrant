@@ -7,11 +7,13 @@ import qs.Ui as Ui
 import "components" as Components
 import "." as Plugin
 import "tabs" as Tabs
+import "graph-data.mjs" as Fixture
 
 ShellRoot {
   id: harness
   property string outPath: Quickshell.env("QUADRANT_RENDER_OUT")
   property string tab: Quickshell.env("QUADRANT_RENDER_TAB") || "cpu"
+  property string gpuFixtureMode: Quickshell.env("QUADRANT_RENDER_GPU_FIXTURE")
   property string palette: Quickshell.env("QUADRANT_RENDER_PALETTE")
   property bool showHeader: Quickshell.env("QUADRANT_RENDER_HEADER") === "1" && tab !== "bar"
 
@@ -34,6 +36,31 @@ ShellRoot {
       networkGraphLayout: Quickshell.env("QUADRANT_RENDER_NETWORK_LAYOUT") || "overlay",
       diskGraphLayout: Quickshell.env("QUADRANT_RENDER_DISK_LAYOUT") || "overlay"
     })
+  }
+
+  // Optional telemetry for dedicated-GPU presentation on machines without a
+  // card. The bytes-only variant reproduces a card with no VRAM denominator.
+  QtObject {
+    id: gpuFixture
+    readonly property bool hasPercentage: harness.gpuFixtureMode !== "bytes"
+    readonly property var cfg: renderStore.cfg
+    readonly property int barIntervalMs: 1000
+    readonly property var gpu: ({ card: "card1", vendor: hasPercentage ? "amd" : "intel", driver: hasPercentage ? "amdgpu" : "i915",
+      name: hasPercentage ? "AMD Radeon RX 7800 XT" : "Intel GPU (fixture)" })
+    readonly property var discreteGpus: [gpu]
+    readonly property var gpuLive: ({ busy: 38, vramUsed: hasPercentage ? 16 * 1073741824 * 0.66 : 4 * 1073741824,
+      vramTotal: hasPercentage ? 16 * 1073741824 : null, tempC: 58, powerW: 87, clockMhz: 2140, freqCurMhz: 1100, freqMaxMhz: 2000 })
+    readonly property var gpuDisplay: ({ pct: 38, estimated: false })
+    readonly property var gpuRows: [{ pid: 4242, comm: "blender", value: 38, vram: 4 * 1073741824, sortKey: 38 }]
+    readonly property string nvidiaError: ""
+    readonly property var gpuHistory: history(false)
+    readonly property var gpuLong: history(true)
+    function history(longer) {
+      return Fixture.history(longer, "normal").map(function (point) { return { t: point.t, b: point.b, v: gpuFixture.hasPercentage ? point.v : null } })
+    }
+    function refreshSysInfo() { }
+    function pollNvidia() { }
+    function pollDiscreteGpu() { }
   }
 
   QtObject {
@@ -113,7 +140,7 @@ ShellRoot {
   }
   Component { id: cpuC; Tabs.CpuTab { width: col.width; panel: fakePanel; model: renderStore } }
   Component { id: memC; Tabs.MemoryTab { width: col.width; panel: fakePanel; model: renderStore } }
-  Component { id: gpuC; Tabs.GpuTab { width: col.width; panel: fakePanel; model: renderStore } }
+  Component { id: gpuC; Tabs.GpuTab { width: col.width; panel: fakePanel; model: harness.gpuFixtureMode ? gpuFixture : renderStore } }
   Component { id: diskC; Tabs.DiskTab { width: col.width; panel: fakePanel; model: renderStore } }
   Component { id: netC; Tabs.NetworkTab { width: col.width; panel: fakePanel; model: renderStore } }
   Component { id: settingsC; Components.SettingsView { width: col.width; store: renderStore } }

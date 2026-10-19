@@ -4,6 +4,9 @@
 
 ### Added
 
+- Optional aligned GPU and mirrored Network/Drives plots, saved independently
+  in Panel graphs settings. Overlays remain the default. Each series has a
+  named average/peak summary; hour plots label their 10 s mean buckets.
 - Labelled `1 min` / `1 hour` controls switch the panel's graphs together,
   retaining uppercase `H`, summary clicks, and the graph wheel. Summaries
   name their series, and missing readings remain excluded.
@@ -12,8 +15,23 @@
   narrow widths; memory explains used/composition accounting and labels the
   pressure ring's 0–25% visual scale beside its actual PSI value.
 
+### Changed
+
+- Graphs show a time axis ending at the last sample's local clock time,
+  explicit floor labels, and timestamped hover readings in reserved summary
+  space above the plot. Hovering leaves the curves visible and the layout steady.
+- Network and Drives share a scale across both series with a minimum 1 KiB/s
+  ceiling. At standard style and 408 px graph width, default graph blocks grow
+  from 162 to 182 px for CPU/Memory and from 162 to 196 px for two-series
+  GPU/Network/Drives. Narrow or larger-text layouts can reserve more readout space.
+
 ### Fixed
 
+- Unknown graph values remain gaps instead of becoming zero. Incomplete CPU
+  stacks are unknown, and hovering a long collection gap shows no old reading.
+- Cards without a VRAM percentage show only the busy series. A retained
+  percentage measurement keeps the VRAM plot through a failed poll, with
+  missing current values shown as `--`.
 - Changing stream cadence preserves the existing minute history until its
   samples age out, instead of discarding them to fit the slower point count.
 - GPU and disk pins use persistent hardware identities when available,

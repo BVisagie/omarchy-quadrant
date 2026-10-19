@@ -160,7 +160,14 @@ The time axis and hover show local clock time for the stored sample, never
 an assertion that a stale sample is current. All layouts share the same time
 window and cadence-dependent gap threshold. Missing values break their
 series, measured zeros remain real points, and hovering a long blank gap
-produces no readout. Aligned GPU readouts follow the same timestamp.
+produces no readout. Aligned GPU readouts follow the same timestamp. Hover
+readings replace the summary in space reserved above the plot; they never
+cover its curves.
+
+GPU graphs include VRAM only when the selected card has a current or retained
+percentage measurement. Bytes without a total do not establish a percentage.
+Retained history keeps an established series through a failed poll without
+inventing a current reading. A different hardware identity resets that history.
 
 Saved GPU, interface, and disk histories are adopted only when their
 device tags match. Disk tags use whole-disk by-id names; GPU tags use PCI

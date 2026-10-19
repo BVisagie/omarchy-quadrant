@@ -52,6 +52,57 @@ Column {
     return fields.map(function (field) { return seriesNote(field) }).join("\n")
   }
 
+  FontMetrics {
+    id: readoutMetrics
+    font.family: root.fontFamily
+    font.pixelSize: Commons.Style.font.caption
+    font.features: ({ "tnum": 1 })
+  }
+
+  // Reserve the widest visible value for each series before hovering, so
+  // readouts wrap without moving the plot or covering its curves.
+  function readoutTemplate(selectedFields) {
+    var bits = ["23:59:59"]
+    for (var f = 0; f < selectedFields.length; f++) {
+      var field = selectedFields[f], widest = "--"
+      var widestWidth = readoutMetrics.advanceWidth(widest)
+      for (var i = 0; i < points.length; i++) {
+        var value = Model.graphValue(points[i], field.key)
+        if (value === null) continue
+        var text = formatValue(value), textWidth = readoutMetrics.advanceWidth(text)
+        if (textWidth > widestWidth) { widest = text; widestWidth = textWidth }
+      }
+      bits.push(field.label + " " + widest)
+    }
+    return bits.join(" · ")
+  }
+
+  component SummaryText: Text {
+    textFormat: Text.PlainText
+    width: parent.width
+    wrapMode: Text.WordWrap
+    font: readoutMetrics.font
+  }
+  component Summary: Item {
+    property string note: ""
+    property string hoverText: ""
+    property var readoutFields: []
+    width: root.width
+    implicitHeight: Math.max(summarySize.implicitHeight, hoverSize.implicitHeight)
+    SummaryText { id: summarySize; visible: false; text: parent.note }
+    SummaryText { id: hoverSize; visible: false; text: parent.visible ? root.readoutTemplate(parent.readoutFields) : "" }
+    SummaryText {
+      objectName: "graphReadout"
+      text: parent.hoverText || parent.note
+      color: parent.hoverText ? root.foreground : Model.dimColor(String(root.foreground), String(Commons.Color.background))
+    }
+    MouseArea {
+      anchors.fill: parent
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.toggleWindow()
+    }
+  }
+
   spacing: Commons.Style.space(6)
 
   Item {
@@ -107,22 +158,12 @@ Column {
     }
   }
 
-  Text {
+  Summary {
     objectName: "graphSummary"
-    textFormat: Text.PlainText
-    text: root.note
     visible: !root.aligned
-    width: parent.width
-    wrapMode: Text.WordWrap
-    color: Model.dimColor(String(root.foreground), String(Commons.Color.background))
-    font.family: root.fontFamily
-    font.pixelSize: Commons.Style.font.caption
-    font.features: ({ "tnum": 1 })
-    MouseArea {
-      anchors.fill: parent
-      cursorShape: Qt.PointingHandCursor
-      onClicked: root.toggleWindow()
-    }
+    note: root.note
+    readoutFields: root.fields
+    hoverText: plots.count && plots.itemAt(0) ? plots.itemAt(0).hoverText : ""
   }
 
   Repeater {
@@ -131,24 +172,15 @@ Column {
     delegate: Column {
       required property int index
       readonly property real plotWidth: history.plotWidth
+      readonly property string hoverText: history.hoverText
       width: root.width
       spacing: Commons.Style.space(4)
-      Text {
+      Summary {
         objectName: "graphSeriesSummary_" + parent.index
         visible: root.aligned
-        textFormat: Text.PlainText
-        text: root.aligned ? root.seriesNote(root.fields[parent.index]) : ""
-        width: parent.width
-        wrapMode: Text.WordWrap
-        color: Model.dimColor(String(root.foreground), String(Commons.Color.background))
-        font.family: root.fontFamily
-        font.pixelSize: Commons.Style.font.caption
-        font.features: ({ "tnum": 1 })
-        MouseArea {
-          anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: root.toggleWindow()
-        }
+        note: root.aligned ? root.seriesNote(root.fields[parent.index]) : ""
+        readoutFields: history.fields
+        hoverText: history.hoverText
       }
       Components.HistoryGraph {
         id: history

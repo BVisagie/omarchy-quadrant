@@ -29,6 +29,7 @@ fi
 cp -r components tabs lib scripts BarWidget.qml Panel.qml "$work/tree/"
 ln -s "$shell_dir/Commons" "$work/tree/Commons"
 ln -s "$shell_dir/Ui" "$work/tree/Ui"
+cp tests/qs/graph-data.mjs "$work/tree/"
 cp tests/qs/render-tab.qml "$work/tree/shell.qml"
 if ! QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME="$theme" WAYLAND_DISPLAY="$display" QUADRANT_RENDER_OUT="$work/render.png" QUADRANT_RENDER_TAB="$tab" XDG_STATE_HOME="$work/state" XDG_RUNTIME_DIR="$work/runtime" \
   timeout 30 quickshell -p "$work/tree/shell.qml" >"$work/render.log" 2>&1; then
