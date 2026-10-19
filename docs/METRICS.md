@@ -142,8 +142,25 @@ previous-cadence points until they age out of the 60 s window.
 
 The duration buttons and uppercase `H` switch all graphs in one panel;
 each monitor's panel keeps its own session choice. Average and peak name
-their series: the CPU stack total, used memory, GPU busy, disk read, or
-network download. Null readings are excluded from those summaries.
+their series: the CPU stack total, used memory, GPU busy and VRAM, disk read
+and write, or network down and up. Summaries cover only the visible window.
+Unknown and negative/unavailable readings are excluded; a partial CPU stack
+is unknown rather than a smaller total. In the hour view, both average and
+peak operate on the 10 s means, so peak is the highest bucket average.
+
+GPU's overlay and aligned plots use the same fixed 0–100% scale. Network
+and Drives use a shared zero-based scale for both series with a minimum
+ceiling of 1024 B/s, preserving small activity as small activity. Above that
+floor the ceiling rounds up to include either series' peak. Mirroring
+changes the drawing direction only; stored values, summaries and hover
+readings remain positive magnitudes. Network unit conversion happens at
+display time. Memory's band still frames its visible range.
+
+The time axis and hover show local clock time for the stored sample, never
+an assertion that a stale sample is current. All layouts share the same time
+window and cadence-dependent gap threshold. Missing values break their
+series, measured zeros remain real points, and hovering a long blank gap
+produces no readout. Aligned GPU readouts follow the same timestamp.
 
 Saved GPU, interface, and disk histories are adopted only when their
 device tags match. Disk tags use whole-disk by-id names; GPU tags use PCI

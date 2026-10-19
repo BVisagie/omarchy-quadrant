@@ -173,12 +173,14 @@ Item {
     }
 
     Components.GraphBlock {
+      objectName: "gpuHistory"
       width: parent.width
       title: "HISTORY"
       finePoints: root.model ? root.model.gpuHistory : []
       longPoints: root.model ? root.model.gpuLong : []
       longWindow: root.longWindow
       sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+      graphLayout: root.model && root.model.cfg ? root.model.cfg.gpuGraphLayout : "overlay"
       fixedMax: 100
       fields: [
         { key: "b", label: "busy", color: root.pal.primary },

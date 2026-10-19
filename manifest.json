@@ -40,7 +40,10 @@
       "rateUnit": "bytes",
       "gpuDeviceId": "",
       "integratedGpuDeviceId": "",
-      "diskDeviceId": ""
+      "diskDeviceId": "",
+      "gpuGraphLayout": "overlay",
+      "networkGraphLayout": "overlay",
+      "diskGraphLayout": "overlay"
     },
     "schema": [
       {
@@ -205,6 +208,39 @@
           "bits"
         ],
         "defaultValue": "bytes"
+      },
+      {
+        "key": "gpuGraphLayout",
+        "type": "enum",
+        "label": "GPU graph layout",
+        "description": "Overlay busy and memory percentages, or show aligned plots on the same 0–100% scale.",
+        "options": [
+          "overlay",
+          "aligned"
+        ],
+        "defaultValue": "overlay"
+      },
+      {
+        "key": "networkGraphLayout",
+        "type": "enum",
+        "label": "Network graph layout",
+        "description": "Overlay download/upload, or place download above and upload below zero on a shared scale.",
+        "options": [
+          "overlay",
+          "mirrored"
+        ],
+        "defaultValue": "overlay"
+      },
+      {
+        "key": "diskGraphLayout",
+        "type": "enum",
+        "label": "Drives graph layout",
+        "description": "Overlay read/write, or place read above and write below zero on a shared scale.",
+        "options": [
+          "overlay",
+          "mirrored"
+        ],
+        "defaultValue": "overlay"
       }
     ]
   }

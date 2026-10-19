@@ -26,7 +26,15 @@ ShellRoot {
     Commons.Color.urgent = palette === "mono" ? "#ffffff" : "#b34b4b"
   }
 
-  Components.Store { id: store; embedded: true }
+  Components.Store {
+    id: renderStore
+    embedded: true
+    settingsRaw: ({
+      gpuGraphLayout: Quickshell.env("QUADRANT_RENDER_GPU_LAYOUT") || "overlay",
+      networkGraphLayout: Quickshell.env("QUADRANT_RENDER_NETWORK_LAYOUT") || "overlay",
+      diskGraphLayout: Quickshell.env("QUADRANT_RENDER_DISK_LAYOUT") || "overlay"
+    })
+  }
 
   QtObject {
     id: fakeBar
@@ -59,10 +67,10 @@ ShellRoot {
     property string currentTab: harness.tab
     property color barForeground: Commons.Color.foreground
     property var bar: fakeBar
-    property int processCount: store.processCount
-    property int panelIntervalMs: store.panelIntervalMs
+    property int processCount: renderStore.processCount
+    property int panelIntervalMs: renderStore.panelIntervalMs
     readonly property var tabLabels: ({ cpu: "CPU", gpu: "GPU", mem: "Memory", disk: "Drives", net: "Network" })
-    readonly property var tabKeys: store.discreteGpuAvailable || harness.tab === "gpu" ? ["cpu", "gpu", "mem", "disk", "net"] : ["cpu", "mem", "disk", "net"]
+    readonly property var tabKeys: renderStore.discreteGpuAvailable || harness.tab === "gpu" ? ["cpu", "gpu", "mem", "disk", "net"] : ["cpu", "mem", "disk", "net"]
   }
 
   Window {
@@ -88,7 +96,7 @@ ShellRoot {
         settingsOpen: fakePanel.settingsOpen
         resourceName: fakePanel.tabLabels[harness.tab] || "CPU"
         barToggleVisible: !fakePanel.settingsOpen
-        barEnabled: store.segmentEnabled(harness.tab === "mem" ? "memory" : harness.tab === "disk" ? "disk" : harness.tab === "net" ? "network" : harness.tab)
+        barEnabled: renderStore.segmentEnabled(harness.tab === "mem" ? "memory" : harness.tab === "disk" ? "disk" : harness.tab === "net" ? "network" : harness.tab)
       }
       Ui.PanelSeparator { visible: harness.showHeader; width: parent.width }
       Loader {
@@ -103,12 +111,12 @@ ShellRoot {
       }
     }
   }
-  Component { id: cpuC; Tabs.CpuTab { width: col.width; panel: fakePanel; model: store } }
-  Component { id: memC; Tabs.MemoryTab { width: col.width; panel: fakePanel; model: store } }
-  Component { id: gpuC; Tabs.GpuTab { width: col.width; panel: fakePanel; model: store } }
-  Component { id: diskC; Tabs.DiskTab { width: col.width; panel: fakePanel; model: store } }
-  Component { id: netC; Tabs.NetworkTab { width: col.width; panel: fakePanel; model: store } }
-  Component { id: settingsC; Components.SettingsView { width: col.width; store: store } }
+  Component { id: cpuC; Tabs.CpuTab { width: col.width; panel: fakePanel; model: renderStore } }
+  Component { id: memC; Tabs.MemoryTab { width: col.width; panel: fakePanel; model: renderStore } }
+  Component { id: gpuC; Tabs.GpuTab { width: col.width; panel: fakePanel; model: renderStore } }
+  Component { id: diskC; Tabs.DiskTab { width: col.width; panel: fakePanel; model: renderStore } }
+  Component { id: netC; Tabs.NetworkTab { width: col.width; panel: fakePanel; model: renderStore } }
+  Component { id: settingsC; Components.SettingsView { width: col.width; store: renderStore } }
   // The bar slot itself, on a strip the height of the bar, driven by the
   // real BarWidget root (its Panel loader fails offscreen; that is fine).
   Component {
@@ -131,7 +139,7 @@ ShellRoot {
     }
   }
 
-  Component.onCompleted: store.setViewer("render", { gpuSegment: true, gpuTab: true, cpuTab: true, memTab: true, diskTab: true, netTab: true, expandedProcesses: Quickshell.env("QUADRANT_RENDER_EXPANDED") === "1", open: true })
+  Component.onCompleted: renderStore.setViewer("render", { gpuSegment: true, gpuTab: true, cpuTab: true, memTab: true, diskTab: true, netTab: true, expandedProcesses: Quickshell.env("QUADRANT_RENDER_EXPANDED") === "1", open: true })
 
   Timer {
     interval: 7000

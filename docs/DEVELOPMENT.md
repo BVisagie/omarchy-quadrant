@@ -92,6 +92,7 @@ bash tests/qs-device-identity.sh
 bash tests/qs-process-lifecycle.sh
 bash tests/qs-process-ui.sh
 bash tests/qs-panel-ui.sh
+bash tests/qs-graph-ui.sh
 bash tests/qmllint.sh
 bash tests/render.sh cpu /tmp/quadrant-cpu.png
 ```
@@ -146,6 +147,14 @@ value above the ring's labelled scale. A real Store fixture changes from 250 ms 
 and 60 s collection, verifying that minute history expires by timestamp
 rather than by the new cadence's point count. Both load-patch modes run.
 
+`qs-graph-ui.sh` checks shared time and fixed scales, synchronized GPU hover,
+positive mirrored readouts (including bit units), blank gaps, real zero and
+unknown values, visible-window summaries, bucket captions, summary click and
+wheel controls, and per-resource settings/reset without hardware. It also
+checks real Store settings reaching all three tabs. At 320/440 px, font size
+18 and spacing scales 1/1.5/2, axes, time labels, duration controls and readouts
+stay inside the graph. Both load-patch modes run.
+
 `qmllint.sh` needs qmllint and an Omarchy shell at
 `${OMARCHY_PATH:-/usr/share/omarchy}/shell`; it skips when either is
 missing. The regular CI runner therefore does not establish that the QML
@@ -179,9 +188,36 @@ the desktop platform theme so process icons match the live panel. Without a
 socket it disables the platform theme for headless rendering.
 
 Use `QUADRANT_RENDER_HEADER=1` to include the shared panel header and
-`QUADRANT_RENDER_FIT=1` to size the capture to its content. The dedicated-GPU
+`QUADRANT_RENDER_FIT=1` to size the capture to its content. Set
+`QUADRANT_RENDER_GPU_LAYOUT=aligned`,
+`QUADRANT_RENDER_NETWORK_LAYOUT=mirrored`, or
+`QUADRANT_RENDER_DISK_LAYOUT=mirrored` to render the corresponding setting
+without writing shell configuration. The dedicated-GPU
 documentation capture uses fixture telemetry because this machine has no
 dedicated card; it does not establish driver or power-management behavior.
+
+### Matched graph comparisons
+
+```sh
+bash tests/render-graphs.sh /tmp/quadrant-graphs.png
+QUADRANT_RENDER_PALETTE=light QUADRANT_RENDER_WIDTH=320 QUADRANT_RENDER_LONG=1 \
+  QUADRANT_RENDER_PATTERN=gaps QUADRANT_RENDER_HOVER=1 \
+  bash tests/render-graphs.sh /tmp/quadrant-graphs-hour.png
+```
+
+This renderer pairs the real GraphBlock in overlay and alternative layouts
+using the same deterministic synthetic data from `tests/qs/graph-data.mjs`.
+It needs shell imports and uses isolated runtime/state. `QUADRANT_RENDER_WIDTH`
+is the outer panel width; each graph gets that minus 32 px of padding.
+Patterns are `normal`, `gaps` (also missing values in one series), `low`, and
+`unknown`. Palettes are `dark`, `light`, and `mono`; `QUADRANT_RENDER_LONG=1`
+uses synthetic 10 s means across an hour. `QUADRANT_RENDER_HOVER=1` sets the
+same hover time in every chart. Device scaling uses `QT_SCALE_FACTOR`.
+It reports graph-block heights and rejects QML runtime errors.
+
+See [Graph layouts](GRAPH_LAYOUTS.md) for the recorded comparisons and the
+default decision. These fixtures verify presentation; they do not establish
+GPU driver or power-management behavior.
 
 ## Before publishing
 

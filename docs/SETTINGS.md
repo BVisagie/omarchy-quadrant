@@ -34,6 +34,9 @@ time any setting is saved.
 | `diskDeviceId` | `""` | Persistent whole-disk pin, as a basename from `/dev/disk/by-id`; takes precedence over `diskDevice` |
 | `barPalette` | `"theme"` | `theme`, `heat`, or `vivid` (see [Bar](USAGE.md#bar)) |
 | `barLabels` | `"glyph"` | `glyph`, `letter`, or `none` |
+| `gpuGraphLayout` | `"overlay"` | `overlay` or `aligned`: busy and VRAM on two plots sharing time and a 0–100% scale |
+| `networkGraphLayout` | `"overlay"` | `overlay` or `mirrored`: download above zero, upload below, on one shared magnitude scale |
+| `diskGraphLayout` | `"overlay"` | `overlay` or `mirrored`: read above zero, write below, on one shared magnitude scale |
 | `rateUnit` | `"bytes"` | Network panel and tooltip rates in `bytes` (KiB/s, binary) or `bits` (Mb/s, decimal); compact bar rates stay in bytes |
 
 Every value is validated on read, whatever wrote it: numbers are clamped
@@ -53,6 +56,26 @@ at most 255 safe basename characters and cannot contain paths, `..`, or a
 only resolved kernel names and device paths reach the samplers.
 Unknown keys already present in the entry are preserved; settings at their
 defaults are omitted when Quadrant saves. The helper scripts check their arguments again before touching anything.
+
+## Graph layouts
+
+The **Panel graphs** section selects each resource independently. The choices
+are saved, apply immediately, and remain available when the corresponding
+device or bar segment is absent. Reset restores overlays. CPU's stack and
+Memory's band keep their existing layouts.
+
+Aligned GPU plots give each series a full-height plot. Mirrored Network and
+Drives plots separate direction around zero; the lower half still measures a
+positive rate. Network's rate-unit setting applies to both layouts. Rate plots
+share a ceiling of at least 1 KiB/s (8.2 kb/s when displayed in bits); they scale
+up together when either series needs more room. See the
+[matched comparisons and default choice](GRAPH_LAYOUTS.md).
+
+```sh
+omarchy bar set dev.bvisagie.quadrant gpuGraphLayout '"aligned"' --json
+omarchy bar set dev.bvisagie.quadrant networkGraphLayout '"mirrored"' --json
+omarchy bar set dev.bvisagie.quadrant diskGraphLayout '"mirrored"' --json
+```
 
 ## Device selection and bar fallback
 
@@ -156,6 +179,6 @@ with keyboard help and a **Reset to defaults** action at the bottom.
 <details>
   <summary>Show the full settings screenshot</summary>
   <p align="center">
-    <a href="screenshots/settings.png"><img src="screenshots/settings.png" alt="Full Quadrant settings view showing bar segment switches, appearance controls, sampling intervals, device selectors, keyboard shortcuts, and Reset to defaults" width="520"></a>
+    <a href="screenshots/settings.png"><img src="screenshots/settings.png" alt="Full Quadrant settings view showing bar segment switches, appearance and panel graph controls, sampling intervals, device selectors, keyboard shortcuts, and Reset to defaults" width="520"></a>
   </p>
 </details>

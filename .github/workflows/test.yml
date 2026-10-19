@@ -118,3 +118,5 @@ jobs:
         run: bash tests/qs-process-ui.sh
       - name: Panel controls and history (skips without quickshell and shell imports)
         run: bash tests/qs-panel-ui.sh
+      - name: Graph layouts, hover and settings (skips without quickshell and shell imports)
+        run: bash tests/qs-graph-ui.sh

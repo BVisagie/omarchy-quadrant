@@ -189,3 +189,25 @@ test("a settings patch may only write known keys", () => {
   assert.deepEqual(next, { myNote: "keep", processCount: 7 });
   assert.equal("evil" in next, false);
 });
+
+test("graph layouts parse independently and reset without losing unknown settings", () => {
+  const raw = { gpuGraphLayout: '"Aligned"', networkGraphLayout: "MIRRORED", diskGraphLayout: "aligned", future: { keep: true } };
+  const cfg = Model.readSettings(raw);
+  assert.equal(cfg.gpuGraphLayout, "aligned");
+  assert.equal(cfg.networkGraphLayout, "mirrored");
+  assert.equal(cfg.diskGraphLayout, "overlay");
+  assert.equal(Model.readSettings({ gpuGraphLayout: "mirrored" }).gpuGraphLayout, "overlay");
+  const patch = Model.settingsPatch(raw, { diskGraphLayout: "mirrored", gpuGraphLayout: "overlay" });
+  assert.deepEqual(patch, { networkGraphLayout: "mirrored", diskGraphLayout: "mirrored", future: { keep: true } });
+  assert.deepEqual(Model.settingsPatch(patch, { networkGraphLayout: "overlay", diskGraphLayout: "overlay" }), { future: { keep: true } });
+});
+
+
+test("older settings writers preserve graph layout preferences on downgrade", () => {
+  const released = require("../fixtures/settings-v1.mjs");
+  const settings = { gpuGraphLayout: "aligned", networkGraphLayout: "mirrored", diskGraphLayout: "mirrored" };
+  const written = released.settingsPatch(settings, { processCount: 8 });
+  const cfg = Model.readSettings(written);
+  for (const key of Object.keys(settings)) assert.equal(cfg[key], settings[key]);
+  assert.equal(cfg.processCount, 8);
+});
