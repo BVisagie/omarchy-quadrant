@@ -10,7 +10,7 @@
 # and the exit code is non-zero — a failure must never look like "no
 # activity" to the caller.
 #
-# Usage: process-sample [row_count] [--window seconds]
+# Usage: process-sample [row_count] [--window seconds] [--expanded]
 #   row_count  clamps to 1..10 (default 5)
 #   --window   longest gap between two runs that still yields rates
 #              (default 15; the store passes a multiple of its cadence)
@@ -49,8 +49,10 @@ PY=$(resolve_bin python3) || fail "python3 not found"
 
 count=5
 window=15
+mode=()
 while (( $# > 0 )); do
   case $1 in
+    --expanded) mode=(--expanded) ;;
     --window)
       shift
       [[ ${1:-} =~ ^[0-9]+(\.[0-9]+)?$ ]] || fail "bad window '${1:-}'"
@@ -66,7 +68,7 @@ done
 (( count < 1 )) && count=1
 (( count > 10 )) && count=10
 
-if ! result=$("$PY" "$SCRIPT_DIR/qproc.py" "$count" --window "$window" |
+if ! result=$("$PY" "$SCRIPT_DIR/qproc.py" "$count" --window "$window" "${mode[@]}" |
   "$PY" "$SCRIPT_DIR/helper-envelope.py" procs "$EPOCHREALTIME"); then
   fail "process sampler failed"
 fi

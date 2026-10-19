@@ -174,6 +174,7 @@ Item {
   property int diskTabViewers: 0
   property int netTabViewers: 0
   property int openPanels: 0
+  property int expandedProcessViewers: 0
 
   function setViewer(id, state) {
     var next = {}
@@ -188,7 +189,7 @@ Item {
   }
 
   function recomputeViewers() {
-    var seg = 0, gpuTab = 0, cpuTab = 0, memTab = 0, diskTab = 0, netTab = 0, open = 0
+    var seg = 0, gpuTab = 0, cpuTab = 0, memTab = 0, diskTab = 0, netTab = 0, open = 0, expanded = 0
     for (var k in viewers) {
       var v = viewers[k]
       if (!v) continue
@@ -199,6 +200,7 @@ Item {
       if (v.diskTab) diskTab++
       if (v.netTab) netTab++
       if (v.open) open++
+      if (v.open && v.expandedProcesses && (v.cpuTab || v.memTab || v.diskTab)) expanded++
     }
     gpuSegmentViewers = seg
     gpuTabViewers = gpuTab
@@ -207,6 +209,7 @@ Item {
     diskTabViewers = diskTab
     netTabViewers = netTab
     openPanels = open
+    expandedProcessViewers = expanded
   }
 
   // ---- derived bar lists -----------------------------------------------
@@ -988,7 +991,8 @@ Item {
   property var ioRows: []         // { pid, comm, read, write, value: B/s, sortKey, history }
   // Short per-row trends for the sparklines: the last `sparkLength` values
   // of every row that is currently shown, keyed by pid per metric. Rows
-  // that leave the list drop their trend.
+  // that leave the collected roster drop their trend. Group continuity
+  // requires a surviving PID:starttime member, not just the same name.
   readonly property int sparkLength: 30
   property var sparkHist: ({ cpu: {}, mem: {}, io: {}, net: {}, gpu: {} })
 
@@ -998,11 +1002,13 @@ Item {
     var out = []
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i]
-      var key = String(r.pid)
-      var hist = Array.isArray(prev[key]) ? prev[key].slice() : []
-      hist.push(Number(r.value) || 0)
+      var key = "r" + Model.processRowKey(r)
+      var old = prev[key]
+      var hist = old && Model.sameProcessRow(old.row, r) ? old.history.slice() : []
+      // Unknown intervals create a gap, never a fabricated idle reading.
+      hist.push(r.value === null || r.value === undefined ? null : Number(r.value))
       while (hist.length > sparkLength) hist.shift()
-      next[key] = hist
+      next[key] = { row: r, history: hist }
       var copy = {}
       for (var k in r) copy[k] = r[k]
       copy.history = hist
@@ -1014,10 +1020,24 @@ Item {
     sparkHist = all
     return out
   }
-  property var procStats: null    // { procs, running, threads, ncpu, ioVisible, ioHidden, dt }
+  property var allCpuRows: []
+  property var allMemRows: []
+  property var allIoRows: []
+  property var procStats: null
   property string procError: ""
   readonly property bool procSampleWanted: openPanels > 0 && (cpuTabViewers > 0 || memTabViewers > 0 || diskTabViewers > 0)
+  readonly property bool procExpandedWanted: expandedProcessViewers > 0
   readonly property int procWindowS: Math.max(15, Math.ceil(panelIntervalMs * 3 / 1000))
+  property real procLastStartedMs: 0
+  property bool procWarmupAvailable: false
+
+  onProcSampleWantedChanged: {
+    procRequestTimer.stop()
+    procWarmupTimer.stop()
+    procWarmupAvailable = procSampleWanted
+    if (procSampleWanted) pollProcesses()
+  }
+  onProcExpandedWantedChanged: if (procSampleWanted) pollProcesses()
 
   function applyProcessSample(text) {
     var env = Model.safeJson(text)
@@ -1034,38 +1054,45 @@ Item {
       procError = "process sampler returned bad output"
       return
     }
-    procSample = parsed
-    procStats = {
-      procs: parsed.procs, running: parsed.running, threads: parsed.threads, ncpu: parsed.ncpu,
-      ioVisible: parsed.ioVisible, ioHidden: parsed.ioHidden, dt: parsed.dt
+    if (parsed.skipped) {
+      if (procSampleWanted) {
+        procRequestTimer.interval = Math.max(1, parsed.retryAfterMs)
+        procRequestTimer.restart()
+      }
+      return
     }
-    var limit = processCount
+    procSample = parsed
+    procStats = parsed
     var totalK = sample ? sample.mem.tot : 0
-    var i, c
-    var cpuMapped = []
-    c = Model.nameAndCollapse(parsed.cpu, limit)
-    for (i = 0; i < c.length; i++)
-      cpuMapped.push({ pid: c[i].pid, comm: c[i].comm, value: c[i].value, core: c[i].core, sortKey: c[i].value })
-    // A sampler run without an interval (first run after a cold start)
-    // has no CPU rows; keep the roster rather than flashing it empty.
-    if (parsed.dt > 0 || cpuRows.length === 0) cpuRows = withSpark("cpu", Model.mergeRoster(cpuRows, cpuMapped, limit))
-    var memMapped = []
-    c = Model.nameAndCollapse(parsed.mem, limit)
-    for (i = 0; i < c.length; i++)
-      memMapped.push({ pid: c[i].pid, comm: c[i].comm, value: c[i].value, kind: c[i].kind || "rss",
-                       pct: totalK > 0 ? 100 * c[i].value / totalK : null, sortKey: c[i].value })
-    memRows = withSpark("mem", Model.mergeRoster(memRows, memMapped, limit))
-    var ioMapped = []
-    c = Model.nameAndCollapse(parsed.io, limit)
-    for (i = 0; i < c.length; i++)
-      ioMapped.push({ pid: c[i].pid, comm: c[i].comm, read: c[i].read, write: c[i].write, value: c[i].value, sortKey: c[i].value })
-    if (parsed.dt > 0 || ioRows.length === 0) ioRows = withSpark("io", Model.mergeRoster(ioRows, ioMapped, limit))
+    allCpuRows = withSpark("cpu", Model.processGroups(parsed, "cpu", totalK))
+    allMemRows = withSpark("mem", Model.processGroups(parsed, "mem", totalK))
+    allIoRows = withSpark("io", Model.processGroups(parsed, "io", totalK))
+    // Compact ordering stays sticky. Expanded views sort/filter full groups
+    // locally; no presentation cap can discard a later matching process.
+    cpuRows = Model.mergeRoster(cpuRows, allCpuRows.slice(0, processCount), processCount)
+    memRows = Model.mergeRoster(memRows, allMemRows.slice(0, processCount), processCount)
+    ioRows = Model.mergeRoster(ioRows, allIoRows.filter(function (r) { return r.value > 0 }).slice(0, processCount), processCount)
     procError = ""
+    if (parsed.dt > 0) {
+      procWarmupAvailable = false
+      procWarmupTimer.stop()
+    } else if (procSampleWanted && procWarmupAvailable) {
+      procWarmupAvailable = false
+      procWarmupTimer.interval = Math.max(1, 500 - (Date.now() - procLastStartedMs))
+      procWarmupTimer.restart()
+    }
   }
 
   function pollProcesses() {
-    if (!procSampleWanted) return
-    procSampler.run()
+    if (!procSampleWanted || procSampler.running) return
+    var remaining = 400 - (Date.now() - procLastStartedMs)
+    if (remaining > 0) {
+      procRequestTimer.interval = Math.ceil(remaining)
+      procRequestTimer.restart()
+      return
+    }
+    procRequestTimer.stop()
+    if (procSampler.run()) procLastStartedMs = Date.now()
   }
 
   Timer {
@@ -1073,15 +1100,37 @@ Item {
     interval: store.panelIntervalMs
     repeat: true
     running: store.procSampleWanted
-    onRunningChanged: if (running) store.pollProcesses()
+    onTriggered: store.pollProcesses()
+  }
+
+  Timer {
+    id: procRequestTimer
+    repeat: false
+    onTriggered: store.pollProcesses()
+  }
+
+  Timer {
+    id: procWarmupTimer
+    repeat: false
     onTriggered: store.pollProcesses()
   }
 
   Components.Sampler {
     id: procSampler
-    command: [store.localPath("scripts/process-sample"), String(store.processCount), "--window", String(store.procWindowS)]
+    command: {
+      var args = [store.localPath("scripts/process-sample"), String(store.processCount), "--window", String(store.procWindowS)]
+      if (store.procExpandedWanted) args.push("--expanded")
+      return args
+    }
     timeoutMs: Math.max(6000, store.panelIntervalMs * 3)
     onResult: function (text) { store.applyProcessSample(text) }
+    onRunningChanged: {
+      // A viewer may change mode while the shared helper is running. Once
+      // it exits, acquire the requested mode through the same cadence gate.
+      if (!running && store.procSampleWanted && store.procSample
+          && (store.procSample.mode === "expanded") !== store.procExpandedWanted)
+        Qt.callLater(store.pollProcesses)
+    }
     onFailed: function (message) {
       if (store.procError === "") store.procError = "process sampler " + message
     }

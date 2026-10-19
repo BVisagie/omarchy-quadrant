@@ -149,3 +149,79 @@ test("parseProcessSample validates the merged sampler payload", () => {
   ], 5);
   assert.deepEqual([io[0].read, io[0].write, io[0].value], [15, 20, 35]);
 });
+
+test("expanded grouping covers members beyond 32 before searching and capping", () => {
+  const rows = Array.from({ length: 400 }, (_, i) => ({ pid: i + 1, start: 10, comm: i < 80 ? "workers" : `job-${i}`,
+    memory: 10, kind: "rss", cpu: 1, core: 8, read: 0, write: 0, ioVisible: true }));
+  const sample = Model.parseProcessSample({ mode: "expanded", rows, procs: 400 });
+  const groups = Model.processGroups(sample, "mem", 10000);
+  assert.equal(groups.length, 321);
+  assert.equal(groups[0].n, 80);
+  assert.equal(groups[0].value, 800);
+  assert.equal(groups[0].pct, 8);
+  assert.equal(groups[0].members.length, 80);
+  const capped = Model.filterProcessGroups(groups, "", {}, 256, "value");
+  assert.equal(capped.rows.length, 256);
+  assert.equal(capped.matches, 321);
+  assert.equal(capped.limited, true);
+  const deepMatch = Model.filterProcessGroups(groups, "job-399", {}, 256, "value");
+  assert.equal(deepMatch.matches, 1);
+  assert.equal(deepMatch.rows[0].pid, 400);
+  const pidMatch = Model.filterProcessGroups(groups, "79", {}, 256, "value");
+  const workers = pidMatch.rows.find(r => r.comm === "workers");
+  assert.deepEqual(workers.matchedPids, [79]);
+  assert.equal(workers.value, 800);
+  assert.equal(workers.pid, 1); // representative is explicitly distinct
+  assert.equal(Model.filterProcessGroups(groups, "Worker Application", { nworkers: "Worker Application" }, 256).matches, 1);
+});
+
+test("mixed memory and partial or restricted metrics keep their meaning", () => {
+  const mixed = Model.nameAndCollapse([
+    { pid: 1, start: 1, comm: "app", kind: "pss", value: 100 },
+    { pid: 2, start: 2, comm: "app", kind: "rss", value: 200 },
+    { pid: 3, start: 3, comm: "app", kind: "pss", value: 50 }
+  ], 10)[0];
+  assert.equal(mixed.kind, "mixed");
+  assert.equal(mixed.n, 3);
+  assert.equal(mixed.value, 350);
+  const sample = Model.parseProcessSample({ mode: "expanded", rows: [
+    { pid: 1, start: 1, comm: "app", cpu: null, read: null, write: null, memory: 100, kind: "rss", ioVisible: false },
+    { pid: 2, start: 2, comm: "app", cpu: 2, read: 0, write: 0, memory: 100, kind: "rss", ioVisible: true },
+    { pid: 3, start: 3, comm: "hidden", cpu: null, read: null, write: null, memory: null, ioVisible: false }
+  ] });
+  const cpu = Model.processGroups(sample, "cpu");
+  assert.equal(cpu[0].value, 2);
+  assert.equal(cpu[0].known, 1);
+  assert.equal(cpu[0].n, 2);
+  assert.equal(cpu[1].value, null);
+  const io = Model.processGroups(sample, "io");
+  assert.equal(io[0].value, 0); // known idle member, partial group
+  assert.equal(io[0].hidden, 1);
+  assert.equal(io[1].value, null); // restricted, not idle
+});
+
+test("group identity requires a surviving PID and start time", () => {
+  const group = (members) => Model.nameAndCollapse(members.map(([pid, start]) => ({ pid, start, comm: "workers", value: 1 })), 10)[0];
+  const old = group([[1, 10], [2, 20]]);
+  const surviving = group([[2, 20], [3, 30]]);
+  const reused = group([[1, 99], [2, 99]]);
+  assert.equal(Model.sameProcessRow(old, surviving), true);
+  assert.equal(Model.sameProcessRow(old, reused), false);
+  const other = { pid: 7, start: 7, comm: "other", sortKey: 10 };
+  assert.deepEqual(Model.mergeRoster([old, other], [reused, other], 5).map(r => r.comm), ["other", "workers"]);
+  assert.equal(Model.sameProcessRow({ pid: 1, start: 10 }, { pid: 1, start: 11 }), false);
+});
+
+test("hostile group names stay inert and missing fields stay unavailable", () => {
+  const sample = Model.parseProcessSample({ mode: "expanded", rows: [
+    { pid: 10, start: 1, comm: "__proto__", cpu: null, memory: null },
+    { pid: 11, start: 1, comm: "<img>\u0000", cpu: -1, memory: 20 },
+    { pid: 12, comm: "missing-identity", cpu: 1 }
+  ] });
+  assert.equal(sample.unreadable, 1);
+  const groups = Model.processGroups(sample, "cpu");
+  assert.deepEqual(groups.map(r => r.value), [null, null]);
+  assert.equal(groups[0].comm, "__proto__");
+  assert.equal(groups[1].comm, "<img>");
+  assert.equal(Model.parseProcessSample({ mode: "expanded" }), null);
+});
