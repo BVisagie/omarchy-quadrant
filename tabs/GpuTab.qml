@@ -42,7 +42,8 @@ Item {
   // ---- identity ----------------------------------------------------------
   readonly property string gpuTitle: {
     if (vendor === "nvidia" && live && live.name) return Model.cleanGpuName(live.name)
-    if (gpuInfo && gpuInfo.name) return Model.cleanGpuName(gpuInfo.name)
+    var name = Model.gpuDisplayName(gpuInfo)
+    if (name) return name
     if (gpuInfo && gpuInfo.pciId) return Model.gpuVendorLabel(vendor) + " · " + gpuInfo.pciId
     if (vendor) return Model.gpuVendorLabel(vendor)
     return "GPU"
@@ -69,7 +70,7 @@ Item {
     for (var i = 0; i < list.length; i++) {
       var g = list[i]
       var info = model && model.sysInfo && model.sysInfo.gpusByCard ? model.sysInfo.gpusByCard[g.card] : null
-      var name = info && info.name ? Model.cleanGpuName(info.name) : Model.gpuVendorLabel(g.vendor)
+      var name = Model.gpuDisplayName(info) || Model.gpuVendorLabel(g.vendor)
       out.push({ value: g.card, label: name, tooltip: g.card + " · " + g.vendor })
     }
     return out

@@ -72,6 +72,12 @@ with busy and resident memory summed and the lowest PID used in the
 tooltip. Multiple dedicated cards get a picker with model names where
 available.
 
+AMD model names come from libdrm's `amdgpu.ids`, matched by PCI device ID
+and revision, because one device ID can cover several retail cards
+(`1002:7550` is the RX 9070 XT, 9070 GRE, and 9070). Without a match the
+`lspci` name is shown, listing every model that shares the ID rather than
+guessing one. NVIDIA names come from `nvidia-smi`.
+
 ## Drives
 
 Whole-device counters come from `/proc/diskstats`, excluding partitions

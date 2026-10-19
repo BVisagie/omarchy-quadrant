@@ -2,7 +2,8 @@
 # system-info — one-shot hardware identity for the Quadrant panel.
 #
 # Emits one JSON envelope on stdout:
-#   {"ok":true,"cpu":{...},"gpus":[...],"lspciPayload":"...","mem":{...},"host":{...}}
+#   {"ok":true,"cpu":{...},"gpus":[...],"lspciPayload":"...",
+#    "amdgpuIdsPayload":"...","mem":{...},"host":{...}}
 #
 # Every field is optional (null / empty) when unreadable. Strings travel
 # through jq --arg so firmware and PCI-DB text cannot break the transport;
@@ -13,6 +14,11 @@
 #
 # lspci is optional: when pciutils is not installed the payload is empty
 # and AMD/Intel cards fall back to vendor + PCI ID in the UI.
+#
+# amdgpuIdsPayload carries the lines of libdrm's amdgpu.ids whose device
+# ID matches a detected AMD card. Several retail SKUs share one PCI ID and
+# differ only by revision (1002:7550 is the RX 9070 XT, GRE, and 9070), so
+# that table plus each card's sysfs revision names the exact model.
 
 # shellcheck disable=SC2016  # jq programs are single-quoted on purpose
 set -euo pipefail
@@ -309,6 +315,7 @@ fi
 
 gpu_fields=()
 gpu_count=0
+amd_dids=()
 for dev in /sys/class/drm/card[0-9]*/device; do
   [[ -d $dev ]] || continue
   card=${dev%/*}; card=${card##*/}
@@ -343,8 +350,13 @@ for dev in /sys/class/drm/card[0-9]*/device; do
   did_hex=${did_hex,,}
   if [[ $vid_hex =~ ^[0-9a-f]{4}$ && $did_hex =~ ^[0-9a-f]{4}$ ]]; then
     pciId="$vid_hex:$did_hex"
+    [[ $vend == amd ]] && amd_dids+=("$did_hex")
   fi
-  gpu_fields+=("$card" "$vend" "$slot" "$driver" "$pciId")
+  # PCI revision from sysfs is 0xNN; normalize to nn lowercase.
+  read_line_file "$dev/revision" rev
+  rev=${rev#0x}; rev=${rev#0X}; rev=${rev,,}
+  [[ $rev =~ ^[0-9a-f]{2}$ ]] || rev=""
+  gpu_fields+=("$card" "$vend" "$slot" "$driver" "$pciId" "$rev")
   gpu_count=$(( gpu_count + 1 ))
   (( gpu_count >= 8 )) && break
 done
@@ -353,12 +365,33 @@ if (( ${#gpu_fields[@]} == 0 )); then
   gpu_json='[]'
 else
   gpu_json=$("$JQ" -cn --args '
-    [range(0; ($ARGS.positional | length); 5) as $i |
+    [range(0; ($ARGS.positional | length); 6) as $i |
       { card: $ARGS.positional[$i],
         vendor: $ARGS.positional[$i + 1],
         slot: $ARGS.positional[$i + 2],
         driver: $ARGS.positional[$i + 3],
-        pciId: $ARGS.positional[$i + 4] }]' "${gpu_fields[@]}")
+        pciId: $ARGS.positional[$i + 4],
+        revision: $ARGS.positional[$i + 5] }]' "${gpu_fields[@]}")
+fi
+
+# Only the detected cards' rows travel; the full table is ~25 KB. Format:
+# "DDDD,<tab>RR,<tab>name". Validation of the name happens in Model.js.
+amdgpuIdsPayload=""
+AMDGPU_IDS=/usr/share/libdrm/amdgpu.ids
+if (( ${#amd_dids[@]} > 0 )) && [[ -r $AMDGPU_IDS ]]; then
+  ids_lines=0
+  while IFS= read -r line || [[ -n ${line:-} ]]; do
+    [[ $line =~ ^([0-9A-Fa-f]{4}), ]] || continue
+    want=${BASH_REMATCH[1],,}
+    for d in "${amd_dids[@]}"; do
+      if [[ $d == "$want" ]]; then
+        amdgpuIdsPayload+="$line"$'\n'
+        ids_lines=$(( ids_lines + 1 ))
+        break
+      fi
+    done
+    (( ids_lines >= 128 )) && break
+  done < "$AMDGPU_IDS"
 fi
 
 lspciPayload=""
@@ -524,6 +557,7 @@ read_line_file /sys/class/dmi/id/product_name productName
   --argjson topo "$topo_json" \
   --argjson gpus "$gpu_json" \
   --arg lspciPayload "$lspciPayload" \
+  --arg amdgpuIdsPayload "$amdgpuIdsPayload" \
   --argjson swaps "$swap_json" \
   --argjson zram "$zram_json" \
   --arg udevPayload "$udevPayload" \
@@ -547,6 +581,7 @@ read_line_file /sys/class/dmi/id/product_name productName
     },
     gpus: $gpus,
     lspciPayload: $lspciPayload,
+    amdgpuIdsPayload: $amdgpuIdsPayload,
     mem: { swaps: $swaps, zram: $zram, udevPayload: $udevPayload },
     net: { interfaces: $net, ipPayload: $ipPayload },
     host: {

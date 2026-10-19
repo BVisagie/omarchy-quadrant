@@ -235,7 +235,9 @@ test("normalizeGpuList keeps slot and pci identity", () => {
 });
 
 test("cleanGpuName prefers the marketing name inside brackets", () => {
-  assert.equal(Model.cleanGpuName("Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M]"), "Radeon RX 7900 XT");
+  // A shared PCI ID lists every SKU; choosing one would be a guess.
+  assert.equal(Model.cleanGpuName("Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M]"), "Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M");
+  assert.equal(Model.cleanGpuName("Navi 48 [Radeon RX 9070/9070 XT/9070 GRE] (rev c0)"), "Radeon RX 9070/9070 XT/9070 GRE");
   assert.equal(Model.cleanGpuName("Navi 31 [Radeon RX 7900 XTX]"), "Radeon RX 7900 XTX");
   assert.equal(Model.cleanGpuName("AD102 [GeForce RTX 4090]"), "GeForce RTX 4090");
   assert.equal(Model.cleanGpuName("Raptor Lake-P [Iris Xe Graphics]"), "Iris Xe Graphics");
@@ -243,6 +245,109 @@ test("cleanGpuName prefers the marketing name inside brackets", () => {
   assert.equal(Model.cleanGpuName("NVIDIA GeForce RTX 4070"), "NVIDIA GeForce RTX 4070");
   assert.equal(Model.cleanGpuName("Intel Corporation Ice Lake-LP GT2 [Iris Plus Graphics G1]"), "Iris Plus Graphics G1");
   assert.equal(Model.cleanGpuName(""), "");
+});
+
+const AMDGPU_IDS = [
+  "# List of AMDGPU IDs",
+  "#",
+  "1.0.0",
+  "7550,\tC0,\tAMD Radeon RX 9070 XT",
+  "7550,\tC2,\tAMD Radeon RX 9070 GRE",
+  "7550,\tC3,\tAMD Radeon RX 9070",
+  "7481,   C7,     AMD Steam Machine",
+  "15BF,\tC1,\tAMD Radeon(TM) 780M Graphics",
+  ""
+].join("\n");
+
+test("parseAmdgpuIds keys product names by device and revision", () => {
+  const ids = Model.parseAmdgpuIds(AMDGPU_IDS);
+  assert.equal(ids["7550:c0"], "AMD Radeon RX 9070 XT");
+  assert.equal(ids["7550:c2"], "AMD Radeon RX 9070 GRE");
+  assert.equal(ids["7550:c3"], "AMD Radeon RX 9070");
+  assert.equal(ids["7481:c7"], "AMD Steam Machine", "space-separated rows parse too");
+  assert.equal(Object.keys(ids).length, 5);
+  assert.deepEqual(Model.parseAmdgpuIds(""), {});
+  assert.deepEqual(Model.parseAmdgpuIds(null), {});
+});
+
+test("parseAmdgpuIds keeps the first row of a repeated key, like libdrm", () => {
+  const ids = Model.parseAmdgpuIds([
+    "15D8,\tDB,\tAMD Radeon Vega 3 Graphics",
+    "743F,\tC3,\tAMD Radeon RX 6500",
+    "15D8,\tdb,\tAMD Radeon Vega 8 Graphics",
+    "743F,\tC3,\tAMD Radeon RX 6500M",
+    "6808,\t00,\t<bad>",
+    "6808,\t00,\tATI FirePro V (FireGL V) Graphics Adapter"
+  ].join("\n"));
+  assert.equal(ids["15d8:db"], "AMD Radeon Vega 3 Graphics");
+  assert.equal(ids["743f:c3"], "AMD Radeon RX 6500");
+  assert.equal(ids["6808:00"], "ATI FirePro V (FireGL V) Graphics Adapter", "first valid row");
+  assert.equal(Object.keys(ids).length, 3);
+  // Duplicates do not use up the row cap.
+  assert.equal(Object.keys(Model.parseAmdgpuIds([
+    "743F,\tC3,\tAMD Radeon RX 6500",
+    "743F,\tC3,\tAMD Radeon RX 6500M",
+    "743F,\tC1,\tAMD Radeon RX 6500 XT"
+  ].join("\n"), 2)).length, 2);
+});
+
+test("parseAmdgpuIds drops malformed and hostile rows", () => {
+  const ids = Model.parseAmdgpuIds([
+    "7550,\tC0,\t<b>Radeon</b>",
+    "7550,\tC2,\tAMD Radeon $(id)",
+    "755,\tC0,\tAMD Radeon short id",
+    "7550,\tC,\tAMD Radeon short rev",
+    "7550 C3 AMD Radeon no commas",
+    "7550,\tC3,\t   ",
+    "7550,\tC4,\tAMD Radeon " + "X".repeat(200)
+  ].join("\n"));
+  assert.deepEqual(Object.keys(ids), ["7550:c4"]);
+  assert.equal(ids["7550:c4"].length, 64, "names are clipped");
+  const capped = Model.parseAmdgpuIds(AMDGPU_IDS, 2);
+  assert.equal(Object.keys(capped).length, 2);
+});
+
+test("parseSystemGpus names shared-PCI-ID AMD SKUs by revision", () => {
+  const ids = Model.parseAmdgpuIds(AMDGPU_IDS);
+  const lspci = { "0000:03:00.0": { device: "Navi 48 [Radeon RX 9070/9070 XT/9070 GRE]" } };
+  const card = (revision) => Model.parseSystemGpus([{
+    card: "card0", vendor: "amd", slot: "0000:03:00.0", driver: "amdgpu", pciId: "1002:7550", revision: revision
+  }], lspci, ids)[0];
+  assert.equal(Model.gpuDisplayName(card("c0")), "Radeon RX 9070 XT");
+  assert.equal(Model.gpuDisplayName(card("C2")), "Radeon RX 9070 GRE");
+  assert.equal(Model.gpuDisplayName(card("c3")), "Radeon RX 9070");
+  assert.equal(card("c0").revision, "c0");
+  // Unknown revision, no revision, or no table: the lspci list, unguessed.
+  assert.equal(card("c9").marketingName, "");
+  assert.equal(Model.gpuDisplayName(card("c9")), "Radeon RX 9070/9070 XT/9070 GRE");
+  assert.equal(Model.gpuDisplayName(card("")), "Radeon RX 9070/9070 XT/9070 GRE");
+  assert.equal(card("0xc0").revision, "", "revision must be two hex digits");
+  const noTable = Model.parseSystemGpus([{
+    card: "card0", vendor: "amd", slot: "0000:03:00.0", pciId: "1002:7550", revision: "c0"
+  }], lspci)[0];
+  assert.equal(Model.gpuDisplayName(noTable), "Radeon RX 9070/9070 XT/9070 GRE");
+  // The table is AMD's: another vendor with a colliding device ID is ignored.
+  const other = Model.parseSystemGpus([{
+    card: "card1", vendor: "intel", slot: "0000:00:02.0", pciId: "8086:7550", revision: "c0"
+  }], {}, ids)[0];
+  assert.equal(other.marketingName, "");
+});
+
+test("gpuDisplayName tidies amdgpu.ids names and falls back to lspci", () => {
+  assert.equal(Model.gpuDisplayName({ marketingName: "AMD Radeon(TM) 780M Graphics", name: "Phoenix1" }), "Radeon 780M Graphics");
+  assert.equal(Model.gpuDisplayName({ marketingName: "ATI FirePro W5000" }), "ATI FirePro W5000");
+  assert.equal(Model.gpuDisplayName({ marketingName: "", name: "AD102 [GeForce RTX 4090]" }), "GeForce RTX 4090");
+  assert.equal(Model.gpuDisplayName({ name: "" }), "");
+  assert.equal(Model.gpuDisplayName(null), "");
+});
+
+test("reconcileGpuTopology carries the marketing name for panel titles", () => {
+  const topo = Model.reconcileGpuTopology([{
+    card: "card0", vendor: "amd", path: "/sys/class/drm/card0/device", boot: true,
+    slot: "0000:03:00.0", pciClass: "0x030000", pciId: "1002:7550", driver: "amdgpu"
+  }], { gpusByCard: { card0: { name: "Navi 48 [Radeon RX 9070/9070 XT/9070 GRE]", marketingName: "AMD Radeon RX 9070 XT" } } }, "auto");
+  assert.equal(topo.discreteGpus.length, 1);
+  assert.equal(Model.gpuDisplayName(topo.discreteGpus[0]), "Radeon RX 9070 XT");
 });
 
 test("gpuVramPct understands stream, DRM and nvidia shapes", () => {
