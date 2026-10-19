@@ -34,7 +34,7 @@ self-held FIFO provides timing. Setup and cleanup use external tools.
 | --- | --- |
 | `system-info` | Startup, `R`, and GPU-tab refresh; hardware and interface identity |
 | `disk-info` | Startup and `R`; disk identity, backing devices, mounts |
-| `gpu-stats list` | Startup; detected GPU inventory |
+| `gpu-stats list` | Startup and `R`; detected GPU inventory and PCI identities |
 | `process-sample` → `qproc.py` | CPU, Memory, or Drives tab open; one `/proc` walk for all three |
 | `process-net` | Network tab open with a valid interface; TCP attribution |
 | `gpu-stats sample nvidia` | NVIDIA segment or GPU tab visible |
@@ -44,8 +44,14 @@ self-held FIFO provides timing. Setup and cleanup use external tools.
 `panelIntervalMs` controls poll timers, including GPU polls needed by a
 visible bar segment. `barIntervalMs` controls the stream and graph ticks.
 Settings-view visibility does not clear the current metric tab's viewer
-flag, so its polls can continue while settings is open. GPU inventory is
-not re-enumerated by `R`; newly attached cards need a plugin/shell reload.
+flag, so its polls can continue while settings is open. `R` re-enumerates
+GPU and disk inventory; settings and history resolve physical identities
+before choosing kernel names. GPU pollers capture their command and device
+identity at launch, so a result from a replaced or renumbered card cannot
+seed the new card's live readings or DRM rate state. NVIDIA queries use
+the resolved PCI address instead of inferring its driver index from card
+order. A failed GPU refresh preserves the last successful inventory and
+live state while reporting its error; startup failures remain unavailable.
 
 See [Measurements](METRICS.md) for calculations and [Security](../SECURITY.md)
 for state paths and failure behavior.
@@ -77,6 +83,7 @@ syntax, and runs helper smoke checks in a mawk/gawk matrix. The
 
 ```sh
 bash tests/qs-smoke.sh
+bash tests/qs-device-identity.sh
 bash tests/qmllint.sh
 bash tests/render.sh cpu /tmp/quadrant-cpu.png
 ```
@@ -89,6 +96,20 @@ need the Omarchy `qs.*` imports. It skips without those prerequisites.
 The watchdog regression can also run independently with
 `bash tests/qs-stream-recovery.sh`; it uses Qt's offscreen platform and only
 needs Quickshell.
+
+`qs-device-identity.sh` runs the real store offscreen with staged helper
+inventories. It exercises delayed disk identity, GPU and disk enumeration
+swaps via `refreshHardware()` (the `R` path), absent pins and recovery,
+legacy history across a simulated boot, replacement hardware, stale GPU
+poll results, NVIDIA PCI targeting, and failed GPU refreshes (envelope and
+process failures, startup recovery, and a successful empty scan). Settings
+regressions cover shell/IPC policy resets, inventory refresh before the
+writer acknowledges a reset, and paired writes through the CLI fallback.
+It skips only if Quickshell is missing. Pure tests include a frozen released
+settings reader/writer to check downgrade preservation. Python tests run
+disk/GPU inventory against temporary roots selected by
+`QUADRANT_SYS_PATH` / `QUADRANT_DEV_PATH`; these are fixture hooks, not
+plugin settings.
 
 `qmllint.sh` needs qmllint and an Omarchy shell at
 `${OMARCHY_PATH:-/usr/share/omarchy}/shell`; it skips when either is

@@ -74,7 +74,7 @@ for run in (a, b):
     assert run["coverage-recovery"] == {"procError": "", "cpuRowsRecovered": True, "error": "", "baseline": 1, "value": 0}, run["coverage-recovery"]
 assert a["viewers-after"] == {"gpuSeg": 1, "gpuTab": 0, "open": 1}, a["viewers-after"]
 hist = json.load(open(sys.argv[3]))
-assert hist["v"] == 1 and len(hist["cpu"]) >= 1 and len(hist["mem"]) >= 1, hist.keys()
+assert hist["v"] == 2 and len(hist["cpu"]) >= 1 and len(hist["mem"]) >= 1, hist.keys()
 assert hist["tags"]["iface"] == s["iface"], hist["tags"]
 # Second run starts with the first run's buckets glued in front of its own.
 s2 = b["stream"]

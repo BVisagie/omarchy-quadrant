@@ -82,10 +82,10 @@ test("loadHistoryFile validates a persisted file", () => {
   assert.equal("x y" in good.series.cpu[0], false);
   assert.deepEqual(good.series.mem, []);
   assert.equal(good.any, true);
-  assert.equal(Model.loadHistoryFile({ v: 2 }, now, 3600, 10), null);
+  assert.equal(Model.loadHistoryFile({ v: 99 }, now, 3600, 10), null);
   assert.equal(Model.loadHistoryFile("[]", now, 3600, 10), null);
   const payload = Model.historyFilePayload({ cpu: [{ t: 1, u: 2 }] }, { iface: "eth0" }, now);
-  assert.equal(payload.v, 1);
+  assert.equal(payload.v, 2);
   assert.deepEqual(payload.cpu, [{ t: 1, u: 2 }]);
   assert.deepEqual(payload.tags, { gpu: "", iface: "eth0", disk: "" });
   assert.deepEqual(payload.gpu, []);

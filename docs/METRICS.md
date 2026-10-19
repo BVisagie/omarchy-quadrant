@@ -123,7 +123,20 @@ every 30 s and when the store is destroyed; a crash can lose recent
 samples. Minute history and process sparklines are not persisted.
 
 Saved GPU, interface, and disk histories are adopted only when their
-device tags match. Changing devices clears that metric's history.
+device tags match. Disk tags use whole-disk by-id names; GPU tags use PCI
+location plus hardware fingerprint. Renumbering a matched device keeps
+its history. A new identity starts fresh, and its first sample seeds new
+counter baselines. The store waits for disk inventory before adopting
+disk history, even when stream rates arrived first.
+
+Old history files with only `cardN` or disk names are adopted only if
+their save time is within the current boot, checked against `/proc/stat`
+`btime`. Missing boot/save metadata discards that device history. CPU and
+memory history is unaffected; network history still follows the interface
+name. Version 2 history files make the identity tags explicit; older
+Quadrant releases ignore that file version. See [Settings](SETTINGS.md)
+for replacement hardware and missing-ID limits.
+
 Graphs leave breaks between samples beyond a cadence-dependent gap
 threshold; shorter interruptions may still be joined. The hour view's
 bucket averages cannot preserve every brief spike's size or exact timing.
