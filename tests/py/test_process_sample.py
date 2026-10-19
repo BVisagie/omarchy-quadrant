@@ -141,6 +141,17 @@ class Sampling(unittest.TestCase):
         self.assertEqual((row["read"], row["write"]), (0, 0))  # measured idle
         self.assertEqual(expanded["cpu"], [])  # no triplicate payload
 
+    def test_compact_ranks_candidates_before_machine_percentage_rounding(self):
+        for pid in range(1, 81):
+            self.process(pid, "worker", ticks=0, start=pid)
+        self.run_at(1000)
+        self.process(80, "active-worker", ticks=1, start=80)
+        with patch.object(qproc.os, "cpu_count", return_value=4096):
+            sample = self.run_at(1002)
+        self.assertEqual(sample["cpu"][0]["pid"], 80)
+        self.assertEqual(sample["cpu"][0]["value"], 0)  # rounded for display, not candidate selection
+        self.assertGreater(sample["cpu"][0]["core"], 0)
+
     def test_sub_400ms_request_never_walks_or_advances_baseline(self):
         self.process(1, "worker", ticks=0, start=1, io=(0, 0))
         self.run_at(1000)

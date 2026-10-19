@@ -231,6 +231,7 @@ def collect(count: int, window: float, expanded: bool, state_path: str) -> dict:
             try:
                 delta = rec["ticks"] - int(old["tk"])
                 if delta >= 0:
+                    rec["cpu_ticks"] = delta
                     rec["core"] = round(100.0 * delta / clk / dt, 1)
                     rec["cpu"] = round(100.0 * delta / clk / dt / ncpu, 2)
                     cpu_ready += 1
@@ -278,7 +279,7 @@ def collect(count: int, window: float, expanded: bool, state_path: str) -> dict:
         result["rows"] = rows
         return result
 
-    cpu = sorted((r for r in snap.values() if r["cpu"] is not None), key=lambda r: (-r["cpu"], r["pid"]))
+    cpu = sorted((r for r in snap.values() if r["cpu"] is not None), key=lambda r: (-r["cpu_ticks"], r["pid"]))
     mem = sorted(snap.values(), key=lambda r: (-r["rss_kb"], r["pid"]))
     io = sorted((r for r in snap.values() if r["read"] is not None and r["read"] + r["write"] > 0),
                 key=lambda r: (-(r["read"] + r["write"]), r["pid"]))
