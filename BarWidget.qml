@@ -193,7 +193,7 @@ BarWidget {
   // Cells size to their content with one constant gap between them, so a
   // one-digit value never leaves a hole before the next glyph. The slot
   // itself stays at a fixed width — the sum of every visible cell at its
-  // widest ("99%") — so neighbouring bar widgets never move; the slack
+  // widest ("100%") — so neighbouring bar widgets never move; the slack
   // collects at the end of the slot, and a cell that changes digit count
   // slides its neighbours smoothly.
   readonly property real labelGap: Commons.Style.space(3)
@@ -217,7 +217,7 @@ BarWidget {
   }
   // Widest a cell can get; the slot reserves this much per visible cell.
   function metricReserveFor(metric) {
-    var w = Math.ceil(captionFm.advanceWidth("99%"))
+    var w = Math.ceil(captionFm.advanceWidth("100%"))
     if (metric === "gpu" && root.reserveEstimatePrefix) w += Math.ceil(captionFm.advanceWidth("~"))
     var lw = labelWidthFor(metric)
     if (lw > 0) w += labelGap + lw

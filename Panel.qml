@@ -25,8 +25,8 @@ Panel {
   readonly property int panelIntervalMs: store ? store.panelIntervalMs : 2000
   readonly property color dim: Model.dimColor(String(Commons.Color.foreground), String(Commons.Color.background))
 
-  // Last-used tab survives close/reopen; the window choice and the settings
-  // view do not.
+  // Last-used tab and history-window choice survive close/reopen for this
+  // panel instance. The settings view closes with the panel.
   property string currentTab: "cpu"
   property bool longWindow: false
   property bool settingsOpen: false
@@ -246,7 +246,7 @@ Panel {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             iconText: root.settingsOpen ? "󰅖" : "󰒓"
-            tooltipText: root.settingsOpen ? "Close settings (S)" : "Settings (S)"
+            tooltipText: root.settingsOpen ? "Close settings (Esc)" : "Settings (S)"
             onClicked: root.settingsOpen = !root.settingsOpen
           }
         }

@@ -44,7 +44,7 @@
         "key": "segments",
         "type": "multiselect",
         "label": "Bar segments",
-        "description": "Which metric segments appear in the bar slot. Each panel tab has a Show in bar checkbox that updates this list. An empty list keeps a compact system-monitor icon. The GPU segment is dedicated cards only; when none is detected the gpu token is shown as Drives unless diskFallbackWithoutGpu is false.",
+        "description": "Which metric segments appear in the bar slot. Each panel tab's in bar switch updates this list. An empty list keeps a compact system-monitor icon. The GPU segment is dedicated cards only; when none is detected the gpu token is shown as Drives unless diskFallbackWithoutGpu is false.",
         "options": [
           {
             "value": "cpu",
@@ -137,7 +137,7 @@
         "key": "diskFallbackWithoutGpu",
         "type": "boolean",
         "label": "Show Drives in the bar when no dedicated GPU",
-        "description": "When true, the configured gpu bar token is displayed as Drives if no dedicated GPU is detected. Unchecking Show in bar on the Drives tab sets this to false. Does not rewrite the segments list.",
+        "description": "When true, the configured gpu bar token is displayed as Drives if no dedicated GPU is detected. Turning off the in bar switch on the Drives tab sets this to false. Does not rewrite the segments list.",
         "defaultValue": true
       },
       {

@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- Shell palette and style references are namespaced for Qt 6.12. The
+  offscreen renderer and local QML lint gate work with the current Qt tools.
+- Process helpers stream payloads instead of passing them as command-line
+  arguments, so large TCP socket lists no longer fail at the argument-size
+  limit. Samples above the 1 MiB envelope limit show an explicit coverage
+  error; incomplete socket counters never become a rate baseline.
+- A cold Drives process sample shows its measuring state. Settings help uses
+  the visible tab count and names Esc for closing settings. The bar reserves
+  enough space for 100%, and documentation describes the Drives fallback's
+  position after Memory.
 - AMD cards that share a PCI device ID with other models are named
   exactly: an RX 9070 XT no longer shows as "Radeon RX 9070", nor an RX
   7900 XTX as "7900 XT". The name comes from libdrm's `amdgpu.ids` by

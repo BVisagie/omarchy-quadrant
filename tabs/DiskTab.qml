@@ -220,7 +220,9 @@ Item {
       cursorActive: root.panel ? root.panel.cursorActive === true : false
       onRowHovered: function (index, on) { if (root.panel && root.panel.hoverRow) root.panel.hoverRow(index, on) }
       valueHeader: "DISK I/O"
-      emptyText: root.active ? "No disk activity from your processes" : "Open this tab to sample processes"
+      emptyText: !root.active ? "Open this tab to sample processes"
+                 : !root.model || !root.model.procStats || !(root.model.procStats.dt > 0)
+                   ? "Sampling…" : "No disk activity from your processes"
       errorText: root.errorText
     }
 

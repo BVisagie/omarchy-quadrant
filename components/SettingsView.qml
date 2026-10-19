@@ -290,7 +290,7 @@ Column {
       rowSpacing: Commons.Style.space(3)
       Repeater {
         model: [
-          "← →  or  1–5", "switch tab",
+          "← →  or  1–" + (root.store && root.store.discreteGpuAvailable ? 5 : 4), "switch tab",
           "↑ ↓", "move through the process rows",
           "H", "last hour / last minute on every graph",
           "S", "settings",

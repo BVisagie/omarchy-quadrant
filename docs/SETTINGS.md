@@ -27,7 +27,7 @@ time any setting is saved.
 | `networkInterface` | `"auto"` | `auto` = default route across IPv4 **and** IPv6, lowest metric wins, IPv4 takes ties; without a default route, the first non-loopback interface |
 | `gpuDevice` | `"auto"` | Dedicated card for the GPU segment and tab: boot display card among detected dedicated GPUs, else `card0`, else the first detected dedicated card; or a specific `cardN` |
 | `integratedGpuDevice` | `"auto"` | Which card is integrated graphics: `auto` (Intel at `00:02.x` or a known AMD APU), `none` (treat all cards as dedicated), or a `cardN` (force that card to be integrated) |
-| `diskFallbackWithoutGpu` | `true` | Show Drives in the GPU slot when no dedicated card is detected |
+| `diskFallbackWithoutGpu` | `true` | Show Drives after Memory instead of GPU when no dedicated card is detected |
 | `diskDevice` | `"auto"` | `auto` = physical disk backing `/` (LUKS/LVM folded), else the largest; or a sysfs name such as `nvme0n1` |
 | `barPalette` | `"theme"` | `theme`, `heat`, or `vivid` (see [Bar](USAGE.md#bar)) |
 | `barLabels` | `"glyph"` | `glyph`, `letter`, or `none` |
@@ -51,7 +51,8 @@ remain pinned and produce a warning rather than selecting another device. Invali
 fall back to `auto`; `lo` is excluded from interface selection.
 
 Without a dedicated GPU, `diskFallbackWithoutGpu` replaces a configured
-`gpu` token with Drives for display without rewriting `segments`. The
+`gpu` token with Drives for display without rewriting `segments`. Drives
+uses its canonical position after Memory, rather than the GPU position. The
 Drives tab's **in bar** switch controls that fallback in this case. It
 also removes an explicit `disk` segment when switched off. To restore a
 fallback segment, the configured list must still contain `gpu`.
