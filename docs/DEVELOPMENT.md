@@ -114,7 +114,10 @@ the screenshots without changing their UI text, colours, or measurements.
 Use `QUADRANT_RENDER_PALETTE=dark`, `light`, or `mono` for temporary palette
 fixtures in the render process. These do not change the installed theme.
 The renderer uses isolated state and runtime directories and requires a fresh
-capture before replacing the output file.
+capture before replacing the output file. When a session Wayland socket is
+available, it links only that socket into the temporary runtime and retains
+the desktop platform theme so process icons match the live panel. Without a
+socket it disables the platform theme for headless rendering.
 
 ## Before publishing
 

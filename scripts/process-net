@@ -80,7 +80,7 @@ if [[ -n ${IP:-} ]]; then
         [[ -n $a && $a != *[[:space:]]* && $a == *[0-9]* ]] || continue
         [[ -n $addrs ]] && addrs+=$'\n'
         addrs+="$a"
-        (( ${#addrs} <= 16384 )) || fail "too many interface addresses; process coverage unavailable"
+        (( ${#addrs} <= 16384 )) || fail "too many interface addresses; process attribution unavailable"
         ;;
     esac
   done < <("$IP" -o addr show dev "$ifname" 2>/dev/null || true)

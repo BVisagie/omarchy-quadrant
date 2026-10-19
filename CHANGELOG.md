@@ -6,6 +6,7 @@
 
 - Shell palette and style references are namespaced for Qt 6.12. The
   offscreen renderer and local QML lint gate work with the current Qt tools.
+  Captures retain the desktop icon theme when a session socket is available.
 - Process helpers stream payloads instead of passing them as command-line
   arguments, so large TCP socket lists no longer fail at the argument-size
   limit. Samples above the 1 MiB envelope limit show an explicit coverage

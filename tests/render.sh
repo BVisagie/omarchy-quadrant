@@ -13,11 +13,24 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/tree" "$work/state" "$work/runtime"
 chmod 700 "$work/runtime"
+# GTK's platform theme needs the session socket for the same icon lookup as
+# the live shell. Share only that socket; sampler state stays in our runtime.
+theme=""
+display=""
+socket=${WAYLAND_DISPLAY:-}
+if [[ -n $socket ]]; then
+  [[ $socket == /* ]] || socket=${XDG_RUNTIME_DIR:-}/$socket
+  if [[ -S $socket ]]; then
+    ln -s "$socket" "$work/runtime/wayland-render"
+    display=wayland-render
+    theme=${QT_QPA_PLATFORMTHEME:-}
+  fi
+fi
 cp -r components tabs lib scripts BarWidget.qml Panel.qml "$work/tree/"
 ln -s "$shell_dir/Commons" "$work/tree/Commons"
 ln -s "$shell_dir/Ui" "$work/tree/Ui"
 cp tests/qs/render-tab.qml "$work/tree/shell.qml"
-if ! QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME="" QUADRANT_RENDER_OUT="$work/render.png" QUADRANT_RENDER_TAB="$tab" XDG_STATE_HOME="$work/state" XDG_RUNTIME_DIR="$work/runtime" \
+if ! QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME="$theme" WAYLAND_DISPLAY="$display" QUADRANT_RENDER_OUT="$work/render.png" QUADRANT_RENDER_TAB="$tab" XDG_STATE_HOME="$work/state" XDG_RUNTIME_DIR="$work/runtime" \
   timeout 30 quickshell -p "$work/tree/shell.qml" >"$work/render.log" 2>&1; then
   cat "$work/render.log" >&2
   exit 1
