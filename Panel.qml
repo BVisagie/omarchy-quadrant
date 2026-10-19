@@ -164,39 +164,10 @@ Panel {
     }
     Behavior on contentHeight { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
-    PanelKeyCatcher {
+    Components.PanelKeys {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.settingsOpen || root.searchFocused
-      onCloseRequested: root.close()
-      onTabRequested: function (direction) { root.switchPanel(direction) }
-      onMoveRequested: function (dx, dy) {
-        if (dx !== 0) root.stepTab(dx)
-        if (dy !== 0) root.moveCursor(dy)
-      }
-      onTextKey: function (t) {
-        if (t === "/" && root.currentProcessList) { root.currentProcessList.focusSearch(); return }
-        if (t === "r" || t === "R") {
-          if (root.store) {
-            root.store.refreshHardware()
-            root.store.pollIgpu()
-          }
-          root.refreshActiveTab()
-          return
-        }
-        if (t === "h" || t === "H") { root.longWindow = !root.longWindow; return }
-        if (t === "s" || t === "S") { root.settingsOpen = !root.settingsOpen; return }
-        if (t >= "1" && t <= "9") {
-          var n = parseInt(t, 10)
-          if (n >= 1 && n <= root.tabs.length) { root.selectTabIndex(n - 1); root.settingsOpen = false }
-        }
-      }
-
-      // Escape closes the settings view first, then the panel.
-      Keys.onEscapePressed: function (event) {
-        if (root.settingsOpen) { root.settingsOpen = false; event.accepted = true }
-        else event.accepted = false
-      }
+      panel: root
 
       ColumnLayout {
         id: contentColumn
@@ -204,54 +175,18 @@ Panel {
         height: parent.height
         spacing: Commons.Style.space(10)
 
-        // ---- header: tabs · show-in-bar · gear ----
-        Item {
+        Components.PanelHeader {
           id: header
           Layout.fillWidth: true
-          implicitHeight: Math.max(tabStrip.implicitHeight, gear.implicitHeight, barToggleRow.implicitHeight)
-
-          ButtonGroup {
-            id: tabStrip
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            options: root.tabOptions
-            value: root.settingsOpen ? "" : root.currentTab
-            fontSize: Commons.Style.font.caption
-            onChanged: function (value) { root.currentTab = value; root.settingsOpen = false }
-          }
-
-          Row {
-            id: barToggleRow
-            anchors.right: gear.left
-            anchors.rightMargin: Commons.Style.space(10)
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Commons.Style.space(6)
-            visible: !root.settingsOpen && root.store && root.barSegmentKey !== ""
-
-            Text {
-              textFormat: Text.PlainText
-              text: "in bar"
-              color: root.dim
-              font.family: Commons.Style.font.family
-              font.pixelSize: Commons.Style.font.caption
-              anchors.verticalCenter: parent.verticalCenter
-            }
-            ToggleSwitch {
-              checked: root.barSegmentEnabled
-              trackHeight: Math.max(16, Math.round(Commons.Style.spacing.controlHeight * 0.5))
-              anchors.verticalCenter: parent.verticalCenter
-              onToggled: if (root.store) root.store.setBarSegment(root.barSegmentKey, !root.barSegmentEnabled)
-            }
-          }
-
-          PanelActionButton {
-            id: gear
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            iconText: root.settingsOpen ? "󰅖" : "󰒓"
-            tooltipText: root.settingsOpen ? "Close settings (Esc)" : "Settings (S)"
-            onClicked: root.settingsOpen = !root.settingsOpen
-          }
+          options: root.tabOptions
+          currentTab: root.currentTab
+          settingsOpen: root.settingsOpen
+          barToggleVisible: root.store !== null && root.barSegmentKey !== ""
+          barEnabled: root.barSegmentEnabled
+          resourceName: root.tabLabels[root.currentTab] || root.currentTab
+          onTabSelected: function (value) { root.currentTab = value; root.settingsOpen = false }
+          onToggleBar: if (root.store) root.store.setBarSegment(root.barSegmentKey, !root.barSegmentEnabled)
+          onToggleSettings: root.settingsOpen = !root.settingsOpen
         }
 
         PanelSeparator {

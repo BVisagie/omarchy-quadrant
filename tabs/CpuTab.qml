@@ -143,6 +143,7 @@ Item {
       width: parent.width
       spacing: Commons.Style.space(6)
 
+      Components.SectionHeader { width: parent.width; text: "SYSTEM" }
       Components.StatRow {
         width: parent.width
         visible: root.cpuFreqValue !== ""

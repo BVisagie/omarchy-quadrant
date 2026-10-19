@@ -109,31 +109,42 @@ Item {
         subText: "used"
       }
 
-      Components.RingGauge {
-        size: Commons.Style.space(96)
-        fraction: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined
-                  ? Math.min(1, root.psi.ms10 / root.pressureCeiling) : 0
-        color: root.pal.hot
-        centerText: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined ? Model.formatPct(root.psi.ms10, 1) : "--"
-        subText: "pressure"
+      Column {
+        width: Commons.Style.space(96)
+        spacing: Commons.Style.space(2)
+        Components.RingGauge {
+          objectName: "memoryPressure"
+          size: Commons.Style.space(96)
+          fraction: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined
+                    ? Math.min(1, root.psi.ms10 / root.pressureCeiling) : 0
+          color: root.pal.hot
+          centerText: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined ? Model.formatPct(root.psi.ms10, 1) : "--"
+          subText: "pressure"
+        }
+        Text {
+          objectName: "memoryPressureScale"
+          textFormat: Text.PlainText
+          text: "0–25% scale"
+          color: root.pal.dim
+          font.family: Commons.Style.font.family
+          font.pixelSize: Commons.Style.font.caption
+          width: parent.width
+          horizontalAlignment: Text.AlignHCenter
+          wrapMode: Text.WordWrap
+        }
       }
 
       Column {
         width: parent.width < Commons.Style.space(360) ? parent.width : Math.max(0, parent.width - Commons.Style.space(96) * 2 - parent.spacing * 2)
         spacing: Commons.Style.space(4)
 
+        Components.SectionHeader {
+          width: parent.width
+          text: "COMPOSITION"
+        }
         Components.CompositionBar {
           width: parent.width
           segments: root.compositionSegments
-        }
-        Text {
-          textFormat: Text.PlainText
-          text: "Cache can be reclaimed. Used cannot."
-          color: root.pal.dim
-          font.family: Commons.Style.font.family
-          font.pixelSize: Commons.Style.font.caption
-          width: parent.width
-          wrapMode: Text.WordWrap
         }
         Repeater {
           model: [
@@ -180,6 +191,17 @@ Item {
       }
     }
 
+    Text {
+      objectName: "memoryAccounting"
+      textFormat: Text.PlainText
+      text: "Used = total − available. Composition separates free RAM, cache, unreclaimable slab and the remaining application estimate."
+      color: root.pal.dim
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
+      width: parent.width
+      wrapMode: Text.WordWrap
+    }
+
     Components.GraphBlock {
       width: parent.width
       title: "USED"
@@ -202,9 +224,10 @@ Item {
       width: parent.width
       spacing: Commons.Style.space(6)
 
+      Components.SectionHeader { width: parent.width; text: "SWAP" }
       Components.StatRow {
         width: parent.width
-        label: "Swap"
+        label: "Used"
         value: root.swap ? Model.formatKiB(root.swap.usedK) + " of " + Model.formatKiB(root.swap.totalK) : "--"
       }
       Components.StatRow {

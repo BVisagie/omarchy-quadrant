@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Window
 import Quickshell
 import qs.Commons as Commons
+import qs.Ui as Ui
 import "components" as Components
 import "." as Plugin
 import "tabs" as Tabs
@@ -12,6 +13,7 @@ ShellRoot {
   property string outPath: Quickshell.env("QUADRANT_RENDER_OUT")
   property string tab: Quickshell.env("QUADRANT_RENDER_TAB") || "cpu"
   property string palette: Quickshell.env("QUADRANT_RENDER_PALETTE")
+  property bool showHeader: Quickshell.env("QUADRANT_RENDER_HEADER") === "1" && tab !== "bar"
 
   // Palette fixtures affect this throwaway process only; the installed theme
   // and user configuration are never changed.
@@ -49,7 +51,7 @@ ShellRoot {
   QtObject {
     id: fakePanel
     property bool opened: true
-    property bool settingsOpen: false
+    property bool settingsOpen: harness.tab === "settings"
     property bool longWindow: Quickshell.env("QUADRANT_RENDER_LONG") === "1"
     property int cursorIndex: -1
     property bool cursorActive: false
@@ -59,12 +61,14 @@ ShellRoot {
     property var bar: fakeBar
     property int processCount: store.processCount
     property int panelIntervalMs: store.panelIntervalMs
+    readonly property var tabLabels: ({ cpu: "CPU", gpu: "GPU", mem: "Memory", disk: "Drives", net: "Network" })
+    readonly property var tabKeys: store.discreteGpuAvailable || harness.tab === "gpu" ? ["cpu", "gpu", "mem", "disk", "net"] : ["cpu", "mem", "disk", "net"]
   }
 
   Window {
     id: win
     width: Number(Quickshell.env("QUADRANT_RENDER_WIDTH")) || 440
-    height: Number(Quickshell.env("QUADRANT_RENDER_HEIGHT")) || 1100
+    height: Number(Quickshell.env("QUADRANT_RENDER_HEIGHT")) || (Quickshell.env("QUADRANT_RENDER_FIT") === "1" ? Math.ceil(col.implicitHeight) + 32 : 1100)
     visible: true
     color: Commons.Color.background
 
@@ -75,7 +79,18 @@ ShellRoot {
       id: col
       x: 16; y: 16
       width: parent.width - 32
-      spacing: 0
+      spacing: harness.showHeader ? Commons.Style.space(10) : 0
+      Components.PanelHeader {
+        visible: harness.showHeader
+        width: parent.width
+        options: fakePanel.tabKeys.map(function (t) { return { value: t, label: fakePanel.tabLabels[t] } })
+        currentTab: harness.tab
+        settingsOpen: fakePanel.settingsOpen
+        resourceName: fakePanel.tabLabels[harness.tab] || "CPU"
+        barToggleVisible: !fakePanel.settingsOpen
+        barEnabled: store.segmentEnabled(harness.tab === "mem" ? "memory" : harness.tab === "disk" ? "disk" : harness.tab === "net" ? "network" : harness.tab)
+      }
+      Ui.PanelSeparator { visible: harness.showHeader; width: parent.width }
       Loader {
         onLoaded: {
           if (item && item.processList && Quickshell.env("QUADRANT_RENDER_EXPANDED") === "1") {
