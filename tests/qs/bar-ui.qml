@@ -33,6 +33,7 @@ ShellRoot {
       host.vertical = false; host.barSize = 26
       shared.gpuTopologyReady = true; shared.gpuListFailed = false
       shared.discreteGpuAvailable = true; shared.diskAvailable = true
+      shared.gpu = { vendor: "intel" }; shared.streamLive = true
       shared.applySettings({ segments: Model.BAR_SEGMENTS })
       shared.cpuPct = { nonIdle: 42 }; shared.memComp = { usedPct: 62 }
       shared.gpuDisplay = { pct: 38, estimated: false }; shared.diskRates = { utilPct: 18 }
@@ -151,11 +152,71 @@ ShellRoot {
           if (Math.abs(item.x-positions[i].x)>0.5 || Math.abs(item.y-positions[i].y)>0.5)
             console.error("QBARUI cell moved " + JSON.stringify({ metric: metric, value: value, before: positions[i], after: [item.x,item.y] }))
           fuzzyCompare(item.x, positions[i].x, 0.5); fuzzyCompare(item.y, positions[i].y, 0.5)
-          if (metric === "net") { assertFits(findChild(item, "barDown")); assertFits(findChild(item, "barUp")) }
-          else assertFits(findChild(item, "barValue"))
+          var readings = metric === "net" ? [findChild(item, "barDown"), findChild(item, "barUp")] : [findChild(item, "barValue")]
+          for (var reading of readings) {
+            assertFits(reading)
+            compare(reading.horizontalAlignment, data.vertical ? Text.AlignHCenter : Text.AlignLeft,
+              "values stay beside their own label/trend, with slack after the reading")
+          }
           if (data.vertical) verify(item.width <= host.barSize)
           if (data.style === "graph-text") verify(trend(first, metric).width <= (data.vertical ? host.barSize : Commons.Style.space(64)))
         }
+      }
+    }
+    function test_gpu_vendor_reservation_and_uniform_vertical_percentages_data() {
+      var cases = []
+      for (var style of ["text", "graph-text"]) for (var vertical of [false, true])
+        cases.push({ tag: style + " " + vertical, style: style, vertical: vertical })
+      return cases
+    }
+    function test_gpu_vendor_reservation_and_uniform_vertical_percentages(data) {
+      host.vertical = data.vertical
+      shared.persistSettings({ barStyle: data.style })
+      for (var size of [{ strip: 26, base: 12 }, { strip: 28, base: 12 }, { strip: 34, base: 16 }]) {
+        Commons.Style.applyShellValues({ "font.base-size": size.base })
+        host.barSize = size.strip
+        var dedicatedWidth = null
+        for (var vendor of ["amd", "nvidia", "intel"]) {
+          shared.gpu = { vendor: vendor }
+          shared.gpuDisplay = { pct: 100, estimated: false }
+          wait(vendor === "amd" || (!data.vertical && vendor === "intel") ? 200 : 20)
+          var gpuValue = findChild(cell(first, "gpu"), "barValue")
+          var cpuValue = findChild(cell(first, "cpu"), "barValue")
+          if (data.vertical) {
+            for (var metric of ["cpu", "mem", "disk"])
+              compare(findChild(cell(first, metric), "barValue").font.pixelSize, gpuValue.font.pixelSize,
+                "visible percentage cells use one font size")
+            if (vendor !== "intel") compare(gpuValue.font.pixelSize, Commons.Style.font.caption,
+              "AMD/NVIDIA do not shrink to reserve an unavailable estimate prefix")
+          } else if (vendor !== "intel") {
+            compare(gpuValue.width, cpuValue.width, "only Intel needs a wider percentage slot")
+            if (dedicatedWidth === null) dedicatedWidth = first.implicitWidth
+            else compare(first.implicitWidth, dedicatedWidth)
+          } else verify(gpuValue.width > cpuValue.width)
+          var width = first.implicitWidth, fontSize = gpuValue.font.pixelSize
+          var positions = first.visibleBarCells.map(function (metric) {
+            var item = cell(first, metric); return { x: item.x, y: item.y }
+          })
+          for (var pct of [null, 9, 99, 100]) {
+            for (var estimated of vendor === "intel" ? [false, true] : [false]) {
+              shared.gpuDisplay = pct === null ? null : { pct: pct, estimated: estimated }
+              wait(5)
+              compare(first.implicitWidth, width); compare(gpuValue.font.pixelSize, fontSize)
+              assertFits(gpuValue)
+              for (var i = 0; i < first.visibleBarCells.length; i++) {
+                var item = cell(first, first.visibleBarCells[i])
+                fuzzyCompare(item.x, positions[i].x, 0.5); fuzzyCompare(item.y, positions[i].y, 0.5)
+              }
+            }
+          }
+        }
+        // Intel remains selected, but a disabled GPU must not reduce the
+        // remaining percentages to make room for its estimate prefix.
+        shared.persistSettings({ segments: ["cpu", "memory", "disk", "network"] })
+        wait(20)
+        compare(findChild(cell(first, "cpu"), "barValue").font.pixelSize, Commons.Style.font.caption)
+        shared.persistSettings({ segments: Model.BAR_SEGMENTS })
+        wait(20)
       }
     }
     function test_icon_only_and_hardware_return_keep_order() {

@@ -211,6 +211,10 @@ BarWidget {
   readonly property real outerPad: Commons.Style.spaceReal(6)
   readonly property int verticalSlot: root.bar ? root.bar.barSize : Commons.Style.bar.sizeVertical
   readonly property var trendPalette: Model.seriesPalette(String(Commons.Color.accent), String(barUrgent), String(barFg), String(barBg))
+  // Only Intel's frequency fallback can display an estimated percentage.
+  // Reserve it by device capability, so a measured/estimated sample change
+  // does not resize the cell.
+  readonly property bool reserveEstimatePrefix: root.gpu ? root.gpu.vendor === "intel" : false
 
   FontMetrics { id: captionFm; font.family: button.fontFamily; font.pixelSize: Commons.Style.font.caption; font.features: ({ "tnum": 1 }) }
   FontMetrics { id: glyphFm; font.family: button.fontFamily; font.pixelSize: root.glyphFontSize }
@@ -237,7 +241,7 @@ BarWidget {
   function valueReserveFor(metric) {
     if (captionFm.font.pixelSize <= 0) return 0
     if (metric === "net") return root.vertical ? rateReserve : rateReserve * 2 + rateGap
-    return Math.ceil(captionFm.advanceWidth(metric === "gpu" ? "~100%" : "100%"))
+    return Math.ceil(captionFm.advanceWidth(metric === "gpu" && reserveEstimatePrefix ? "~100%" : "100%"))
   }
   function cellReserveFor(metric) {
     var w = valueReserveFor(metric), labelWidth = labelWidthFor(metric)
@@ -247,8 +251,12 @@ BarWidget {
   }
   function valueFontSizeFor(metric) {
     if (!root.vertical) return Commons.Style.font.caption
+    // Keep every visible percentage at the same size. A hidden Intel GPU
+    // must not make CPU/Memory/Drives text smaller.
+    var reserve = metric === "net" ? rateReserve : valueReserveFor(
+      reserveEstimatePrefix && visibleBarCells.indexOf("gpu") >= 0 ? "gpu" : "cpu")
     return Math.max(1, Math.min(Commons.Style.font.caption,
-      Math.floor(Commons.Style.font.caption * Math.max(1, verticalSlot) / valueReserveFor(metric))))
+      Math.floor(Commons.Style.font.caption * Math.max(1, verticalSlot) / reserve)))
   }
   readonly property real reservedWidth: {
     var cells = root.visibleBarCells, width = 0
@@ -487,7 +495,7 @@ BarWidget {
         font.pixelSize: root.valueFontSizeFor(cell.metric)
         font.features: ({ "tnum": 1 })
         anchors.fill: parent
-        horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignRight
+        horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
         Behavior on color { ColorAnimation { duration: 320 } }
       }
@@ -502,7 +510,7 @@ BarWidget {
         font.features: ({ "tnum": 1 })
         width: root.vertical ? parent.width : root.rateReserve
         height: root.lineBoxHeight
-        horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignRight
+        horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
       }
       Text {
@@ -518,7 +526,7 @@ BarWidget {
         y: root.vertical ? root.lineBoxHeight : 0
         width: root.vertical ? parent.width : root.rateReserve
         height: root.lineBoxHeight
-        horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignRight
+        horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
       }
     }

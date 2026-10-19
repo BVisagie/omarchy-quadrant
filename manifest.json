@@ -276,7 +276,7 @@
         "key": "barOrder",
         "type": "multiselect",
         "label": "Bar segment order",
-        "description": "Ordered segment names, including hidden devices. Reorder with the panel arrows or an ordered JSON array through the CLI. Missing names append in canonical order.",
+        "description": "Order of all five segments, including hidden devices; this is not an enabled set. Reorder with the panel arrows or an ordered JSON array through the CLI. Missing names append in canonical order; use segments to enable or disable resources.",
         "options": [
           {
             "value": "cpu",

@@ -15,6 +15,7 @@ ShellRoot {
   property bool vertical: Quickshell.env("QUADRANT_RENDER_VERTICAL") === "1"
   property bool showSettings: Quickshell.env("QUADRANT_RENDER_TAB") === "settings"
   property bool missingGpu: Quickshell.env("QUADRANT_RENDER_MISSING_GPU") === "1"
+  property string gpuVendor: Model.parseEnumSetting(Quickshell.env("QUADRANT_RENDER_GPU_VENDOR"), ["intel", "amd", "nvidia"], "intel")
   property real stripSize: Number(Quickshell.env("QUADRANT_RENDER_BAR_SIZE")) || 26
   property var order: Model.barOrderFromSetting(Quickshell.env("QUADRANT_RENDER_ORDER") || "network,cpu,gpu,memory,disk")
   property int graphWidth: Number(Quickshell.env("QUADRANT_RENDER_GRAPH_WIDTH")) || 32
@@ -25,6 +26,7 @@ ShellRoot {
   BarFixture {
     id: shared
     discreteGpuAvailable: !harness.missingGpu
+    gpu: ({ vendor: harness.gpuVendor })
     settingsRaw: ({ barStyle: harness.style, barOrder: harness.order, barGraphWidth: harness.graphWidth,
       barLabels: harness.labels, segments: ["cpu", "gpu", "memory", "disk", "network"] })
   }
@@ -88,8 +90,12 @@ ShellRoot {
     id: captureTimer
     interval: harness.duration > 0 ? harness.duration * 1000 : 300
     onTriggered: {
+      var valueFonts = {}
+      if (typeof slot.valueFontSizeFor === "function")
+        for (var metric of slot.visibleBarCells) valueFonts[metric] = slot.valueFontSizeFor(metric)
       console.log("BAR_LAYOUT " + JSON.stringify({ width: slot.implicitWidth, height: slot.implicitHeight, cells: slot.visibleBarCells,
-        viewers: Object.keys(shared.viewers).length, storeTries: slot.storeTries, font: Commons.Style.font.caption }))
+        viewers: Object.keys(shared.viewers).length, storeTries: slot.storeTries, font: Commons.Style.font.caption,
+        gpuVendor: harness.gpuVendor, valueFonts: valueFonts }))
       win.contentItem.grabToImage(function (result) { result.saveToFile(harness.outPath); Qt.quit() })
     }
   }

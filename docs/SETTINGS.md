@@ -64,9 +64,9 @@ defaults are omitted when Quadrant saves. The helper scripts check their argumen
 
 In **Bar segments**, switches select what appears and the up/down arrows save
 its order. Disabled resources and missing devices remain in the ordered list.
-Moving one keeps keyboard focus on that resource's movement control. The
-manifest's list field declares the setting's array type; use the panel arrows
-or an ordered CLI array to change position.
+Moving one keeps keyboard focus on that resource's movement control. Use the
+panel arrows or an ordered CLI array to change position; use the switches
+or `segments` to enable or disable resources.
 
 `barOrder` keeps the first occurrence of each recognized segment, drops unknown
 names, and appends missing names in canonical order: CPU, GPU, Memory, Drives,
@@ -79,9 +79,11 @@ the canonical order, and the default enabled set.
 
 Choose **graph + text** under **Appearance** to add trends. Trend width applies
 only in that style; the stored choice survives returning to text. Every style
-reserves the widest value before rendering, including the estimated GPU
-prefix and both compact network rates. In a vertical bar, the plot sits above
-its value and text uses a fixed font size chosen to fit the available strip.
+reserves the widest value before rendering, including Intel's estimated GPU
+prefix and both compact network rates. Horizontal values stay beside their own
+labels or trends, with spare width after each reading. In a vertical bar, the
+plot sits above its value and all visible percentages share a fixed font size
+chosen to fit the available strip; network rates fit independently.
 The bar's minute window does not follow the panel's **1 hour** selection.
 
 ```sh

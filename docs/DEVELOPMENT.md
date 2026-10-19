@@ -160,15 +160,16 @@ height or covers a curve, including unknown and differently sized values.
 At 320/440 px, font size 18 and spacing scales 1/1.5/2, axes, time labels, duration controls and readouts
 stay inside the graph. Both load-patch modes run.
 
-`qs-bar-ui.sh` runs 44 native cases in each load-patch mode. Two actual widgets
+`qs-bar-ui.sh` runs 48 native cases in each load-patch mode. Two actual widgets
 resolve the same synthetic service and histories, with no embedded Store or
 extra collectors. Checks cover all values through 100%, estimated GPU prefixes,
 compact rate extremes, horizontal/vertical styles, glyph/letter/no labels,
-live font and spacing changes, fixed segment positions, dynamic click-target
-registration, icon-only mode, scale tooltips/offline history, and hardware
+left-aligned horizontal readings, uniform vertical percentage fonts, Intel-only
+estimate space, live font and spacing changes, fixed segment positions,
+dynamic click-target registration, icon-only mode, scale tooltips/offline history, and hardware
 loss/return. Settings tests use mouse and keyboard ordering, retained focus,
-effective Drives switches, style/width/reset, and persistence through the real Store, including QML's
-initial QVariantList settings. The panel is a small contract stand-in; these
+effective Drives switches, style/width/reset, and persistence through the real
+Store, including QML's initial QVariantList settings. The panel is a small contract stand-in; these
 offscreen cases establish routing, not layer-shell popup placement. Pure
 tests exercise all 120 segment orders through fallback and hardware recovery.
 
@@ -253,11 +254,19 @@ from `BarFixture.qml`, one shared service, isolated runtime/state, and a panel
 contract stand-in. It fails on QML runtime errors. Its defaults show all five
 segments with Network first; `QUADRANT_RENDER_ORDER` accepts comma-separated
 segment names. `QUADRANT_RENDER_GRAPH_WIDTH`, `QUADRANT_RENDER_LABELS`,
-`QUADRANT_RENDER_BAR_SIZE`, `QUADRANT_RENDER_MISSING_GPU=1`, and
+`QUADRANT_RENDER_BAR_SIZE`, `QUADRANT_RENDER_GPU_VENDOR=intel|amd|nvidia`,
+`QUADRANT_RENDER_MISSING_GPU=1`, and
 `QUADRANT_RENDER_MONITORS=2` select additional cases. Use
 `QUADRANT_RENDER_TAB=settings` for the settings view. Palettes and device
 scaling use the same variables as the tab renderer. These are process-local
 fixtures and never change installed settings.
+
+The manifest uses the shell's existing `multiselect` array metadata for
+`barOrder`; the installed shell does not generate plugin settings controls
+from it. The full order is edited with panel arrows or the CLI. A future
+schema-generated form needs an ordering control here, since removing a name
+from this list appends it during normalization. Membership belongs to
+`segments`. The schema description makes this distinction explicit.
 
 The benchmark applies identical 1 Hz synthetic readings and samples the
 Quickshell process's CPU time, RSS, and child count after a three-second warmup.

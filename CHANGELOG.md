@@ -34,6 +34,9 @@
 
 ### Fixed
 
+- Horizontal bar values stay beside their own labels and trends within fixed
+  slots. Only Intel reserves the GPU estimate prefix, and visible vertical
+  percentage values share a font size without shrinking AMD/NVIDIA needlessly.
 - Compact network rates promote before rounding exceeds their reserved width.
   Typed QML list settings are read correctly during initial object creation.
   The Drives switch can enable an explicit segment when GPU is disabled.
