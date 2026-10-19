@@ -126,12 +126,15 @@ Item {
     }
 
     Components.GraphBlock {
+      objectName: "networkHistory"
       width: parent.width
       title: "TRAFFIC"
       finePoints: root.model ? root.model.netHistory : []
       longPoints: root.model ? root.model.netLong : []
       longWindow: root.longWindow
       sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+      graphLayout: root.model && root.model.cfg ? root.model.cfg.networkGraphLayout : "overlay"
+      minimumMax: 1024
       formatValue: function (v) { return root.rate(v) }
       fields: [
         { key: "rx", label: "down", color: root.pal.primary },

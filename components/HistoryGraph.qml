@@ -2,17 +2,8 @@ import QtQuick
 import qs.Commons as Commons
 import "../lib/index.mjs" as Model
 
-// Time-series graph for n fields sharing one x axis.
-//   points        — [{ t, <key>: Number, ... }] oldest first; t in seconds
-//   fields        — [{ key, label, color }]  (drawn bottom-up when stacked)
-//   windowSeconds — width of the x axis; the newest point sits at the right
-//   stacked       — cumulative filled areas (CPU user+system+iowait)
-//   fixedMax      — y ceiling; 0 auto-scales to the visible peak (rounded up)
-//   band          — frame the y axis on the data's own min..max instead of 0
-//   gapSeconds    — two points further apart than this are not joined
-//   formatValue   — function(Number) → string for the axis and the readout
-// Hovering shows a cursor line and the values under it; `hoverInfo` holds
-// them for a caller that wants to render them elsewhere.
+// All layouts share time, measurement and gap rules. Mirroring changes only
+// drawing direction: both rates, axis magnitudes and readouts stay positive.
 Item {
   id: root
 
@@ -20,87 +11,56 @@ Item {
   property var fields: []
   property real windowSeconds: 60
   property bool stacked: false
+  property bool mirrored: false
   property real fixedMax: 0
+  property real minimumMax: 0
   property bool band: false
   property real gapSeconds: 30
   property var formatValue: function (v) { return Model.formatPct(v) }
   property color foreground: Commons.Color.foreground
   property string fontFamily: Commons.Style.font.family
   property bool showAxis: true
+  property bool syncHover: false
+  property real sharedHoverFraction: -1
+  property real localHoverFraction: -1
+  signal hovered(real fraction)
+  signal wheelMoved()
 
   readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(foreground), String(Commons.Color.background))
   readonly property color dim: pal.dim
-
-  property int hoverIndex: -1
+  readonly property var keys: fields.map(function (field) { return field.key })
+  readonly property var axis: Model.graphAxis(points, keys, { stacked: stacked, fixedMax: fixedMax, minimumMax: minimumMax, band: band })
+  readonly property real plotWidth: canvas.width
+  readonly property real hoverFraction: syncHover ? sharedHoverFraction : localHoverFraction
+  readonly property int hoverIndex: hoverFraction >= 0 ? indexAtX(hoverFraction * (plotWidth - 1), plotWidth) : -1
   readonly property var hoverInfo: hoverIndex >= 0 && hoverIndex < points.length ? points[hoverIndex] : null
+  readonly property real axisWidth: showAxis ? Math.ceil(Math.max(axisTop.implicitWidth, axisMid.implicitWidth, axisBottom.implicitWidth)) + Commons.Style.space(6) : 0
 
   implicitWidth: 200
   implicitHeight: Commons.Style.space(96)
 
-  // ---- scale -----------------------------------------------------------
-  function valueOf(p, key) {
-    var v = p ? Number(p[key]) : NaN
-    return isFinite(v) ? v : null
-  }
-
-  readonly property var axis: {
-    var pts = Array.isArray(points) ? points : []
-    var fl = Array.isArray(fields) ? fields : []
-    var lo = Infinity, hi = -Infinity
-    for (var i = 0; i < pts.length; i++) {
-      var acc = 0, any = false
-      for (var f = 0; f < fl.length; f++) {
-        var v = valueOf(pts[i], fl[f].key)
-        if (v === null) continue
-        any = true
-        if (stacked) acc += v
-        else { if (v < lo) lo = v; if (v > hi) hi = v }
-      }
-      if (stacked && any) { if (acc < lo) lo = acc; if (acc > hi) hi = acc }
-    }
-    if (!(hi > -Infinity)) { lo = 0; hi = 0 }
-    var min = 0, max = fixedMax
-    if (!(max > 0)) {
-      max = niceCeiling(hi)
-    }
-    if (band && hi > lo) {
-      var span = Math.max(hi - lo, Math.max(1e-9, hi) * 0.03)
-      var pad = span * 0.25
-      min = Math.max(0, lo - pad)
-      max = hi + pad
-      if (fixedMax > 0 && max > fixedMax) max = fixedMax
-    }
-    if (!(max > min)) max = min + 1
-    return { min: min, max: max, lo: lo, hi: hi }
-  }
-
-  function niceCeiling(v) {
-    if (!(v > 0)) return 1
-    var exp = Math.pow(10, Math.floor(Math.log(v) / Math.LN10))
-    var m = v / exp
-    var nice = m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10
-    return nice * exp
-  }
-
-  readonly property real axisWidth: showAxis ? Math.ceil(Math.max(axisTop.implicitWidth, axisMid.implicitWidth)) + Commons.Style.space(6) : 0
+  function valueOf(point, key) { return Model.graphValue(point, key) }
+  function setHover(fraction) { localHoverFraction = fraction; hovered(fraction) }
 
   onPointsChanged: canvas.requestPaint()
   onFieldsChanged: canvas.requestPaint()
+  onAxisChanged: canvas.requestPaint()
   onStackedChanged: canvas.requestPaint()
-  onFixedMaxChanged: canvas.requestPaint()
-  onBandChanged: canvas.requestPaint()
+  onMirroredChanged: canvas.requestPaint()
+  onGapSecondsChanged: canvas.requestPaint()
   onWindowSecondsChanged: canvas.requestPaint()
   onWidthChanged: canvas.requestPaint()
   onHeightChanged: canvas.requestPaint()
   onHoverIndexChanged: canvas.requestPaint()
-  onForegroundChanged: canvas.requestPaint()
+  onPalChanged: canvas.requestPaint()
 
-  // Axis labels sit in the right gutter: ceiling, midpoint, floor.
   Text {
     id: axisTop
+    objectName: "axisTop"
     visible: root.showAxis
     textFormat: Text.PlainText
-    text: root.formatValue(root.axis.max)
+    text: (root.mirrored && root.fields.length ? root.fields[0].label + "\n" : "") + root.formatValue(root.axis.max)
+    horizontalAlignment: Text.AlignRight
     color: root.dim
     font.family: root.fontFamily
     font.pixelSize: Commons.Style.font.caption
@@ -112,7 +72,7 @@ Item {
     id: axisMid
     visible: root.showAxis
     textFormat: Text.PlainText
-    text: root.formatValue((root.axis.max + root.axis.min) / 2)
+    text: root.formatValue(root.mirrored ? 0 : (root.axis.max + root.axis.min) / 2)
     color: root.dim
     font.family: root.fontFamily
     font.pixelSize: Commons.Style.font.caption
@@ -121,9 +81,12 @@ Item {
     anchors.verticalCenter: parent.verticalCenter
   }
   Text {
-    visible: root.showAxis && root.band
+    id: axisBottom
+    objectName: "axisBottom"
+    visible: root.showAxis
     textFormat: Text.PlainText
-    text: root.formatValue(root.axis.min)
+    text: root.mirrored && root.fields.length > 1 ? root.fields[1].label + "\n" + root.formatValue(root.axis.max) : root.formatValue(root.axis.min)
+    horizontalAlignment: Text.AlignRight
     color: root.dim
     font.family: root.fontFamily
     font.pixelSize: Commons.Style.font.caption
@@ -145,95 +108,69 @@ Item {
       ctx.reset()
       var w = width, h = height
       if (w < 2 || h < 2) return
-      var pts = Array.isArray(root.points) ? root.points : []
-      var fl = Array.isArray(root.fields) ? root.fields : []
-      var sc = root.axis
-
+      var pts = root.points, fl = root.fields, sc = root.axis
       ctx.strokeStyle = root.pal.grid
       ctx.lineWidth = 1
       for (var g = 0; g <= 2; g++) {
-        var gy = Math.round(h * g / 2) + 0.5
-        if (g === 2) gy = h - 0.5
+        var gy = Math.min(h - 0.5, Math.round(h * g / 2) + 0.5)
         ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke()
       }
       var n = pts.length
       if (n < 1 || fl.length === 0) return
-
       var tEnd = Number(pts[n - 1].t)
-      var tStart = tEnd - root.windowSeconds
-      function xFor(t) { return (Number(t) - tStart) / root.windowSeconds * (w - 1) }
-      function yFor(v) {
-        var f = (v - sc.min) / (sc.max - sc.min)
-        if (f < 0) f = 0
-        if (f > 1) f = 1
-        return h - 1 - f * (h - 2)
+      function xFor(t) { return (Number(t) - tEnd + root.windowSeconds) / root.windowSeconds * (w - 1) }
+      function yFor(v, direction) {
+        var fraction = Math.max(0, Math.min(1, (v - sc.min) / (sc.max - sc.min)))
+        return root.mirrored ? h / 2 - direction * fraction * (h / 2 - 1) : h - 1 - fraction * (h - 2)
       }
-      function gapBefore(i) {
-        return i > 0 && (Number(pts[i].t) - Number(pts[i - 1].t)) > root.gapSeconds
+      function dot(i, value, direction, color) {
+        ctx.fillStyle = color
+        ctx.beginPath(); ctx.arc(xFor(pts[i].t), yFor(value, direction), 1.5, 0, 2 * Math.PI); ctx.fill()
       }
-
-      var i, f
+      var i, f, r, run, runs
       if (root.stacked) {
-        var cum = []
-        for (i = 0; i < n; i++) cum.push(0)
+        // A partial stack is unknown, not a smaller total.
+        runs = Model.graphRuns(pts, root.keys, root.gapSeconds)
+        var cum = pts.map(function () { return 0 })
         for (f = 0; f < fl.length; f++) {
           var prev = cum.slice()
-          for (i = 0; i < n; i++) { var v = root.valueOf(pts[i], fl[f].key); cum[i] += v === null ? 0 : v }
+          for (i = 0; i < n; i++) cum[i] += root.valueOf(pts[i], fl[f].key) || 0
           ctx.fillStyle = fl[f].color
           ctx.globalAlpha = 0.8
-          // One filled run per contiguous segment.
-          var run = 0
-          while (run < n) {
-            var end = run
-            while (end + 1 < n && !gapBefore(end + 1)) end++
-            if (end > run) {
-              ctx.beginPath()
-              ctx.moveTo(xFor(pts[run].t), yFor(cum[run]))
-              for (i = run + 1; i <= end; i++) ctx.lineTo(xFor(pts[i].t), yFor(cum[i]))
-              for (i = end; i >= run; i--) ctx.lineTo(xFor(pts[i].t), yFor(prev[i]))
-              ctx.closePath()
-              ctx.fill()
-            }
-            run = end + 1
+          for (r = 0; r < runs.length; r++) {
+            run = runs[r]
+            if (run.end === run.start) { dot(run.start, cum[run.start], 1, fl[f].color); continue }
+            ctx.beginPath()
+            ctx.moveTo(xFor(pts[run.start].t), yFor(cum[run.start], 1))
+            for (i = run.start + 1; i <= run.end; i++) ctx.lineTo(xFor(pts[i].t), yFor(cum[i], 1))
+            for (i = run.end; i >= run.start; i--) ctx.lineTo(xFor(pts[i].t), yFor(prev[i], 1))
+            ctx.closePath(); ctx.fill()
           }
           ctx.globalAlpha = 1
         }
       } else {
         for (f = 0; f < fl.length; f++) {
-          var key = fl[f].key
-          var seg = 0
-          while (seg < n) {
-            var stop = seg
-            while (stop + 1 < n && !gapBefore(stop + 1) && root.valueOf(pts[stop + 1], key) !== null) stop++
-            if (root.valueOf(pts[seg], key) === null) { seg++; continue }
-            if (stop > seg) {
-              ctx.fillStyle = fl[f].color
-              ctx.globalAlpha = 0.14
-              ctx.beginPath()
-              ctx.moveTo(xFor(pts[seg].t), h)
-              for (i = seg; i <= stop; i++) ctx.lineTo(xFor(pts[i].t), yFor(root.valueOf(pts[i], key)))
-              ctx.lineTo(xFor(pts[stop].t), h)
-              ctx.closePath()
-              ctx.fill()
-              ctx.globalAlpha = 1
-              ctx.strokeStyle = fl[f].color
-              ctx.lineWidth = 1.5
-              ctx.beginPath()
-              ctx.moveTo(xFor(pts[seg].t), yFor(root.valueOf(pts[seg], key)))
-              for (i = seg + 1; i <= stop; i++) ctx.lineTo(xFor(pts[i].t), yFor(root.valueOf(pts[i], key)))
-              ctx.stroke()
-            } else {
-              // A lone point between gaps is still a reading: draw a dot.
-              ctx.fillStyle = fl[f].color
-              ctx.beginPath()
-              ctx.arc(xFor(pts[seg].t), yFor(root.valueOf(pts[seg], key)), 1.5, 0, 2 * Math.PI)
-              ctx.fill()
-            }
-            seg = stop + 1
+          var key = fl[f].key, direction = root.mirrored && f === 1 ? -1 : 1
+          var baseline = root.mirrored ? h / 2 : h - 1
+          runs = Model.graphRuns(pts, [key], root.gapSeconds)
+          for (r = 0; r < runs.length; r++) {
+            run = runs[r]
+            if (run.end === run.start) { dot(run.start, root.valueOf(pts[run.start], key), direction, fl[f].color); continue }
+            ctx.fillStyle = fl[f].color
+            ctx.globalAlpha = 0.14
+            ctx.beginPath(); ctx.moveTo(xFor(pts[run.start].t), baseline)
+            for (i = run.start; i <= run.end; i++) ctx.lineTo(xFor(pts[i].t), yFor(root.valueOf(pts[i], key), direction))
+            ctx.lineTo(xFor(pts[run.end].t), baseline)
+            ctx.closePath(); ctx.fill()
+            ctx.globalAlpha = 1
+            ctx.strokeStyle = fl[f].color
+            ctx.lineWidth = 1.5
+            ctx.beginPath(); ctx.moveTo(xFor(pts[run.start].t), yFor(root.valueOf(pts[run.start], key), direction))
+            for (i = run.start + 1; i <= run.end; i++) ctx.lineTo(xFor(pts[i].t), yFor(root.valueOf(pts[i], key), direction))
+            ctx.stroke()
           }
         }
       }
-
       if (root.hoverIndex >= 0 && root.hoverIndex < n) {
         var hx = Math.round(xFor(pts[root.hoverIndex].t)) + 0.5
         ctx.strokeStyle = root.pal.hairline
@@ -241,54 +178,31 @@ Item {
         ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, h); ctx.stroke()
       }
     }
-
     MouseArea {
       anchors.fill: parent
       hoverEnabled: true
       acceptedButtons: Qt.NoButton
-      onPositionChanged: function (mouse) { root.hoverIndex = root.indexAtX(mouse.x, width) }
-      onExited: root.hoverIndex = -1
+      onPositionChanged: function (mouse) { root.setHover(Math.max(0, Math.min(1, mouse.x / Math.max(1, width - 1)))) }
+      onExited: root.setHover(-1)
+      onWheel: function (wheel) { root.wheelMoved(); wheel.accepted = true }
     }
   }
 
   function indexAtX(x, w) {
-    var pts = Array.isArray(points) ? points : []
-    var n = pts.length
-    if (n === 0 || w < 2) return -1
-    var tEnd = Number(pts[n - 1].t)
-    var t = tEnd - windowSeconds + x / (w - 1) * windowSeconds
-    var best = -1, bestD = Infinity
-    for (var i = 0; i < n; i++) {
-      var d = Math.abs(Number(pts[i].t) - t)
-      if (d < bestD) { bestD = d; best = i }
-    }
-    return bestD <= Math.max(gapSeconds, windowSeconds / 20) ? best : -1
+    if (!points.length || w < 2) return -1
+    var end = Number(points[points.length - 1].t)
+    var t = end - windowSeconds + x / (w - 1) * windowSeconds
+    return Model.graphHoverIndex(points, t, gapSeconds, Math.min(gapSeconds / 2, 3 * windowSeconds / (w - 1)))
   }
 
-  // Readout for the hovered point: "label value · label value".
   readonly property string hoverText: {
-    var p = hoverInfo
-    if (!p) return ""
-    var fl = Array.isArray(fields) ? fields : []
-    var bits = []
-    for (var f = 0; f < fl.length; f++) {
-      var v = valueOf(p, fl[f].key)
-      if (v === null) continue
-      bits.push(fl[f].label + " " + formatValue(v))
+    var point = hoverInfo
+    if (!point) return ""
+    var bits = [Qt.formatTime(new Date(point.t * 1000), "hh:mm:ss")]
+    for (var f = 0; f < fields.length; f++) {
+      var value = valueOf(point, fields[f].key)
+      bits.push(fields[f].label + " " + (value === null ? "--" : formatValue(value)))
     }
     return bits.join(" · ")
-  }
-
-  Text {
-    visible: root.hoverText !== ""
-    textFormat: Text.PlainText
-    text: root.hoverText
-    color: root.foreground
-    font.family: root.fontFamily
-    font.pixelSize: Commons.Style.font.caption
-    font.features: ({ "tnum": 1 })
-    anchors.left: parent.left
-    anchors.leftMargin: Commons.Style.space(4)
-    anchors.top: parent.top
   }
 }

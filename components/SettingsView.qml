@@ -228,6 +228,40 @@ Column {
     }
   }
 
+  Section {
+    title: "PANEL GRAPHS"
+    FormRow {
+      label: "GPU"
+      hint: "Aligned plots share the 0–100 % scale."
+      Pick {
+        objectName: "gpuGraphLayoutChoice"
+        value: root.cfg.gpuGraphLayout
+        options: [{ value: "overlay", label: "overlay" }, { value: "aligned", label: "aligned · busy / VRAM" }]
+        onChanged: function (v) { root.set("gpuGraphLayout", v) }
+      }
+    }
+    FormRow {
+      label: "Network"
+      hint: "Mirrored: down above zero, up below."
+      Pick {
+        objectName: "networkGraphLayoutChoice"
+        value: root.cfg.networkGraphLayout
+        options: [{ value: "overlay", label: "overlay" }, { value: "mirrored", label: "mirrored · down / up" }]
+        onChanged: function (v) { root.set("networkGraphLayout", v) }
+      }
+    }
+    FormRow {
+      label: "Drives"
+      hint: "Mirrored: read above zero, write below."
+      Pick {
+        objectName: "diskGraphLayoutChoice"
+        value: root.cfg.diskGraphLayout
+        options: [{ value: "overlay", label: "overlay" }, { value: "mirrored", label: "mirrored · read / write" }]
+        onChanged: function (v) { root.set("diskGraphLayout", v) }
+      }
+    }
+  }
+
   // ---- sampling ----------------------------------------------------------
   Section {
     title: "SAMPLING"
@@ -345,6 +379,7 @@ Column {
       font.pixelSize: Commons.Style.font.caption
     }
     Button {
+      objectName: "resetSettings"
       text: "Reset to defaults"
       onClicked: {
         if (!root.store) return

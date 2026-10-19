@@ -68,10 +68,22 @@ Choose **1 min** or **1 hour**, click the average/peak summary, scroll over a
 graph, or press uppercase `H` to switch every graph in that panel together.
 Choosing the already selected duration leaves it unchanged. Each monitor
 keeps its own choice for the session. Hovering a graph shows the readings at
-that point. The summary names the series it describes: the displayed CPU
-stack total, memory usage, GPU busy, drive **read** rate, or network
-**download** rate. In the hour view, peak means the highest 10 s bucket
-average, so short spikes can be lower than in the minute view.
+that point with its local timestamp in place of the summary above the plot.
+The reserved space keeps the graph steady and its curves visible. The summary
+names each series: the CPU stack total, memory usage, GPU busy and VRAM, drive read and write,
+or network down and up. In the hour view, **10 s means** identifies the
+buckets; peak means the highest bucket average, so short spikes can be
+lower than in the minute view. The time axis ends at the last sample's
+local clock time, including when collection has stopped.
+
+In **Settings → Panel graphs**, choose aligned GPU plots or mirrored
+Network/Drives plots independently. GPU plots share time and a 0–100% scale;
+hovering either aligned plot moves both readouts. Cards without a VRAM
+percentage show only busy; a previously measured percentage in that card’s
+retained history keeps the series through a failed poll. In mirrored plots,
+down/read is above zero and up/write below it, with the same positive
+rate scale on each side. Overlays remain the compact default. See
+[graph layout comparisons](GRAPH_LAYOUTS.md).
 
 Changing refresh cadence retains recent minute samples until their timestamps
 leave the 60 s window, including samples collected at the previous cadence.

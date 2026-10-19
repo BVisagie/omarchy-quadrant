@@ -78,6 +78,14 @@ Item {
     var p = Model.gpuVramPct(live)
     return p === null ? -1 : p
   }
+  // A current or retained measurement establishes that this card reports a
+  // percentage. Retained history prevents a failed poll from adding/removing
+  // a plot; Store resets that history when the selected hardware changes.
+  readonly property bool vramSeriesAvailable: vramPct >= 0 || [
+    model ? model.gpuHistory : [], model ? model.gpuLong : []
+  ].some(function (points) {
+    return Array.isArray(points) && points.some(function (point) { return Model.graphValue(point, "v") !== null })
+  })
   readonly property string vramText: {
     if (!live) return "--"
     if (vendor === "nvidia") {
@@ -173,20 +181,23 @@ Item {
     }
 
     Components.GraphBlock {
+      objectName: "gpuHistory"
       width: parent.width
       title: "HISTORY"
       finePoints: root.model ? root.model.gpuHistory : []
       longPoints: root.model ? root.model.gpuLong : []
       longWindow: root.longWindow
       sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+      graphLayout: root.model && root.model.cfg ? root.model.cfg.gpuGraphLayout : "overlay"
       fixedMax: 100
-      fields: [
-        { key: "b", label: "busy", color: root.pal.primary },
-        { key: "v", label: "VRAM", color: root.pal.secondary }
-      ]
+      fields: {
+        var out = [{ key: "b", label: "busy", color: root.pal.primary }]
+        if (root.vramSeriesAvailable) out.push({ key: "v", label: "VRAM", color: root.pal.secondary })
+        return out
+      }
       legend: [
         { label: "busy", color: root.pal.primary, value: root.display ? Model.formatPct(root.display.pct) : "--" },
-        { label: "VRAM", color: root.pal.secondary, value: root.vramPct < 0 ? "--" : Model.formatPct(root.vramPct), visible: root.vramPct >= 0 }
+        { label: "VRAM", color: root.pal.secondary, value: root.vramPct < 0 ? "--" : Model.formatPct(root.vramPct), visible: root.vramSeriesAvailable }
       ]
       onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
     }

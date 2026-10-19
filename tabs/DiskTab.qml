@@ -129,12 +129,15 @@ Item {
     }
 
     Components.GraphBlock {
+      objectName: "diskHistory"
       width: parent.width
       title: "THROUGHPUT"
       finePoints: root.model ? root.model.diskHistory : []
       longPoints: root.model ? root.model.diskLong : []
       longWindow: root.longWindow
       sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+      graphLayout: root.model && root.model.cfg ? root.model.cfg.diskGraphLayout : "overlay"
+      minimumMax: 1024
       formatValue: function (v) { return Model.formatRate(v) }
       fields: [
         { key: "r", label: "read", color: root.pal.primary },
