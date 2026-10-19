@@ -127,7 +127,9 @@ Column {
     else if (viewport.anchor) {
       for (var i = 0; i < presentedRows.length; i++) {
         if (Model.sameProcessRow(viewport.anchor, presentedRows[i])) {
-          y = i * rowHeight + viewport.offset
+          var anchorY = i * rowHeight + viewport.offset
+          // Follow nearby changes without chasing volatile ranks across screens.
+          if (Math.abs(anchorY - viewport.y) < list.height) y = anchorY
           break
         }
       }

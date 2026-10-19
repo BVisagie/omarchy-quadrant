@@ -222,6 +222,47 @@ ShellRoot {
       compare(roster.displayRows[99].pid, anchor.pid)
       fuzzyCompare(list.contentY, oldY - roster.rowHeight, 0.5, "retain the first visible group and pixel offset")
     }
+    function test_scroll_bounds_sample_rank_changes_data() {
+      return [{ tag: "nearby rise", viewports: -0.5, follow: true, cursor: -1 },
+              { tag: "nearby fall", viewports: 0.5, follow: true, cursor: -1 },
+              { tag: "one viewport rise", viewports: -1, follow: false, cursor: -1 },
+              { tag: "one viewport fall", viewports: 1, follow: false, cursor: -1 },
+              { tag: "distant rise", viewports: -10, follow: false, cursor: -1 },
+              { tag: "distant fall", viewports: 10, follow: false, cursor: -1 },
+              { tag: "distant selected anchor", viewports: -10, follow: false, cursor: 100 },
+              { tag: "distant with offscreen cursor", viewports: 10, follow: false, cursor: 20 }]
+    }
+    function test_scroll_bounds_sample_rank_changes(data) {
+      roster.expanded = true
+      wait(20)
+      var list = findChild(roster, "processRows")
+      if (data.cursor >= 0) roster.selectRow(data.cursor)
+      var selectedPid = roster.selectedRow ? roster.selectedRow.pid : -1
+      list.positionViewAtIndex(100, ListView.Beginning)
+      list.contentY += 9
+      var oldY = list.contentY
+      var anchor = roster.displayRows[100]
+      var shift = Math.round(data.viewports * list.height / roster.rowHeight)
+      var rank = 100 + shift
+      var value = roster.displayRows[rank].sortKey + (shift < 0 ? 0.5 : -0.5)
+      roster.expandedRows = roster.expandedRows.map(function (r) {
+        var copy = Object.assign({}, r)
+        if (r.pid === anchor.pid) copy.sortKey = value
+        return copy
+      })
+      wait(20)
+      compare(roster.displayRows[rank].pid, anchor.pid)
+      fuzzyCompare(list.contentY, oldY + (data.follow ? shift * roster.rowHeight : 0), 0.5,
+                   "follow nearby rank changes but hold position for jumps of a viewport or more")
+      if (data.cursor >= 0) {
+        compare(roster.selectedRow.pid, selectedPid, "sampling retains the selected identity")
+        compare(roster.displayRows[roster.cursorIndex].pid, selectedPid)
+        roster.moveCursor(1)
+        wait(20)
+        var y = roster.cursorY() - list.y
+        verify(y >= 0 && y + roster.rowHeight <= list.height + 1, "explicit navigation still reveals the cursor")
+      } else verify(!roster.cursorActive)
+    }
     function test_keyboard_enters_filtered_results_data() {
       return [{ tag: "Down", key: Qt.Key_Down }, { tag: "Return", key: Qt.Key_Return },
               { tag: "Enter", key: Qt.Key_Enter }]

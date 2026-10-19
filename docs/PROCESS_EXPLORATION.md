@@ -16,7 +16,7 @@ searchable roster. Network and GPU retain their own attribution limits.
 | Identity | PID plus kernel start time. A group retains history, position, or cursor selection only while a member identity survives. A name alone cannot transfer identity. |
 | Search | Local normalized group name, desktop display name, and all member PIDs. A PID match identifies the matching members without replacing the group's totals. Search does not sample. |
 | Bounds | At most 1 MiB of encoded envelope JSON; an oversized sample is omitted in full and reported as unavailable coverage. Search runs before the 256-group display cap. Counts and a refinement message expose that cap. |
-| Rendering | Value/name order in expanded mode, sticky/value/name in compact mode. Samples retain the first visible group and pixel offset; selection is reconciled without scrolling to it. Filter changes and explicit cursor movement reveal the target. A ListView creates only visible delegates. Installed desktop entries are indexed on inventory changes; icon paths use a 256-name cache. |
+| Rendering | Value/name order in expanded mode, sticky/value/name in compact mode. Samples retain the first visible group and pixel offset when it moves less than one viewport; larger rank changes keep the scroll position. Selection is reconciled without scrolling to it. Filter changes and explicit cursor movement reveal the target. A ListView creates only visible delegates. Installed desktop entries are indexed on inventory changes; icon paths use a 256-name cache. |
 | Unknown data | Missing/reset/new CPU and I/O intervals stay null. Restricted I/O stays unavailable. Partial group totals show a lower-bound prefix and measured-member count. Sparkline gaps stay gaps. |
 
 Name grouping describes matching process names; it does not establish
@@ -56,7 +56,9 @@ selection after filtering, narrow-width virtualization, and scrolling the
 retained target into view after clearing a filter. The UI suite runs with and
 without the shell load-patch pragma. Additional regressions keep wheel/
 scrollbar position across repeated samples with no cursor, a visible cursor,
-an offscreen cursor, and changing value order.
+an offscreen cursor, and changing value order. Nearby rank changes retain the
+visible group and offset; jumps of a viewport or more in either direction
+hold the scroll position while explicit navigation still reveals the cursor.
 
 All seven offscreen render targets ran on Qt 6.12 / Quickshell 0.3.2.
 Additional views covered expanded CPU/Memory/Drives, dark/light/monochrome,

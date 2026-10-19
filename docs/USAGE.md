@@ -80,7 +80,9 @@ Click the metric heading to change order. Compact mode cycles stable roster,
 descending value, and name; expanded mode switches value/name order. Selection
 follows a surviving PID/start-time member as values reorder. Filtering out a
 selected group clears the cursor. Samples preserve the first visible group
-and its scroll offset, including when the cursor is elsewhere. Expanded
+and its scroll offset when it moves less than one viewport, including when
+the cursor is elsewhere. Larger rank changes keep the scroll position;
+keyboard navigation and filtering still reveal the selected row. Expanded
 results scroll within the list;
 only visible rows have delegates. At most 256 groups are displayed at once,
 after searching the entire collected roster. Refine the query when the result
