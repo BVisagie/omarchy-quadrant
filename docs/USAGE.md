@@ -93,7 +93,10 @@ On **Drives**, each displayed mounted volume has an **Open** button. It checks
 that the directory is still mounted and accessible, then sends a request to
 your default file manager. Complete paths are retained even when the label
 needs eliding; the button's tooltip and accessible name include the path.
-An unmounted or inaccessible directory shows an error; `R` refreshes inventory.
+Known inaccessible directories have a disabled button with the reason in its
+tooltip. If a mount disappears or access changes after the last poll, activation
+shows an error; `R` refreshes inventory. Keyboard activation of a disabled action
+also explains why it cannot open.
 The existing representative-mount grouping remains in effect.
 
 Press **A** to select the first action, **↑/↓** (or `j`/`k`) to choose, and

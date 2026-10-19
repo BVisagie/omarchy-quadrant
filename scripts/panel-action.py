@@ -68,10 +68,12 @@ def perform(kind, value, mountinfo="/proc/self/mountinfo"):
         # A URI preserves whitespace, #, %, quotes and control characters.
         # GIO hands the request to the directory's registered application.
         uri = Path(value).as_uri()
-        if shutil.which("gio"):
-            run_tool(["gio", "open", uri])
-        else:
-            run_tool(["xdg-open", uri])
+        argv = ["gio", "open", uri] if shutil.which("gio") else ["xdg-open", uri]
+        # Non-D-Bus file managers should belong to an app scope, rather than
+        # the compositor's systemd unit. Preserve the literal URI argument.
+        if shutil.which("uwsm-app"):
+            argv = ["uwsm-app", "--", *argv]
+        run_tool(argv)
     else:
         raise ActionError("Unknown panel action")
     return {"ok": True, "value": value}

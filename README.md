@@ -42,6 +42,7 @@ opens `btop` through Omarchy's terminal launcher.
 
 Copy buttons use `wl-copy` (wl-clipboard). Opening a mounted volume uses the
 default file manager through `gio open` (GLib), or `xdg-open` when GIO is absent.
+Launches use `uwsm-app` when it is available in the desktop session.
 
 ## Install
 

@@ -175,16 +175,31 @@ Store, including QML's initial QVariantList settings. The panel is a small contr
 offscreen cases establish routing, not layer-shell popup placement. Pure
 tests exercise all 120 segment orders through fallback and hardware recovery.
 
-`qs-actions-ui.sh` runs 17 cases in each load-patch mode against the real Network
+`qs-actions-ui.sh` runs 19 cases in each load-patch mode against the real Network
 and Drives tabs, shared action controls, panel dispatcher, and native Process
 stdin. Its echo/failure helper never reads or writes the desktop clipboard or
 opens a file manager. It covers mouse and A/arrow/Enter activation, staged Esc,
 shell Tab, search handoff, adjacent selectors, literal MAC/IPv4/IPv6/path values,
 selection across inventory changes, visible errors, helper exit/mismatch/timeout,
 and stale responses. Process selection leaves action navigation; late feedback
-preserves settings and other views. Layout cases use 320/440 px, font size 18 and spacing scales
+preserves settings and other views. A usage refresh between mouse press and
+release preserves the same Open button while updating its usage text and bar.
+Access hints disable known inaccessible targets with a working hover explanation,
+keyboard feedback, and recovery on the next inventory update. The explanation
+wraps within a 320 px panel at font size 18 and spacing scale 2.
+Layout cases use 320/440 px, font size 18 and spacing scales
 1/1.5/2. Python tests cover actual helper validation and argv/stdin boundaries,
-including bind-mount escapes, missing tools, permissions, and unmounted targets.
+including bind-mount escapes, missing tools, permissions, unmounted targets,
+and literal URI arguments through `uwsm-app --` with a direct-launch fallback.
+Both disk inventory modes discard a cut final `df` row while retaining rows
+whose terminating newline fits within the 65,536-character bound. Fixtures
+cover a truncated target matching another mount, exact newline boundaries,
+and UTF-8 payloads larger than a single argv argument permits.
+
+`PanelActions.qml` keeps mount identity entries separate from a target-keyed
+details map. Capacity and access updates therefore do not replace delegates.
+`disk-info` reports read/search access hints with the existing mount polls;
+the action helper still checks current mount membership and access at activation.
 
 `LocalAction.qml` captures each request in its own job. It serializes requests
 within a panel action group; a device-context change drops the previous result

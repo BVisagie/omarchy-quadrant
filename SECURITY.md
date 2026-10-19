@@ -26,8 +26,10 @@ stdin, without reading the clipboard. The shell's clipboard history may retain
 copied values according to its own settings. **Open** checks the exact directory
 against `/proc/self/mountinfo` and user access, then passes an encoded local-file
 URI as one argument to `gio open`, falling back to `xdg-open` when GIO is absent.
-No value or path is interpreted by a shell. These actions have desktop side
-effects only after activation and report tool failures and timeouts in the panel.
+When available, `uwsm-app --` starts the launcher outside the compositor's unit.
+Quadrant passes argument lists without building shell commands from values or
+paths. These actions have desktop side effects only after activation and report
+tool failures and timeouts in the panel.
 They do not mount volumes or request additional permissions.
 
 ## Stored data
@@ -104,6 +106,7 @@ Runtime tools include `bash`, `jq`, `python3`, `ss`, `ip`, `df`, `awk`,
 `omarchy-launch-or-focus-tui` for the right-click action. They operate
 locally, without downloading monitoring code or data.
 
-Optional panel actions also use `wl-copy` and `gio` or `xdg-open`. Each desktop
-tool request is bounded to five seconds, with an eight-second QML watchdog for
-the helper. File-manager success confirms the launch request was accepted.
+Optional panel actions also use `wl-copy`, `gio` or `xdg-open`, and `uwsm-app`
+when available. Each desktop tool request is bounded to five seconds, with an
+eight-second QML watchdog for the helper. File-manager success confirms the
+launch request was accepted.

@@ -65,15 +65,53 @@ class PanelActions(unittest.TestCase):
             mountinfo = self.mount_fixture(root, str(target))
             self.assertEqual(list(action.mount_targets(mountinfo)), [str(target)])
             for gio in [True, False]:
-                with self.subTest(gio=gio), patch.object(action.shutil, "which", return_value="gio" if gio else None), \
-                        patch.object(action.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
-                    result = action.perform("open-mount", str(target), mountinfo)
-                    self.assertTrue(result["ok"])
-                    expected = ["gio", "open", target.as_uri()] if gio else ["xdg-open", target.as_uri()]
-                    self.assertEqual(run.call_args.args[0], expected)
-                    self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
-                    self.assertNotIn("shell", run.call_args.kwargs)
+                for uwsm in [True, False]:
+                    def which(name, gio=gio, uwsm=uwsm):
+                        return name if (name == "gio" and gio) or (name == "uwsm-app" and uwsm) else None
+                    with self.subTest(gio=gio, uwsm=uwsm), patch.object(action.shutil, "which", side_effect=which), \
+                            patch.object(action.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+                        result = action.perform("open-mount", str(target), mountinfo)
+                        self.assertTrue(result["ok"])
+                        expected = ["gio", "open", target.as_uri()] if gio else ["xdg-open", target.as_uri()]
+                        if uwsm:
+                            expected = ["uwsm-app", "--", *expected]
+                        self.assertEqual(run.call_args.args[0], expected)
+                        self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+                        self.assertEqual(run.call_args.kwargs["timeout"], action.ACTION_TIMEOUT)
+                        self.assertNotIn("shell", run.call_args.kwargs)
             self.assertFalse((root / "NO").exists())
+
+    def test_session_launcher_receives_the_literal_uri_in_a_real_child(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            target = root / 'space "quote" \\ $(touch NO) % # café  '
+            target.mkdir()
+            inventory = self.mount_fixture(root, str(target))
+            launcher = root / "uwsm-app"
+            launcher.write_text(f"#!{os.sys.executable}\nimport json, os, pathlib, sys\npathlib.Path(os.environ['QUADRANT_ACTION_TEST_SINK']).write_text(json.dumps({{'argv': sys.argv[1:], 'stdin': sys.stdin.read()}}))\n")
+            launcher.chmod(0o755)
+            gio = root / "gio"
+            gio.write_text(f"#!{os.sys.executable}\nraise SystemExit(99)\n")
+            gio.chmod(0o755)
+            sink = root / "launched"
+            with patch.dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"], QUADRANT_ACTION_TEST_SINK=str(sink)):
+                self.assertTrue(action.perform("open-mount", str(target), inventory)["ok"])
+            self.assertEqual(json.loads(sink.read_text()), {"argv": ["--", "gio", "open", target.as_uri()], "stdin": ""})
+            self.assertFalse((root / "NO").exists())
+
+    def test_session_launcher_failures_and_timeouts_do_not_retry_a_launch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inventory = self.mount_fixture(root, str(root))
+            with patch.object(action.shutil, "which", side_effect=lambda name: name):
+                with patch.object(action.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)) as run:
+                    with self.assertRaisesRegex(action.ActionError, "uwsm-app failed"):
+                        action.perform("open-mount", str(root), inventory)
+                    self.assertEqual(run.call_count, 1)
+                with patch.object(action.subprocess, "run", side_effect=subprocess.TimeoutExpired("uwsm-app", 5)) as run:
+                    with self.assertRaisesRegex(action.ActionError, "in time"):
+                        action.perform("open-mount", str(root), inventory)
+                    self.assertEqual(run.call_count, 1)
 
     def test_unmounted_inaccessible_missing_and_non_directory_do_not_launch(self):
         with tempfile.TemporaryDirectory() as temp:

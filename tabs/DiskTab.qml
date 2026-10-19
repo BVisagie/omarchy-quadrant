@@ -186,6 +186,7 @@ Item {
         panel: root.panel
         context: root.diskName
         entries: Model.mountActions(root.diskMounts)
+        details: Model.mountActionDetails(root.diskMounts)
       }
     }
 

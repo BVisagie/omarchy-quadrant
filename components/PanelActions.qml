@@ -10,6 +10,7 @@ Column {
   id: root
   property var panel: null
   property var entries: []
+  property var details: ({})
   property string context: ""
   property bool keyboardActive: false
   property string selectedKey: ""
@@ -45,12 +46,18 @@ Column {
         && panel.currentActions === root && runner.message !== ""
         && typeof panel.scrollActionItem === "function") panel.scrollActionItem(feedback)
   }
+  function unavailableReason(entry) {
+    if (entry.available === false) return "this mount path is incomplete"
+    var detail = details[entry.value]
+    return detail && detail.unavailableReason ? detail.unavailableReason : ""
+  }
   function trigger(index) {
     var entry = entries[index]
     if (!entry || runner.busy) return
     focusEntry(index)
-    if (entry.available === false) {
-      runner.error = true; runner.message = "Cannot open " + entry.value + ": this mount path is incomplete"
+    var reason = unavailableReason(entry)
+    if (reason) {
+      runner.error = true; runner.message = "Cannot open " + entry.value + ": " + reason
       return
     }
     runner.run(entry.kind, entry.value)
@@ -73,6 +80,8 @@ Column {
       id: row
       required property var modelData
       required property int index
+      readonly property var detail: root.details[modelData.value] || ({})
+      readonly property string unavailableReason: root.unavailableReason(modelData)
       objectName: "actionRow_" + index
       width: root.width
       spacing: Commons.Style.space(3)
@@ -114,19 +123,51 @@ Column {
           bordered: true
           focusable: true
           hasCursor: root.keyboardActive && root.selectedKey === row.modelData.key
-          enabled: !runner.busy
+          enabled: !runner.busy && row.unavailableReason === ""
           opacity: enabled ? 1 : 0.5
-          tooltipText: (row.modelData.kind === "copy" ? "Copy " : "Open ") + row.modelData.value + " · A for keyboard actions"
+          tooltipText: (row.modelData.kind === "copy" ? "Copy " : "Open ") + row.modelData.value
+            + (row.unavailableReason ? "\n" + row.unavailableReason + " · R to refresh" : " · A for keyboard actions")
           Accessible.role: Accessible.Button
           Accessible.name: (row.modelData.kind === "copy" ? "Copy " : "Open ") + row.modelData.label + " " + row.modelData.value
+            + (row.unavailableReason ? ": " + row.unavailableReason : "")
           Accessible.onPressAction: root.trigger(row.index)
           onClicked: root.trigger(row.index)
         }
+        // A disabled Button cannot receive hover. Keep its explanation on an
+        // enabled sibling that does not accept clicks or change selection.
+        MouseArea {
+          id: blockedHover
+          objectName: "actionUnavailableHover_" + row.index
+          property alias explanation: unavailableTooltip
+          anchors.fill: actionButton
+          enabled: row.unavailableReason !== ""
+          hoverEnabled: true
+          acceptedButtons: Qt.NoButton
+          PanelToolTip {
+            id: unavailableTooltip
+            visible: blockedHover.containsMouse
+            text: actionButton.tooltipText
+            width: Math.min(implicitWidth, root.width)
+            contentItem: Text {
+              textFormat: Text.PlainText
+              text: unavailableTooltip.text
+              wrapMode: Text.WrapAnywhere
+              color: unavailableTooltip.panelForeground
+              font.family: unavailableTooltip.fontFamily
+              font.pixelSize: unavailableTooltip.fontSize
+              leftPadding: Commons.Border.left(unavailableTooltip.panelBorderSpec) + Commons.Style.spacing.controlPaddingX
+              rightPadding: Commons.Border.right(unavailableTooltip.panelBorderSpec) + Commons.Style.spacing.controlPaddingX
+              topPadding: Commons.Border.top(unavailableTooltip.panelBorderSpec) + Commons.Style.spacing.controlPaddingY
+              bottomPadding: Commons.Border.bottom(unavailableTooltip.panelBorderSpec) + Commons.Style.spacing.controlPaddingY
+            }
+          }
+        }
       }
       Text {
+        objectName: "actionUsage_" + row.index
         textFormat: Text.PlainText
         visible: row.modelData.kind === "open-mount"
-        text: Model.formatBytes(row.modelData.used) + " of " + Model.formatBytes(row.modelData.size) + " · " + Model.formatPct(row.modelData.pct)
+        text: Model.formatBytes(row.detail.used) + " of " + Model.formatBytes(row.detail.size) + " · " + Model.formatPct(row.detail.pct)
         color: root.dim
         font.family: Commons.Style.font.family
         font.pixelSize: Commons.Style.font.caption
@@ -134,11 +175,12 @@ Column {
         wrapMode: Text.WordWrap
       }
       Components.CompositionBar {
+        objectName: "actionUsageBar_" + row.index
         visible: row.modelData.kind === "open-mount"
         width: parent.width
         barHeight: Commons.Style.space(4)
-        segments: [{ fraction: Math.max(0, Math.min(100, Number(row.modelData.pct) || 0)) / 100,
-          color: Model.heatColor(row.modelData.pct, String(Commons.Color.accent), String(Commons.Color.accent), String(Commons.Color.urgent), 80) }]
+        segments: [{ fraction: Math.max(0, Math.min(100, Number(row.detail.pct) || 0)) / 100,
+          color: Model.heatColor(row.detail.pct, String(Commons.Color.accent), String(Commons.Color.accent), String(Commons.Color.urgent), 80) }]
       }
     }
   }

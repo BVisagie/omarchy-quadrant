@@ -4,6 +4,7 @@ import QtQuick.Window
 import Quickshell
 import QtTest
 import qs.Commons as Commons
+import "lib/index.mjs" as Model
 import "components" as Components
 import "tabs" as Tabs
 
@@ -60,7 +61,8 @@ ShellRoot {
     windowShown: true
     property var style: ({})
     property var initialInfo: null
-    function initTestCase() { wait(20); style = Object.assign({}, Commons.Color.shellValues); initialInfo = fixture.sysInfo }
+    property var initialDiskInfo: null
+    function initTestCase() { wait(20); style = Object.assign({}, Commons.Color.shellValues); initialInfo = fixture.sysInfo; initialDiskInfo = fixture.diskInfo }
     function cleanupTestCase() { console.log("QACTIONSUI " + JSON.stringify({ passed: qtest_results.passCount, failed: qtest_results.failCount })) }
     function cleanup() { if (qtest_results.failed) console.error("QACTIONSUI failure: " + qtest_results.functionName + " " + qtest_results.dataTag) }
     function check(condition, message) {
@@ -78,6 +80,7 @@ ShellRoot {
       fakePanel.switches = 0; fakePanel.closes = 0; fakePanel.moves = 0
       fakePanel.lastReveal = ""
       fixture.sysInfo = initialInfo
+      fixture.diskInfo = initialDiskInfo
       fixture.netRows = []
       fixture.selectInterface("auto"); fixture.selectDisk("sda"); fixture.selects = 0
       for (var group of [network.actionList, disk.actionList]) {
@@ -124,6 +127,65 @@ ShellRoot {
       tryCompare(group.runner, "busy", false)
       equal(group.runner.message, "Open request sent for " + value)
       check(!group.runner.error)
+    }
+    function test_usage_refresh_preserves_a_pressed_open_button() {
+      fakePanel.currentTab = "disk"; wait(20)
+      var group = disk.actionList
+      var button = findChild(group, "actionButton_0")
+      mousePress(button)
+      var mounts = fixture.diskInfo.mounts.map(function (mount) {
+        return Object.assign({}, mount, { used: mount.used + 4096, size: mount.size + 8192, pct: mount.pct + 1 })
+      })
+      fixture.diskInfo = Model.mergeDiskUsage(fixture.diskInfo, { mounts: mounts, temps: {} })
+      wait(20)
+      equal(findChild(group, "actionButton_0"), button, "usage changes must preserve the pressed button")
+      equal(findChild(group, "actionUsage_0").text, Model.formatBytes(mounts[0].used) + " of " + Model.formatBytes(mounts[0].size) + " · " + Model.formatPct(mounts[0].pct))
+      equal(findChild(group, "actionUsageBar_0").segments[0].fraction, mounts[0].pct / 100)
+      mouseRelease(button)
+      tryCompare(group.runner, "busy", false)
+      equal(group.runner.message, "Open request sent for /")
+      check(!group.runner.error)
+    }
+    function test_unavailable_mounts_explain_disabled_open_and_recover() {
+      fakePanel.currentTab = "disk"; wait(20)
+      var group = disk.actionList
+      var button = findChild(group, "actionButton_0")
+      var mounts = fixture.diskInfo.mounts.map(function (mount) { return Object.assign({}, mount, { accessible: false }) })
+      fixture.diskInfo = Model.mergeDiskUsage(fixture.diskInfo, { mounts: mounts, temps: {} })
+      wait(20)
+      equal(findChild(group, "actionButton_0"), button, "access changes preserve the action identity too")
+      check(!button.enabled)
+      check(button.tooltipText.indexOf("not accessible to your user") >= 0)
+      mouseClick(button)
+      equal(group.runner.message, ""); check(!group.runner.busy)
+      win.width = 320; wait(20)
+      Commons.Style.applyShellValues({ "font.base-size": 18, "spacing.scale": 2 })
+      wait(20)
+      var hover = findChild(group, "actionUnavailableHover_0")
+      mouseMove(hover)
+      var tooltip = hover.explanation
+      tryCompare(tooltip, "visible", true)
+      equal(tooltip.text, button.tooltipText)
+      check(tooltip.width <= group.width, "the disabled-action explanation fits a narrow panel: " + tooltip.width + " / " + group.width)
+      check(!tooltip.contentItem.truncated)
+      check(tooltip.contentItem.paintedWidth <= tooltip.width)
+      keys.forceActiveFocus(); keyClick(Qt.Key_A); keyClick(Qt.Key_Return)
+      check(group.runner.error); check(!group.runner.busy)
+      check(group.runner.message.indexOf("not accessible to your user") >= 0)
+      mounts = mounts.map(function (mount) { return Object.assign({}, mount, { accessible: true }) })
+      fixture.diskInfo = Model.mergeDiskUsage(fixture.diskInfo, { mounts: mounts, temps: {} })
+      wait(20)
+      check(button.enabled)
+      keyClick(Qt.Key_Return)
+      tryCompare(group.runner, "busy", false)
+      equal(group.runner.message, "Open request sent for /"); check(!group.runner.error)
+      mounts = mounts.map(function (mount) { return Object.assign({}, mount, { targetComplete: false }) })
+      fixture.diskInfo = Model.mergeDiskUsage(fixture.diskInfo, { mounts: mounts, temps: {} })
+      wait(20)
+      check(!findChild(group, "actionButton_0").enabled)
+      keyClick(Qt.Key_Return)
+      check(group.runner.error); check(!group.runner.busy)
+      check(group.runner.message.indexOf("mount path is incomplete") >= 0)
     }
     function test_adjacent_selectors_keep_their_meaning() {
       var group = network.actionList
