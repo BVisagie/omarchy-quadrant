@@ -100,7 +100,7 @@ data. Attribution limits are documented in [Measurements](docs/METRICS.md).
   discrete AMD/Intel polls, DRM details, system identity, mount refresh,
   and history-save failures do not all expose an error message.
 
-Runtime tools include `bash`, `jq`, `python3`, `ss`, `ip`, `df`, `awk`,
+Runtime tools include `bash`, `jq`, `python3`, `ss`, `ip`, `df`, `base64`, `awk`,
 `timeout`, `dirname`, `readlink`, `mkdir`, `mktemp`, `mkfifo`, and `rm`;
 `nvidia-smi` for NVIDIA; optional `lspci` for identity; and
 `omarchy-launch-or-focus-tui` for the right-click action. They operate

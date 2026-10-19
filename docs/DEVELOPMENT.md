@@ -195,6 +195,8 @@ Both disk inventory modes discard a cut final `df` row while retaining rows
 whose terminating newline fits within the 65,536-character bound. Fixtures
 cover a truncated target matching another mount, exact newline boundaries,
 and UTF-8 payloads larger than a single argv argument permits.
+Mount fields travel as ASCII base64 on stdin before jq decodes the complete
+value, avoiding UTF-8 corruption in older jq raw-input readers.
 
 `PanelActions.qml` keeps mount identity entries separate from a target-keyed
 details map. Capacity and access updates therefore do not replace delegates.

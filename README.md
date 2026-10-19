@@ -32,7 +32,7 @@ See the [tab and settings screenshots](docs/USAGE.md#screenshots).
 
 Supports **Omarchy 4.0.3 and later**, with Quattro's plugin service and
 settings APIs. Requires `bash` ≥ 5, `jq`, `python3`, `ss` and `ip`
-(iproute2), coreutils (`df`, `timeout`, and filesystem utilities), and
+(iproute2), coreutils (`df`, `base64`, `timeout`, and filesystem utilities), and
 `awk` (mawk or gawk). The sampler needs a writable `$XDG_RUNTIME_DIR`,
 as provided by a normal desktop session.
 

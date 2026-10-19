@@ -43,6 +43,7 @@ resolve_bin() {
 
 JQ=$(resolve_bin jq) || fail "jq not found"
 DF=$(resolve_bin df) || fail "df not found"
+BASE64=$(resolve_bin base64) || fail "base64 not found"
 
 # Fixture roots use the same convention as gpu-drm; IDs still resolve only
 # to whole devices directly under the selected device root.
@@ -225,11 +226,13 @@ read_mounts() {
 emit_mounts() {
   # Stream literal paths and the payload rather than placing large UTF-8
   # strings in a jq argv. NUL separates fields and cannot occur in a path.
+  # Older jq raw readers replace UTF-8 split across input buffers. Transport
+  # ASCII base64, then decode the complete value before splitting fields.
   {
     printf '%s\0' "$dfPayload"
     if (( ${#mount_access[@]} > 0 )); then printf '%s\0' "${mount_access[@]}"; fi
-  } | "$JQ" -Rs "$@" '
-    split("\u0000") as $fields | $ARGS.named + {
+  } | "$BASE64" -w0 | "$JQ" -Rs "$@" '
+    @base64d | split("\u0000") as $fields | $ARGS.named + {
       dfPayload: $fields[0],
       mountAccess: (reduce range(1; ($fields | length) - 1; 2) as $i ({};
         .[$fields[$i]] = ($fields[$i + 1] == "true"))) }'
