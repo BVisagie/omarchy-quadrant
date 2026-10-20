@@ -231,7 +231,6 @@ probe_gpu() {
   return 0
 }
 declare -a GPU_ENG_PATHS=() GPU_ENG_KEYS=()
-probe_gpu
 gpu_probed_generation=-1
 
 # --- per-file readers --------------------------------------------------------

@@ -8,12 +8,14 @@
 # callers decide how a missing path is handled.
 
 intel_card_dir() {
-  local dev=$1
-  local card=${dev%/device}
-  if [[ -z $dev || $card == "$dev" ]]; then
+  local dev=$1 parent
+  parent=${dev%/device}
+  if [[ -z $dev || $parent == "$dev" ]]; then
     return 1
   fi
-  printf '%s' "$card"
+  if [[ -n ${2:-} ]]; then printf -v "$2" '%s' "$parent"
+  else printf '%s' "$parent"
+  fi
 }
 
 intel_pick_readable() {
@@ -45,8 +47,7 @@ intel_freq_cur_path() {
   local dev=$1 card=""
   local -a cands=()
   [[ -n $dev ]] || return 1
-  card=${dev%/device}
-  [[ $card == "$dev" ]] && card=""
+  intel_card_dir "$dev" card || card=""
   cands+=("$dev/gt_cur_freq_mhz")
   [[ -n $card ]] && cands+=("$card/gt_cur_freq_mhz")
   cands+=("$dev/gt/gt_cur_freq_mhz")
@@ -60,8 +61,7 @@ intel_freq_max_path() {
   local dev=$1 card=""
   local -a cands=()
   [[ -n $dev ]] || return 1
-  card=${dev%/device}
-  [[ $card == "$dev" ]] && card=""
+  intel_card_dir "$dev" card || card=""
   # rp0 / max are the peak; rpn is the floor and must not be used as max.
   cands+=("$dev/gt_max_freq_mhz")
   [[ -n $card ]] && cands+=("$card/gt_max_freq_mhz")

@@ -71,6 +71,11 @@ Bash eligibility checks without tick forks; `amd-runtime-power.py` is a read-onl
 PM observer. `qs-gpu-power.sh` runs the real Store with two viewers and private
 AMD devices, covering hidden/sleeping/detail/settings/refresh, measured zero,
 held age, history gaps, selection without restart and combined CPU demand.
+`qs-gpu-review.sh` covers delayed/failed/retried control setup without stopping
+system samples, NVIDIA-only control inactivity, unrelated CPU demand, helper
+cancellation, newest-source selection, late results across gaps and sleeping
+helper suppression. Model tests exercise two hours of rapid PM transitions
+to verify aligned, bounded hour history and normal storage for other metrics.
 Fixture results do not establish physical suspend or wattage savings.
 
 ## Checks
@@ -102,6 +107,7 @@ syntax, and runs helper smoke checks in a mawk/gawk matrix. The
 bash tests/qs-smoke.sh
 bash tests/qs-device-identity.sh
 bash tests/qs-gpu-power.sh
+bash tests/qs-gpu-review.sh
 bash tests/qs-process-lifecycle.sh
 bash tests/qs-process-ui.sh
 bash tests/qs-panel-ui.sh

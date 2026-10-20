@@ -19,10 +19,17 @@ first demonstrate suspend under matching conditions.
 The shared Store publishes an atomic, private runtime control file. It contains
 one generation and the demand/device for dedicated and integrated roles, with
 a three-second lease based on `/proc/uptime` (boot time, unaffected by wall-clock
-adjustment). A one-second metadata heartbeat renews the lease. Missing, expired,
+adjustment). A one-second metadata heartbeat renews the lease while an AMD or
+Intel stream target needs control. NVIDIA-only and no-GPU Stores do not create
+the control directory or run that heartbeat. Missing, expired,
 invalid, or superseded control suppresses controlled AMD reads. Control state
 is removed on Store destruction; a later stream start sweeps directories owned
 by dead controller processes.
+
+The control path is fixed before stream startup. Its private directory is
+created asynchronously with mode 0700, with a two-second retry after failure.
+GPU setup never blocks unrelated sampling; controlled GPU reads fail closed
+until the first valid control is published. Readiness does not restart the stream.
 
 The stream re-reads control each tick. Device/visibility changes do not restart
 it, and CPU, memory, disk and network continue at their configured cadence.
@@ -38,7 +45,9 @@ requests collection. Missing/unsupported PM status permits visible-only
 collection and is labelled unavailable; `power/control=on` and negative
 known autosuspend delays are labelled disabled. Present but unreadable or
 invalid PM metadata suppresses telemetry and reports failure. Retries are
-bounded by the existing stream/helper cadences and helper watchdog.
+bounded by the existing stream/helper cadences and helper watchdog. A sleeping
+or transitioning stream observation stops dedicated AMD helper polling; the
+stream's PM status check observes when collection can resume.
 
 Status checks do not lock the kernel against a transition during subsequent
 reads. No additional active-state cooldown is imposed: this machine supplies
@@ -48,16 +57,25 @@ will need a measured shared collection/quiet window before that hardware can
 be reported as verified. Visibility/PM gating alone is not proof of that result.
 
 Readings carry their device/generation, acquisition wall/boot times and sample
-sequence. Stream and helper acquisitions retain separate ages. The GPU detail
-view uses the complete helper snapshot while it is open, so helper-only fields
-such as memory clock do not inherit a newer stream timestamp. Held values stay
-visible in detail with an age; the bar shows `zz` for sleep and `--` while held,
+sequence. Stream and helper acquisitions retain separate ages. Common GPU
+readouts use the newest acquisition from either source. Helper-only fields
+such as memory clock and junction temperature carry their own age and are
+cleared on non-fresh results, errors, or generation changes. Retained readings
+are explicitly marked as last readings with an age; the bar shows `zz` for sleep and `--` while held,
 waiting or failed. Tooltips explain the state and last reading. Real zero
-remains a measurement. CPU/iGPU status is displayed independently of errors.
+remains a measurement. Estimate disclosures remain visible alongside age.
+CPU/iGPU status is displayed independently of errors. CPU demand without a
+matching AMD iGPU does not invalidate dedicated AMD collection. Intentional
+helper cancellation does not become a collection error.
 
 AMD history accepts each new acquisition once, using its acquisition time.
-Explicit zero-count gap markers break minute, hour and bar trends even for
-short suppression periods, survive v2 history reload, and do not enter means.
+Explicit gap markers break minute and bar trends even for short suppression
+periods. The hour view keeps one aligned ten-second bucket per interval and
+conservatively omits any bucket touched by suppression from plots and summaries.
+Its measurement count includes only real readings; repeated transitions do not
+consume additional entries or shorten the hour window. Gaps survive v2 history
+reload. Late acquisitions preceding a suppression watermark are discarded using
+boot time, while a genuine wall-clock rollback still resets chronological history.
 Old history expires during suppression. DRM/rate baselines reset across demand
 and device generations and observed sleep/transition intervals.
 

@@ -103,6 +103,13 @@ transitioning and failed states and malformed/expired/superseded controls.
 Permission errors, independent physical-device demand, measured zero, missing
 PM metadata and honest fallback are also covered with private fixtures.
 
+The subsequent PR review fixes were validated with private fixtures rather
+than another physical observation. Added cases cover control setup delay,
+failure and retry, Intel cancellation, no NVIDIA-only heartbeat, late helper
+results, current versus held readings, sleeping helper suppression, and rapid
+PM transitions with a full retained hour. The desktop measurements above remain
+specific to collector commit `2a125ae`.
+
 Actual suspend/resume, per-attribute wake effects, a justified active-state
 quiet window, a two-monitor physical setup, and a separate AMD iGPU remain
 unverified. Embedded compatibility Stores have no cross-process batching

@@ -5,7 +5,8 @@ import Quickshell.Io
 // place. `result(text)` carries the helper's stdout once the stream closes;
 // `failed(message)` fires on a non-zero exit (after the text, if any) or a
 // timeout. The watchdog sends SIGTERM first so a helper can clean up, then
-// SIGKILL one second later if it is wedged.
+// SIGKILL one second later if it is wedged. Intentional cancellation emits
+// neither a result nor a failure.
 Item {
   id: root
 
@@ -14,6 +15,7 @@ Item {
   property string activeContext: ""
   property var activeCommand: []
   property int timeoutMs: 6000
+  property bool intentionalStop: false
   readonly property bool running: proc.running
 
   signal result(string text)
@@ -21,6 +23,7 @@ Item {
 
   function run() {
     if (proc.running) return false
+    intentionalStop = false
     activeContext = context
     activeCommand = command.slice()
     killTimer.stop()
@@ -31,8 +34,8 @@ Item {
 
   function stop() {
     watchdog.stop()
-    killTimer.stop()
-    if (proc.running) proc.signal(15)
+    intentionalStop = true
+    if (proc.running) { proc.signal(15); killTimer.restart() }
   }
 
   Process {
@@ -40,12 +43,12 @@ Item {
     command: root.activeCommand
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.result(text)
+      onStreamFinished: if (!root.intentionalStop) root.result(text)
     }
     onExited: function (exitCode) {
       watchdog.stop()
       killTimer.stop()
-      if (exitCode !== 0) root.failed("exited with code " + exitCode)
+      if (exitCode !== 0 && !root.intentionalStop) root.failed("exited with code " + exitCode)
     }
   }
 

@@ -127,6 +127,8 @@ jobs:
         run: bash tests/qs-bar-ui.sh
       - name: AMD visibility and runtime PM lifecycle
         run: bash tests/qs-gpu-power.sh
+      - name: GPU control startup, late history, sleep polling and cancellation
+        run: bash tests/qs-gpu-review.sh
       - name: Local copy/open actions (skips without quickshell and shell imports)
         run: bash tests/qs-actions-ui.sh
       - name: Hardware details and shared collector (skips without quickshell and shell imports)
