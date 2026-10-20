@@ -294,15 +294,22 @@ bash tests/render-docs.sh /tmp/quadrant-docs
 This runs the actual QML tabs, settings, bar widget, and graph components
 against deterministic synthetic data. The tab renderer's documentation mode
 uses `tests/qs/DocumentationFixture.qml` and does not instantiate the live
-sampling Store. Invented process names, device identifiers, mount paths, and
-documentation-range IP addresses keep the captures independent of the host.
+sampling Store. Synthetic process instances, device identifiers, mount paths,
+and documentation-range IP addresses keep captures independent of the host.
+The shared process resolver uses a fixed desktop inventory and bundled T3 Code
+and Brave Origin icons; unknown utilities use an original generic icon. See
+`tests/qs/icons/README.md` for asset sources and licenses. No desktop inventory
+or icon-directory scan is needed for these captures.
 Fixtures establish presentation, not driver support, hardware accuracy, or
 power-management behavior.
 
-The script refreshes all 17 files in `docs/screenshots/`: six resource panels,
-settings, expanded process exploration, the bare README bar, five bar
-comparisons, and three graph comparisons. It resets inherited
+The script refreshes all 18 files in `docs/screenshots/`: six resource panels,
+an additional sleeping AMD GPU example, settings, expanded process exploration,
+the bare README bar, five bar comparisons, and three graph comparisons. It resets inherited
 `QUADRANT_RENDER_*` options and fixes the timezone, scale, and font DPI.
+Panel captures also fix the shell's control-state colors and wait for their
+animations to settle. The AMD examples include acquisition age; sleeping
+retains the last measured activity and leaves history gaps during suppression.
 The bare README bar is captured at 2× (516 × 116 px) and displayed at its
 258 px logical width; the remaining captures use 1×.
 Panel captures have 720 px of content plus 16 px margins, use the dark,

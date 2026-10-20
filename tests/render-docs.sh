@@ -14,6 +14,8 @@ export QUADRANT_RENDER_FIT=1 QUADRANT_RENDER_HEADER=1 QUADRANT_RENDER_PALETTE=da
 
 bash tests/render.sh cpu "$out/cpu.png"
 QUADRANT_RENDER_PALETTE=light bash tests/render.sh gpu "$out/gpu.png"
+QUADRANT_RENDER_PALETTE=light QUADRANT_RENDER_AMD_STATE=sleeping \
+  bash tests/render.sh gpu "$out/gpu-sleeping.png"
 QUADRANT_RENDER_PALETTE=mono bash tests/render.sh mem "$out/memory.png"
 bash tests/render.sh disk "$out/drives.png"
 QUADRANT_RENDER_PALETTE=light bash tests/render.sh net "$out/network.png"
@@ -42,4 +44,4 @@ QUADRANT_RENDER_PALETTE=light QUADRANT_RENDER_WIDTH=320 QUADRANT_RENDER_LONG=1 \
 QUADRANT_RENDER_PALETTE=mono QUADRANT_RENDER_PATTERN=low \
   bash tests/render-graphs.sh "$out/graph-layouts-mono-low.png"
 
-echo "render-docs: refreshed 17 screenshots in $out"
+echo "render-docs: refreshed 18 screenshots in $out"
