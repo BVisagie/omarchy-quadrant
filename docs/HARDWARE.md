@@ -124,9 +124,10 @@ controls. Counter baselines live only in memory. Hardware diagnostics and memory
 clocks add no history writes or streaming tick work.
 
 The remaining selected hardware scope is implemented. AMD runtime
-power-management work remains deferred; this change preserves its existing
-GPU collection paths. Fixture tests establish parsing, units, visibility,
-counter failures, and UI behavior. The development machine confirms Intel
+power-management work remains deferred to a future PR; see the
+[detailed follow-up scope, design considerations, and hardware test procedure](AMD_RUNTIME_POWER.md).
+This change preserves its existing GPU collection paths. Fixture tests establish
+parsing, units, visibility, counter failures, and UI behavior. The development machine confirms Intel
 sensors and system/peripheral discovery, with package counters denied to the
 user. Readable RAPL rates and AMD/NVIDIA memory clocks still need physical
 hardware validation; fixtures are not evidence of runtime power behavior.

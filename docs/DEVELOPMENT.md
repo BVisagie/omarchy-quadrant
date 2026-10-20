@@ -64,6 +64,11 @@ See [Process exploration](PROCESS_EXPLORATION.md) for collection contracts and
 performance observations, [Measurements](METRICS.md) for calculations and [Security](../SECURITY.md)
 for state paths and failure behavior.
 
+The [deferred AMD runtime power-management work](AMD_RUNTIME_POWER.md) records
+the current reader audit, proposed collection boundaries, planned fixture coverage,
+and the baseline/patched hardware procedure for a future PR. It is a follow-up
+plan, not a guarantee provided by the current collectors.
+
 ## Checks
 
 Run from the repository root. Pure tests need Node and Python; the script
