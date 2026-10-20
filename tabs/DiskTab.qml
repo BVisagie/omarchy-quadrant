@@ -104,9 +104,9 @@ Item {
 
     Components.Hero {
       width: parent.width
+      detailsTarget: root
       title: root.diskTitle
       meta: root.diskMeta
-      detail: root.diskDetail
     }
 
     Text {
@@ -134,53 +134,63 @@ Item {
       objectName: "resourceColumns"
       width: parent.width
       primary: [
-        Components.GraphBlock {
-          objectName: "diskHistory"
+        Components.SectionCard {
           width: parent.width
-          title: "THROUGHPUT"
-          finePoints: root.model ? root.model.diskHistory : []
-          longPoints: root.model ? root.model.diskLong : []
-          longWindow: root.longWindow
-          sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
-          graphLayout: root.model && root.model.cfg ? root.model.cfg.diskGraphLayout : "overlay"
-          minimumMax: 1024
-          formatValue: function (v) { return Model.formatRate(v) }
-          fields: [
-            { key: "r", label: "read", color: root.pal.primary },
-            { key: "w", label: "write", color: root.pal.secondary }
-          ]
-          legend: [
-            { label: "read", color: root.pal.primary, value: root.rates ? Model.formatRate(root.rates.readBps) : "--" },
-            { label: "write", color: root.pal.secondary, value: root.rates ? Model.formatRate(root.rates.writeBps) : "--" }
-          ]
-          onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
-        },
-        Column {
-          width: parent.width
-          spacing: Commons.Style.space(6)
+          title: "Throughput"
 
-          Components.SectionHeader { width: parent.width; text: "DEVICE" }
-          Components.StatRow {
-            wrapValue: true
+          Components.MetricStrip {
             width: parent.width
-            label: "Busy"
-            value: root.rates ? Model.formatPct(root.rates.utilPct) : "--"
+            metrics: [
+              { label: "Read", value: root.rates ? Model.formatRate(root.rates.readBps) : "--", color: root.pal.primary },
+              { label: "Write", value: root.rates ? Model.formatRate(root.rates.writeBps) : "--", color: root.pal.secondary }
+            ]
           }
-          Components.StatRow {
-            wrapValue: true
+
+          Components.GraphBlock {
+            objectName: "diskHistory"
             width: parent.width
-            label: "IOPS r/w"
-            value: root.rates ? String(Math.round(root.rates.readIops)) + " / " + String(Math.round(root.rates.writeIops)) : "--"
+            title: "THROUGHPUT"
+            finePoints: root.model ? root.model.diskHistory : []
+            longPoints: root.model ? root.model.diskLong : []
+            longWindow: root.longWindow
+            sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+            graphLayout: root.model && root.model.cfg ? root.model.cfg.diskGraphLayout : "overlay"
+            minimumMax: 1024
+            formatValue: function (v) { return Model.formatRate(v) }
+            fields: [
+              { key: "r", label: "read", color: root.pal.primary },
+              { key: "w", label: "write", color: root.pal.secondary }
+            ]
+            legend: [
+              { label: "read", color: root.pal.primary, value: root.rates ? Model.formatRate(root.rates.readBps) : "--" },
+              { label: "write", color: root.pal.secondary, value: root.rates ? Model.formatRate(root.rates.writeBps) : "--" }
+            ]
+            onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
+          }
+
+          Components.StatRow { width: parent.width; wrapValue: true; label: "Busy"; value: root.rates ? Model.formatPct(root.rates.utilPct) : "--" }
+
+          Components.StatRow { width: parent.width; wrapValue: true; label: "Temperature"; value: root.diskDetail || "--" }
+
+          Components.Disclosure {
+            width: parent.width
+            title: "I/O details"
+            Components.StatRow { width: parent.width; wrapValue: true; label: "IOPS r/w"; value: root.rates ? String(Math.round(root.rates.readIops)) + " / " + String(Math.round(root.rates.writeIops)) : "--" }
           }
         },
-        Column {
+        Components.SectionCard {
           width: parent.width
-          spacing: Commons.Style.space(8)
-          visible: root.diskMounts.length > 0
+          title: "Volumes"
 
-          Components.SectionHeader {
+          Text {
+            textFormat: Text.PlainText
             width: parent.width
-            text: "MOUNTS"
+            wrapMode: Text.Wrap
+            color: root.pal.dim
+            font.family: Commons.Style.font.family
+            font.pixelSize: Commons.Style.font.caption
+            text: "No mounted volumes on this drive."
+            visible: root.diskMounts.length === 0
           }
 
           Components.PanelActions {
@@ -195,24 +205,60 @@ Item {
         }
       ]
       secondary: [
-        Components.ProcessList {
-          id: processRoster
-          panel: root.panel
-          active: root.active
-          expandable: true
-          expandedRows: root.expandedRows
-          expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
-          scopeText: Model.processScope(root.model ? root.model.procStats : null, "io", expanded)
+        Components.SectionCard {
           width: parent.width
-          rows: root.rows
-          valueHeader: "DISK I/O"
-          emptyText: !root.active ? "Open this tab to sample processes"
-                     : !root.model || !root.model.procStats ? "Measuring disk I/O rates…"
-                     : root.model.procStats.ioVisible === 0 ? "Process I/O visibility is restricted"
-                     : root.model.procStats.rateState === "unavailable" ? "Disk I/O rates unavailable without counter state"
-                     : !(root.model.procStats.dt > 0) || root.model.procStats.ioReady === 0 ? "Measuring disk I/O rates…"
-                     : "No disk activity from visible processes"
-          errorText: root.errorText
+
+          Components.ProcessList {
+            id: processRoster
+            panel: root.panel
+            active: root.active
+            expandable: true
+            expandedRows: root.expandedRows
+            expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
+            scopeText: "Machine-wide I/O; not limited to this drive. " + Model.processScope(root.model ? root.model.procStats : null, "io", expanded)
+            width: parent.width
+            rows: root.rows
+            valueHeader: "DISK I/O"
+            emptyText: !root.active ? "Open this tab to sample processes"
+                       : !root.model || !root.model.procStats ? "Measuring disk I/O rates…"
+                       : root.model.procStats.ioVisible === 0 ? "Process I/O visibility is restricted"
+                       : root.model.procStats.rateState === "unavailable" ? "Disk I/O rates unavailable without counter state"
+                       : !(root.model.procStats.dt > 0) || root.model.procStats.ioReady === 0 ? "Measuring disk I/O rates…"
+                       : "No disk activity from visible processes"
+            errorText: root.errorText
+          }
+        },
+        Components.SectionCard {
+          width: parent.width
+          title: "Device"
+
+          Components.StatRow { width: parent.width; wrapValue: true; label: "Capacity"; value: root.selectedDisk ? Model.formatBytes(root.selectedDisk.sizeBytes) : "--" }
+
+          Components.StatRow { width: parent.width; wrapValue: true; label: "Type"; value: root.selectedDisk ? (root.selectedDisk.rotational === true ? "HDD" : root.selectedDisk.rotational === false ? "SSD" : "--") : "--" }
+
+          Components.Disclosure {
+            width: parent.width
+            title: "Device details"
+            Text {
+              textFormat: Text.PlainText
+              width: parent.width
+              wrapMode: Text.Wrap
+              color: root.pal.dim
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
+              text: root.diskName || "No drive selected"
+            }
+            Text {
+              textFormat: Text.PlainText
+              width: parent.width
+              wrapMode: Text.Wrap
+              color: root.pal.dim
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
+              text: root.selectedDisk ? String(root.selectedDisk.deviceId || "") : ""
+              visible: text !== ""
+            }
+          }
         }
       ]
     }

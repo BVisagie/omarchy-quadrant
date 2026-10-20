@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quadrant — Hardware hierarchy review</title>
+<style>
+  * { box-sizing:border-box }
+  body { margin:0; background:transparent; color:var(--foreground,#c4cce1); font:14px/1.5 var(--font-sans,system-ui,sans-serif) }
+  button,select { font:inherit }
+  button,summary { cursor:pointer }
+  button:focus-visible,summary:focus-visible,select:focus-visible { outline:2px solid #8baaff; outline-offset:3px }
+  button { color:inherit }
+  [hidden] { display:none !important }
+  .intro { margin:0 0 14px; color:var(--muted-foreground,#a3acc0); max-width:76ch }
+  .intro strong { color:var(--foreground,#d1d8e9) }
+  .toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:14px }
+  .segmented { display:flex; gap:3px; border:1px solid var(--border,#383d50); border-radius:6px; padding:3px }
+  .segmented button { background:transparent; border:0; border-radius:3px; padding:6px 12px; font-size:12px }
+  .segmented button[aria-pressed=true] { background:var(--secondary,#303448); color:var(--foreground,#e0e5f0) }
+  .tools { display:flex; flex-wrap:wrap; gap:10px; align-items:center; color:var(--muted-foreground,#a3acc0); font-size:12px }
+  select { color:var(--foreground,#d1d8e9); background:var(--card,#232634); border:1px solid var(--border,#383d50); padding:5px 7px; border-radius:4px }
+  .widget {
+    --bg:#1a1b26; --surface:#1e202c; --fg:#b9c2df; --dim:#939db9;
+    --line:#343748; --accent:#8aaaff; --amber:#e0b879;
+    width:100%; max-width:752px; margin:auto; padding:16px;
+    background:var(--bg); color:var(--fg); border:1px solid #4b526b; border-radius:var(--radius,8px);
+    font:12px/1.5 "JetBrainsMono Nerd Font","JetBrains Mono","DejaVu Sans Mono",monospace;
+    font-variant-numeric:tabular-nums; container-type:inline-size;
+  }
+  .widget.narrow { max-width:360px }
+  .widget header { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:18px }
+  .widget h1 { font-size:17px; font-weight:600; margin:0 0 3px }
+  .widget header p { margin:0; color:var(--dim); font-size:11px }
+  .widget button { border:0; background:transparent; padding:5px 7px; border-radius:3px; font-size:10px; color:var(--dim) }
+  .widget button:hover { background:#b9c2df12; color:var(--fg) }
+  .groups { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; align-items:start }
+  .stack { display:grid; gap:14px; min-width:0 }
+  .group { min-width:0; padding:14px; background:var(--surface); border:1px solid var(--line); border-radius:4px }
+  .group-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px }
+  .group h2 { margin:0; font-weight:600; font-size:12px; color:#c6cfea }
+  .source { color:var(--dim); font-size:10px; font-weight:400; overflow-wrap:anywhere }
+  .reading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; min-width:0 }
+  .reading .label { color:var(--dim) }
+  .value { white-space:nowrap; font-weight:500; color:#c6cfea }
+  .package { margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--line); }
+  .package .value { font-size:24px; line-height:1.3 }
+  .package .label { font-size:11px }
+  .group p { margin:0 }
+  .cores summary { font-size:10px; display:flex; align-items:center; justify-content:space-between; gap:8px; list-style:none; color:var(--dim); }
+  summary::-webkit-details-marker { display:none }
+  .cores summary .chevron::before { content:"›"; margin-right:6px; color:var(--accent); display:inline-block }
+  .cores[open] summary .chevron::before { transform:rotate(90deg) }
+  .core-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin-top:8px; gap:4px }
+  .core { display:flex; flex-direction:column; gap:2px; padding:5px 7px; background:#b9c2df05; border-bottom:1px solid #363a4c }
+  .core small { font-size:9px; color:var(--dim); white-space:nowrap }
+  .core span { font-size:11px }
+  .details { margin-top:12px; padding-top:9px; border-top:1px solid var(--line); }
+  .details summary { display:flex; gap:6px; align-items:center; width:fit-content; color:var(--dim); font-size:10px; list-style:none }
+  .details summary::before { content:"›"; display:inline-block; color:var(--accent) }
+  .details[open] summary::before { transform:rotate(90deg) }
+  .details .info { margin-top:10px; color:var(--dim); font-size:10px; overflow-wrap:anywhere }
+  .info p+p { margin-top:7px }
+  .info strong { color:var(--fg); font-weight:500 }
+  .device-row+.device-row { border-top:1px solid var(--line); padding-top:11px; margin-top:11px }
+  .device-row .source { margin-top:2px }
+  .sensor-table { width:100%; border-collapse:collapse; margin-top:6px; font-size:11px }
+  .sensor-table th { text-align:left; color:var(--dim); font-weight:400; padding:2px 0 2px 10px }
+  .sensor-table td { text-align:right; padding:2px 0 }
+  .status { display:inline-flex; align-items:center; gap:5px; font-size:10px; color:var(--dim) }
+  .status.warn { color:var(--amber) }
+  .missing { color:var(--dim) }
+  .state-line { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; justify-content:space-between; margin-top:4px }
+  .battery-heading { display:flex; justify-content:space-between; gap:10px; align-items:baseline }
+  .battery-heading .name { font-size:11px; color:var(--fg) }
+  .charge { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:3px }
+  .charge strong { font-size:28px; font-weight:500; line-height:1.4; color:#cad4f1 }
+  .charge strong span { font-size:17px }
+  .charge-track { height:5px; background:#343748; margin:8px 0 14px; border-radius:2px; overflow:hidden }
+  .charge-track span { width:78%; height:100%; display:block; background:var(--accent) }
+  .battery-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding-bottom:13px; border-bottom:1px solid var(--line) }
+  .battery-metrics dt { font-size:9px; color:var(--dim); margin-bottom:3px }
+  .battery-metrics dd { margin:0; font-size:12px; white-space:nowrap }
+  .battery-metrics dl { margin:0 }
+  .mouse { margin-top:12px }
+  .mouse .mouse-name { max-width:100%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; display:block; font-size:11px }
+  .mouse .state-line { margin-top:6px }
+  .mouse .reading { margin-top:5px }
+  .mouse .reading .label { font-size:10px }
+  .power-row+.power-row { border-top:1px solid var(--line); padding-top:12px; margin-top:12px }
+  .power-row .reading { font-size:11px }
+  .power-row .state-line { align-items:flex-start }
+  .footer { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; border-top:1px solid var(--line); margin-top:16px; padding-top:10px; color:var(--dim); font-size:9px }
+  .footer kbd { color:var(--fg); font:inherit }
+  .capture { max-width:752px; margin:0 auto; background:#1a1b26; padding:16px; border:1px solid #4b526b; border-radius:var(--radius,8px) }
+  .capture img { width:100%; display:block }
+  .caption { margin:10px auto 18px; font-size:11px; color:var(--muted-foreground,#a3acc0); max-width:752px }
+  .principles { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; border-top:1px solid var(--border,#383d50); padding-top:16px }
+  .principles h3 { margin:0 0 5px; font-size:12px; font-weight:600 }
+  .principles p { margin:0; font-size:12px; color:var(--muted-foreground,#a3acc0) }
+  .plan { margin-top:18px; color:var(--muted-foreground,#a3acc0); font-size:12px }
+  .plan summary { color:var(--foreground,#d1d8e9); font-weight:500; }
+  .plan ol { padding-left:21px }
+  .plan li+li { margin-top:7px }
+  @container (max-width:620px) { .groups { grid-template-columns:1fr } }
+  @container (max-width:360px) {
+    .widget header { align-items:flex-start }
+    .group { padding:12px }
+    .core-grid { grid-template-columns:repeat(4,minmax(0,1fr)) }
+    .core { padding:5px }
+    .battery-metrics { gap:6px }
+    .battery-metrics dd { font-size:11px }
+  }
+  @media(max-width:560px) { .principles { grid-template-columns:1fr; gap:12px } }
+</style>
+</head>
+<body>
+<p class="intro"><strong>Give Hardware a clearer hierarchy.</strong> Four groups, consistent labels and readings first. Keep the wider layout; make each section easier to scan.</p>
+<div class="toolbar" aria-label="Mockup review controls">
+  <div class="segmented" aria-label="Compare layouts">
+    <button id="proposed-button" aria-pressed="true">Proposed</button>
+    <button id="current-button" aria-pressed="false">Current screenshot</button>
+  </div>
+  <div class="tools" id="preview-tools">
+    <label>Width <select id="width"><option value="wide">Wide</option><option value="narrow">Narrow</option></select></label>
+    <label>Units <select id="units"><option value="c">°C</option><option value="f">°F</option></select></label>
+  </div>
+</div>
+<main id="proposed">
+  <section class="widget" aria-label="Proposed Hardware panel">
+    <header>
+      <div><h1>Hardware</h1><p>23 sensors · 2 batteries</p></div>
+      <button id="all-details" aria-label="Expand all visible detail sections">Expand details</button>
+    </header>
+    <div class="groups">
+      <div class="stack">
+        <section class="group" aria-labelledby="processor-title">
+          <div class="group-title"><h2 id="processor-title">Processor</h2><span class="source">coretemp</span></div>
+          <div class="reading package"><span class="label">Package id 0</span><span class="value temperature" data-c="66">66°C</span></div>
+          <details class="cores expandable">
+            <summary><span class="chevron">16 core readings</span><span id="core-range">38–48°C</span></summary>
+            <div class="core-grid" id="cores"></div>
+          </details>
+          <details class="details expandable">
+            <summary>Sensor details</summary>
+            <div class="info"><p><strong>Source:</strong> coretemp · 17 readings</p><p>The package reading and core readings measure different parts of the CPU. Core numbers are the reported sensor labels.</p></div>
+          </details>
+        </section>
+        <section class="group" aria-labelledby="other-title">
+          <div class="group-title"><h2 id="other-title">Other temperatures</h2></div>
+          <div class="device-row">
+            <div class="reading"><span>NVMe storage</span><span class="source">3 readings</span></div>
+            <table class="sensor-table" aria-label="NVMe temperatures">
+              <tbody>
+                <tr><th scope="row">Composite</th><td class="temperature" data-c="29">29°C</td></tr>
+                <tr><th scope="row">Sensor 1</th><td class="temperature" data-c="42">42°C</td></tr>
+                <tr><th scope="row">Sensor 2</th><td class="temperature" data-c="29">29°C</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="device-row">
+            <div class="reading"><span>Wireless</span><span class="value temperature" data-c="41">41°C</span></div>
+            <div class="source">iwlwifi_1 · temp1</div>
+          </div>
+          <div class="device-row">
+            <div class="reading"><span>ACPI thermal zone</span><span class="missing">--</span></div>
+            <div class="state-line"><span class="source">acpitz · temp1</span><span class="status warn">Invalid reading</span></div>
+          </div>
+          <details class="details expandable">
+            <summary>Sensor details</summary>
+            <div class="info"><p><strong>Storage source:</strong> nvme</p><p>Composite, Sensor 1 and Sensor 2 remain separate readings. An invalid thermal-zone reading is unavailable, not zero.</p></div>
+          </details>
+        </section>
+      </div>
+      <div class="stack">
+        <section class="group" aria-labelledby="battery-title">
+          <div class="group-title"><h2 id="battery-title">Batteries</h2><span class="source">2 devices</span></div>
+          <div class="battery-heading"><span class="name">Laptop battery</span><span class="source">BAT0</span></div>
+          <div class="charge"><strong>78<span>%</span></strong><span class="status">Not charging</span></div>
+          <div class="charge-track" aria-hidden="true"><span></span></div>
+          <div class="battery-metrics">
+            <dl><dt>Health / design</dt><dd>93.0%</dd></dl>
+            <dl><dt>Full capacity</dt><dd>78.1 Wh</dd></dl>
+            <dl><dt>Cycles</dt><dd>62</dd></dl>
+          </div>
+          <div class="mouse">
+            <span class="mouse-name" title="MX Vertical Advanced Ergonomic Mouse">MX Vertical Advanced Ergonomic Mouse</span>
+            <div class="reading"><span class="label">Charge</span><span class="missing">--</span></div>
+            <div class="state-line"><span class="status">Charge unavailable</span><span class="status">Discharging</span></div>
+          </div>
+          <details class="details expandable">
+            <summary>Battery details</summary>
+            <div class="info">
+              <p><strong>Laptop battery:</strong> L23N4PF1 · BAT0 · system battery</p>
+              <p><strong>Peripheral:</strong> MX Vertical Advanced Ergonomic Mouse · hidpp_battery_0</p>
+              <p>Charge and reported state belong to each device. Health compares full capacity with design capacity. Power profiles remain in the shell’s Power panel.</p>
+            </div>
+          </details>
+        </section>
+        <section class="group" aria-labelledby="power-title">
+          <div class="group-title"><h2 id="power-title">Power &amp; cooling</h2></div>
+          <div class="power-row">
+            <div class="reading"><span>Package 0 power</span><span class="missing">--</span></div>
+            <div class="state-line"><span class="source">intel-rapl:0</span><span class="status warn">Permission denied</span></div>
+          </div>
+          <div class="power-row">
+            <div class="reading"><span>Fan · fan1</span><span class="missing">--</span></div>
+            <div class="state-line"><span class="source">acpi_fan</span><span class="status">Unavailable</span></div>
+          </div>
+          <details class="details expandable">
+            <summary>Reading details</summary>
+            <div class="info">
+              <p>CPU package power can include integrated graphics. Core and uncore counters are not added to the package total.</p>
+              <p>Fan speed is unavailable. A measured stopped fan would show 0 RPM.</p>
+            </div>
+          </details>
+        </section>
+      </div>
+    </div>
+    <footer class="footer"><span><kbd>D</kbd> details · <kbd>↑/↓</kbd> scroll · <kbd>S</kbd> settings</span><span>Sensor pinning in settings</span></footer>
+  </section>
+</main>
+<section class="capture" id="current" hidden aria-label="Original screenshot">
+  <img src="hardware-current.png" alt="Current Hardware view with scattered detail actions, long device identities and loose groups of readings.">
+</section>
+<p class="caption" id="caption">Static values from your screenshot. Expand “16 core readings” for the grid; try D, narrow width or Fahrenheit. Layout and labels are proposed.</p>
+<section class="principles" aria-label="Design changes">
+  <div><h3>1. Clear group boundaries</h3><p>Four quiet panels replace a continuous stream of labels. CPU comes first; other sensors retain their identities.</p></div>
+  <div><h3>2. Readings before metadata</h3><p>Charge and state sit together. Device IDs, full model names and explanations have a consistent home in Details.</p></div>
+  <div><h3>3. Honest status display</h3><p>Invalid readings, denied access and missing values stay visible. Colour signals data availability, not an invented health verdict.</p></div>
+</section>
+<details class="plan">
+  <summary>Proposed implementation scope</summary>
+  <ol>
+    <li>Apply a shared section header, row spacing and detail treatment to Hardware. Use the existing theme, typography and responsive column layout.</li>
+    <li>Order known sensor families by a stable rule, with CPU first. Use friendly labels only for recognised drivers; preserve raw labels and owner identity for unknown or repeated devices. Do not move groups when values change.</li>
+    <li>Start with CPU package temperature and the range of available core readings. Expand the original core labels on demand; keep missing or critical core counts visible in the collapsed summary. Preserve the user’s expanded state during the session.</li>
+    <li>Put full battery identities and existing capacity/power fields in Details. Do not omit fields simply because this screenshot does not show them.</li>
+    <li>Preserve pinning, unit conversion, GPU actions when present, missing/error states and scroll position. Keep detail state across live updates and resizing. D operates only on visible sections.</li>
+    <li>Validate laptops, desktops without batteries, multiple NVMe devices, unavailable sensors, long names, large fonts and narrow panels before opening a follow-up PR.</li>
+  </ol>
+</details>
+<script>
+  const coreValues = [[0,38],[1,38],[2,38],[3,38],[4,38],[5,38],[6,38],[7,38],[8,40],[12,48],[16,39],[20,42],[24,40],[28,42],[32,45],[33,45]];
+  const cores = document.querySelector('#cores');
+  for (const [id, value] of coreValues) {
+    const cell = document.createElement('div');
+    cell.className = 'core';
+    cell.innerHTML = '<small>Core '+id+'</small><span class="temperature" data-c="'+value+'">'+value+'°C</span>';
+    cores.append(cell);
+  }
+  const widget = document.querySelector('.widget');
+  const disclosures = [...widget.querySelectorAll('.expandable')];
+  const detailsButton = document.querySelector('#all-details');
+  function updateDetailsButton() {
+    const allOpen = disclosures.every(d => d.open);
+    detailsButton.textContent = allOpen ? 'Collapse details' : 'Expand details';
+    detailsButton.setAttribute('aria-label', (allOpen ? 'Collapse' : 'Expand')+' all visible detail sections');
+  }
+  function toggleDetails() {
+    const open = disclosures.some(d => !d.open);
+    disclosures.forEach(d => d.open = open);
+    updateDetailsButton();
+  }
+  disclosures.forEach(d => d.addEventListener('toggle', updateDetailsButton));
+  detailsButton.addEventListener('click', toggleDetails);
+  document.addEventListener('keydown', event => {
+    if (event.key.toLowerCase() === 'd' && !event.ctrlKey && !event.altKey && !event.metaKey
+        && !document.querySelector('#proposed').hidden && !['INPUT','SELECT','TEXTAREA'].includes(event.target.tagName)) {
+      event.preventDefault(); toggleDetails();
+    }
+  });
+  function setView(proposed) {
+    document.querySelector('#proposed').hidden = !proposed;
+    document.querySelector('#current').hidden = proposed;
+    document.querySelector('#preview-tools').hidden = !proposed;
+    document.querySelector('#proposed-button').setAttribute('aria-pressed', String(proposed));
+    document.querySelector('#current-button').setAttribute('aria-pressed', String(!proposed));
+    document.querySelector('#caption').textContent = proposed
+      ? 'Static values from your screenshot. Expand “16 core readings” for the grid; try D, narrow width or Fahrenheit. Layout and labels are proposed.'
+      : 'Your current screenshot, scaled to the same review width. The proposed panel uses the same readings.';
+  }
+  document.querySelector('#proposed-button').addEventListener('click', () => setView(true));
+  document.querySelector('#current-button').addEventListener('click', () => setView(false));
+  document.querySelector('#width').addEventListener('change', event => widget.classList.toggle('narrow', event.target.value === 'narrow'));
+  function setUnits(unit) {
+    const fahrenheit = unit === 'f';
+    const format = value => Math.round(fahrenheit ? value * 9 / 5 + 32 : value);
+    const suffix = fahrenheit ? '°F' : '°C';
+    document.querySelectorAll('.temperature').forEach(node => node.textContent = format(Number(node.dataset.c)) + suffix);
+    document.querySelector('#core-range').textContent = format(38)+'–'+format(48)+suffix;
+  }
+  document.querySelector('#units').addEventListener('change', event => setUnits(event.target.value));
+  updateDetailsButton();
+</script>
+</body>
+</html>

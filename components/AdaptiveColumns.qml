@@ -1,6 +1,5 @@
 import QtQuick
 import qs.Commons as Commons
-import "../lib/index.mjs" as Model
 
 // Keep the same items and focus when the available width changes. The outer
 // panel owns scrolling; neither column creates another scroll surface.
@@ -8,7 +7,7 @@ Item {
   id: root
   property alias primary: first.data
   property alias secondary: second.data
-  property real gap: Commons.Style.space(24)
+  property real gap: Commons.Style.space(12)
   property real primaryFraction: 0.5
   readonly property bool wide: width >= Math.max(Commons.Style.space(640), Commons.Style.font.body * 48)
   readonly property real firstWidth: wide ? Math.floor((width - gap) * primaryFraction) : width
@@ -29,13 +28,5 @@ Item {
     y: root.wide ? 0 : first.implicitHeight + (implicitHeight > 0 && first.implicitHeight > 0 ? root.gap : 0)
     width: root.wide ? root.width - x : root.width
     spacing: Commons.Style.space(12)
-  }
-  Rectangle {
-    visible: root.wide && first.implicitHeight > 0 && second.implicitHeight > 0
-    x: first.width + Math.floor(root.gap / 2)
-    width: 1
-    height: root.implicitHeight
-    color: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent),
-                              String(Commons.Color.foreground), String(Commons.Color.background)).track
   }
 }

@@ -4,7 +4,7 @@ import qs.Ui
 import "../lib/index.mjs" as Model
 import "../components" as Components
 
-// GPU tab (dedicated cards only): identity, card picker, overview values,
+// GPU tab (dedicated cards only): identity, card picker, grouped readings,
 // busy/VRAM history, stat rows and the per-process roster. AMD and
 // Intel data ride the stream plus DRM fdinfo; NVIDIA comes from the
 // store's on-demand nvidia-smi poll.
@@ -53,15 +53,6 @@ Item {
     if (gpuInfo && gpuInfo.driver) parts.push(gpuInfo.driver)
     return parts.join(" · ")
   }
-  readonly property string gpuDetail: {
-    if (!live) return ""
-    if (vendor === "nvidia") {
-      var t = Model.nvidiaMiBToBytes(live.memTotalM)
-      return t === null ? "" : Model.formatBytes(t) + " VRAM"
-    }
-    if (live.vramTotal === null || live.vramTotal === undefined) return ""
-    return Model.formatBytes(live.vramTotal) + " VRAM"
-  }
   readonly property var cardOptions: {
     var list = model && model.discreteGpus ? model.discreteGpus : []
     var out = []
@@ -91,7 +82,8 @@ Item {
     if (vendor === "nvidia") {
       var used = Model.nvidiaMiBToBytes(live.memUsedM)
       var total = Model.nvidiaMiBToBytes(live.memTotalM)
-      if (used === null || total === null) return "--"
+      if (used === null) return "--"
+      if (total === null) return Model.formatBytes(used)
       return Model.formatBytes(used) + " of " + Model.formatBytes(total)
     }
     if (live.vramUsed === null || live.vramUsed === undefined) return "--"
@@ -131,10 +123,10 @@ Item {
 
     Components.Hero {
       width: parent.width
+      detailsTarget: root
       visible: root.vendor !== ""
       title: root.gpuTitle
       meta: root.gpuMeta
-      detail: root.gpuDetail
     }
 
     Components.DeviceChoices {
@@ -157,54 +149,101 @@ Item {
       wrapMode: Text.WordWrap
     }
 
-    Components.MetricStrip {
-      width: parent.width
-      metrics: [
-        { label: root.display && root.display.estimated ? "GPU estimate" : "GPU busy", value: root.display ? (root.display.estimated ? "~" : "") + Model.formatPct(root.display.pct, 1) : "--", hint: root.display && root.display.estimated ? "From frequency" : "Per card" },
-        { label: root.live && root.live.memKind === "shared" ? "Shared memory" : "VRAM", value: root.vramText, hint: root.vramPct >= 0 ? Model.formatPct(root.vramPct) + " used" : "Resident bytes" },
-        { label: "Temperature", value: root.tempText, hint: "GPU sensor" },
-        { label: root.vendor === "intel" ? "Frequency" : "GPU power", value: root.vendor === "intel" ? root.clockText : (root.live && root.live.powerW !== null ? Model.formatWatts(root.live.powerW) : "--"), hint: "Current reading" }
-      ]
-    }
-
     Components.AdaptiveColumns {
       objectName: "resourceColumns"
       width: parent.width
       primary: [
-        Components.GraphBlock {
-          objectName: "gpuHistory"
+        Components.SectionCard {
           width: parent.width
-          title: "HISTORY"
-          finePoints: root.model ? root.model.gpuHistory : []
-          longPoints: root.model ? root.model.gpuLong : []
-          longWindow: root.longWindow
-          sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
-          graphLayout: root.model && root.model.cfg ? root.model.cfg.gpuGraphLayout : "overlay"
-          fixedMax: 100
-          fields: {
-            var out = [{ key: "b", label: "busy", color: root.pal.primary }]
-            if (root.vramSeriesAvailable) out.push({ key: "v", label: "VRAM", color: root.pal.secondary })
-            return out
+          title: "GPU activity"
+
+          Components.MetricReadout {
+            width: parent.width
+            value: root.display ? (root.display.estimated ? "~" : "") + Model.formatPct(root.display.pct, 1) : "--"
+            hint: root.display && root.display.estimated ? "Frequency estimate · not measured busy time" : "Busy · per card"
           }
-          legend: [
-            { label: "busy", color: root.pal.primary, value: root.display ? Model.formatPct(root.display.pct) : "--" },
-            { label: "VRAM", color: root.pal.secondary, value: root.vramPct < 0 ? "--" : Model.formatPct(root.vramPct), visible: root.vramSeriesAvailable }
-          ]
-          onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
+
+          Components.GraphBlock {
+            objectName: "gpuHistory"
+            width: parent.width
+            title: "HISTORY"
+            finePoints: root.model ? root.model.gpuHistory : []
+            longPoints: root.model ? root.model.gpuLong : []
+            longWindow: root.longWindow
+            sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+            graphLayout: root.model && root.model.cfg ? root.model.cfg.gpuGraphLayout : "overlay"
+            fixedMax: 100
+            fields: {
+              var out = [{ key: "b", label: root.display && root.display.estimated ? "freq estimate" : "busy", color: root.pal.primary }]
+              if (root.vramSeriesAvailable) out.push({ key: "v", label: "VRAM", color: root.pal.secondary })
+              return out
+            }
+            legend: [
+              { label: root.display && root.display.estimated ? "freq estimate" : "busy", color: root.pal.primary, value: root.display ? (root.display.estimated ? "~" : "") + Model.formatPct(root.display.pct) : "--" },
+              { label: "VRAM", color: root.pal.secondary, value: root.vramPct < 0 ? "--" : Model.formatPct(root.vramPct), visible: root.vramSeriesAvailable }
+            ]
+            onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
+          }
         },
-        Column {
+        Components.SectionCard {
+          width: parent.width
+          title: root.live && root.live.memKind === "shared" ? "Shared memory" : "Video memory"
+
+          Components.MetricReadout {
+            width: parent.width
+            value: root.vramText
+            hint: root.vramPct >= 0 ? Model.formatPct(root.vramPct) + " used" : "Resident bytes · capacity unavailable"
+          }
+
+          Components.CompositionBar {
+            width: parent.width
+            visible: root.vramPct >= 0
+            segments: [{ fraction: root.vramPct / 100, color: root.pal.secondary }]
+          }
+        }
+      ]
+      secondary: [
+        Components.SectionCard {
+          width: parent.width
+
+          Components.ProcessList {
+            id: processRoster
+            panel: root.panel
+            active: root.active
+            scopeText: "Top processes with readable GPU attribution; full-roster search is unavailable."
+            width: parent.width
+            rows: root.rows
+            valueHeader: root.vendor === "nvidia" ? "VRAM" : "GPU"
+            showSparkline: false
+            emptyText: root.active ? "No process is using the GPU" : "Open this tab to sample processes"
+            errorText: ""
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            visible: root.vendor === "nvidia" && root.rows.length > 0
+            text: "NVIDIA reports per-process memory only; busy time is per card."
+            color: root.pal.dim
+            font.family: Commons.Style.font.family
+            font.pixelSize: Commons.Style.font.caption
+            width: parent.width
+            wrapMode: Text.WordWrap
+          }
+        },
+        Components.SectionCard {
+          width: parent.width
+          title: "Device"
           id: deviceDetails
           readonly property bool hasMemoryClock: !!(root.live && root.live.memoryClockSource !== undefined && root.live.memoryClockSource !== "")
-          width: parent.width
-          spacing: Commons.Style.space(6)
-          visible: root.vendor !== "intel" || hasMemoryClock || !!(root.live && root.live.engines && root.live.engines.length > 0)
 
-          Components.SectionHeader { width: parent.width; text: "DEVICE" }
+          Components.StatRow { width: parent.width; wrapValue: true; label: "Temperature"; value: root.tempText }
+
+          Components.StatRow { width: parent.width; wrapValue: true; label: "GPU power"; value: root.live ? Model.formatWatts(root.live.powerW) : "--"; visible: root.vendor !== "intel" }
+
           Components.StatRow {
             wrapValue: true
             width: parent.width
-            visible: root.vendor !== "intel"
-            label: "Core clock"
+            label: root.vendor === "intel" ? "Frequency" : "Core clock"
             value: root.clockText
           }
           Components.StatRow {
@@ -232,30 +271,30 @@ Item {
               value: Model.formatPct(modelData.busy, 1)
             }
           }
-        }
-      ]
-      secondary: [
-        Components.ProcessList {
-          id: processRoster
-          panel: root.panel
-          active: root.active
-          scopeText: "Top processes with readable GPU attribution; full-roster search is unavailable."
-          width: parent.width
-          rows: root.rows
-          valueHeader: root.vendor === "nvidia" ? "VRAM" : "GPU"
-          showSparkline: false
-          emptyText: root.active ? "No process is using the GPU" : "Open this tab to sample processes"
-          errorText: ""
-        },
-        Text {
-          textFormat: Text.PlainText
-          visible: root.vendor === "nvidia" && root.rows.length > 0
-          text: "NVIDIA reports per-process memory only; busy time is per card."
-          color: root.pal.dim
-          font.family: Commons.Style.font.family
-          font.pixelSize: Commons.Style.font.caption
-          width: parent.width
-          wrapMode: Text.WordWrap
+
+          Components.Disclosure {
+            width: parent.width
+            title: "Device details"
+            Text {
+              textFormat: Text.PlainText
+              width: parent.width
+              wrapMode: Text.Wrap
+              color: root.pal.dim
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
+              text: root.gpuMeta
+            }
+            Text {
+              textFormat: Text.PlainText
+              width: parent.width
+              wrapMode: Text.Wrap
+              color: root.pal.dim
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
+              text: root.gpu ? String(root.gpu.deviceId || root.gpu.slot || root.gpu.pciId || "") : ""
+              visible: text !== ""
+            }
+          }
         }
       ]
     }

@@ -11,9 +11,16 @@ collection error keeps it reachable for diagnosis.
 
 ## Sensors and units
 
-Sensors are grouped by driver and owning device. Reported core temperatures
-use a grid with their original core IDs; package, drive and fan readings use
-compact rows. **Device details** reveals the owning path once per group.
+The **Processor** card comes first for recognized CPU drivers. **Other
+temperatures**, **Batteries**, and **Power & cooling** keep related readings
+together. Sensors remain grouped by driver and owning device; known drivers
+gain readable labels, while unknown drivers retain their names.
+
+Reported core temperatures start with a count and temperature range.
+**Core temperatures** expands a grid with the original core IDs. Unavailable
+and critical core counts remain visible when collapsed; critical status uses
+each sensor's reported threshold. Package, drive and fan readings use compact
+rows. **Device details** reveals the original driver and owning path once per group.
 Unavailable, invalid and permission-denied readings remain visible beside
 their sensor; grouping does not replace missing values with zero.
 Duplicate labels from two chips remain separate. **Settings → Appearance →
@@ -96,7 +103,10 @@ same unit and missing-value rules. It does not manage profiles or add charge
 history, notifications, or another battery bar widget.
 
 Each present `power_supply` Battery gets its own rows for charge, full/design
-capacity, health, cycles, power, and reported status. Scope distinguishes a
+capacity, health, cycles, power, and reported status. System charge is prominent,
+with a neutral progress bar; peripheral charge uses compact rows. **Battery
+details** holds full identity, design capacity and power. Live updates preserve
+open detail sections. Scope distinguishes a
 peripheral (`scope=Device`) from a system battery; a missing scope defaults to
 system battery. No multi-device total is calculated. Health
 is full/design from a matching pair of energy counters (Wh), or charge counters

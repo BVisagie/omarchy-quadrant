@@ -60,11 +60,17 @@ from the tab strip. On wider panels, the switch shares the tab row. Device
 choices wrap too, with full names in tooltips.
 
 The panel prefers a theme-scaled width of 720 logical units, fitted to the
-available monitor. Graphs and device details sit beside processes; Hardware
-puts temperatures beside batteries, package power, fans and GPU actions.
+available monitor. Each resource uses framed groups, with headline readings
+beside their graph or device. CPU, GPU, Memory, Drives and Network place
+processes alongside activity; Hardware separates processor readings, other
+temperatures, batteries, and power/cooling, with GPU actions when available.
 Below the two-column breakpoint, content stacks without reducing the font.
 The tab strip stays visible while the body scrolls to fit the screen.
 Resizing preserves process search, selection and open detail sections.
+**Expand details** beside the device identity opens the current tab's details;
+**Collapse details** closes them. `D` performs the same action. Hardware core
+temperatures start collapsed, with their range and any unavailable or critical
+reading counts visible.
 
 | Key | Action |
 | --- | --- |
@@ -161,7 +167,8 @@ leave the 60 s window, including samples collected at the previous cadence.
 Memory's used value is total RAM minus the kernel's available estimate. Its
 composition shows a separate physical-RAM breakdown, with an application
 estimate after free RAM, cache, and kernel (unreclaimable slab). Used,
-available, pressure and swap usage appear as compact overview values.
+available and pressure appear in **Memory usage**, with separate **RAM
+composition** and **Swap** groups.
 Pressure prints the actual PSI percentage, without a gauge ceiling.
 **Memory accounting** expands the explanation; **Swap devices** appears when
 there are individual files or zram to show. Swap remains outside the
@@ -232,24 +239,24 @@ methods. See [Settings](SETTINGS.md) for typed values and validation.
 ## Screenshots
 
 These captures show the current panel across dark, light, and monochrome
-Omarchy themes. GPU, Network, and Drives use fixture readings; CPU and Memory
+Omarchy themes. GPU, Network, Drives and Hardware use fixture readings; CPU and Memory
 sample the development machine. Click a screenshot to view it at full size.
 
 <table>
   <tr>
     <td width="50%" valign="top">
       <p><strong>CPU</strong><br>Core activity and process CPU.</p>
-      <a href="screenshots/cpu.png"><img src="screenshots/cpu.png" alt="Wider CPU tab with overview values, history and cores beside top processes and system details" width="420"></a>
+      <a href="screenshots/cpu.png"><img src="screenshots/cpu.png" alt="CPU cards for processor activity, integrated graphics, top processes and system readings" width="420"></a>
     </td>
     <td width="50%" valign="top">
       <p><strong>GPU</strong><br>Dedicated GPU activity and VRAM.</p>
-      <a href="screenshots/gpu.png"><img src="screenshots/gpu.png" alt="Wider GPU tab with Radeon fixture overview values, labelled history controls and GPU processes in a light theme" width="420"></a>
+      <a href="screenshots/gpu.png"><img src="screenshots/gpu.png" alt="GPU activity, video memory, processes and device readings in a light theme" width="420"></a>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <p><strong>Memory</strong><br>RAM composition, pressure, and swap.</p>
-      <a href="screenshots/memory.png"><img src="screenshots/memory.png" alt="Wider Memory tab with numeric pressure and usage, history and composition beside processes and swap" width="420"></a>
+      <a href="screenshots/memory.png"><img src="screenshots/memory.png" alt="Memory usage and composition cards beside processes and swap" width="420"></a>
     </td>
     <td width="50%" valign="top">
       <p><strong>Drives</strong><br>Disk selection, throughput, and mounts.</p>

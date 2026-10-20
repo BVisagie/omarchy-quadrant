@@ -21,6 +21,7 @@ Column {
   property bool expanded: false
   property string query: ""
   property string scopeText: ""
+  property string title: "Top processes"
   property string valueHeader: ""
   property string emptyText: "No activity"
   property string errorText: ""
@@ -206,8 +207,8 @@ Column {
     Text {
       id: headerLabel
       textFormat: Text.PlainText
-      text: root.expanded ? "PROCESSES" : "TOP PROCESSES"
-      color: root.dim
+      text: root.expanded ? "Processes" : root.title
+      color: root.foreground
       font.family: root.fontFamily
       font.pixelSize: Commons.Style.font.caption
       font.bold: true

@@ -27,6 +27,13 @@ Item {
   // Only inventory changes rebuild groups; live values update the cells in place.
   readonly property string sensorInventoryKey: JSON.stringify(root.info ? root.info.sensors : [])
   readonly property var sensorGroups: Model.hardwareSensorGroups(JSON.parse(sensorInventoryKey))
+  readonly property var processorGroups: sensorGroups.filter(function (g) { return g.kind === "temperature" && g.processor })
+  readonly property var otherGroups: sensorGroups.filter(function (g) { return g.kind === "temperature" && !g.processor })
+  readonly property var fanGroups: sensorGroups.filter(function (g) { return g.kind === "fan" })
+  readonly property string batteryInventoryKey: JSON.stringify(root.info ? root.info.batteries : [])
+  readonly property var batteryInventory: JSON.parse(batteryInventoryKey)
+  readonly property string packageInventoryKey: JSON.stringify(root.info ? root.info.packages : [])
+  readonly property var packageInventory: JSON.parse(packageInventoryKey)
   implicitWidth: 200
   implicitHeight: column.implicitHeight
   onActiveChanged: if (active) refresh()
@@ -63,26 +70,6 @@ Item {
     }
   }
 
-  component SensorSection: Column {
-    id: sensorSection
-    required property string kind
-    readonly property var groups: root.sensorGroups.filter(function (g) { return g.kind === sensorSection.kind })
-    width: parent.width
-    visible: groups.length > 0
-    spacing: Commons.Style.space(10)
-    Components.SectionHeader { width: parent.width; text: sensorSection.kind === "temperature" ? "TEMPERATURES" : "FANS" }
-    Repeater {
-      model: sensorSection.groups
-      delegate: Components.SensorGroup {
-        required property var modelData
-        width: sensorSection.width
-        group: modelData
-        readings: root.sensorValues
-        temperatureUnit: root.unit
-      }
-    }
-  }
-
   Column {
     id: column
     width: root.width
@@ -90,6 +77,7 @@ Item {
 
     Components.Hero {
       width: parent.width
+      detailsTarget: root
       title: "Hardware"
       meta: {
         var sensors = root.info ? root.info.sensors.length : 0
@@ -113,11 +101,11 @@ Item {
       color: Commons.Color.urgent
     }
 
-    Column {
+    Components.SectionCard {
       width: parent.width
-      spacing: Commons.Style.space(6)
+      title: "Pinned sensor"
       visible: root.pin !== ""
-      Components.SectionHeader { width: parent.width; text: "PINNED SENSOR" }
+
       Loader {
         width: parent.width
         active: root.pinnedSensor !== null
@@ -134,86 +122,43 @@ Item {
       objectName: "resourceColumns"
       width: parent.width
       primary: [
-        SensorSection { kind: "temperature" }
-      ]
-      secondary: [
-        Column {
+        Components.SectionCard {
           width: parent.width
-          spacing: Commons.Style.space(8)
-          visible: root.info && root.info.batteries.length > 0
-          Components.SectionHeader { width: parent.width; text: "BATTERIES & PERIPHERALS" }
-          Components.Disclosure {
-            width: parent.width
-            title: "About battery readings"
-            Note { text: "Readings belong to each device; system and peripheral charge are not combined. Power profiles remain in the shell's Power panel." }
-          }
+          title: "Processor"
+          visible: root.processorGroups.length > 0
+
           Repeater {
-            model: root.info ? root.info.batteries : []
-            delegate: Column {
-              id: batteryRow
+            model: root.processorGroups
+            delegate: Components.SensorGroup {
               required property var modelData
-              readonly property var reading: root.batteryValues[modelData.id] || null
               width: parent.width
-              spacing: Commons.Style.space(4)
-              Note {
-                text: (batteryRow.modelData.model || batteryRow.modelData.name) + " · " + batteryRow.modelData.name
-                  + (batteryRow.modelData.scope === "Device" ? " · peripheral" : " · system battery")
-                color: Commons.Color.foreground
-                font.bold: true
-              }
-              Components.StatRow { wrapValue: true; width: parent.width; label: "Charge"; value: Model.formatPct(batteryRow.reading ? batteryRow.reading.chargePct : null) }
-              Components.StatRow { visible: batteryRow.modelData.scope !== "Device" || (batteryRow.reading && batteryRow.reading.healthPct !== null); wrapValue: true; width: parent.width; label: "Health / design"; value: Model.formatPct(batteryRow.reading ? batteryRow.reading.healthPct : null, 1) }
-              Components.StatRow { visible: batteryRow.modelData.scope !== "Device" || (batteryRow.reading && (batteryRow.reading.fullWh !== null || batteryRow.reading.fullAh !== null)); wrapValue: true; width: parent.width; label: "Full capacity"; value: Model.batteryCapacity(batteryRow.reading) }
-              Components.StatRow { visible: batteryRow.modelData.scope !== "Device" || (batteryRow.reading && batteryRow.reading.cycles !== null); wrapValue: true; width: parent.width; label: "Cycles"; value: batteryRow.reading && batteryRow.reading.cycles !== null ? String(batteryRow.reading.cycles) : "--" }
-              Components.Disclosure {
-                width: parent.width
-                title: "Battery details"
-                Components.StatRow { wrapValue: true; width: parent.width; label: "Design capacity"; value: Model.batteryCapacity(batteryRow.reading, true) }
-                Components.StatRow { wrapValue: true; width: parent.width; label: "Power"; value: Model.batteryPower(batteryRow.reading) }
-              }
-              Note { text: batteryRow.reading ? batteryRow.reading.status : "Waiting for a reading…" }
+              group: modelData
+              readings: root.sensorValues
+              temperatureUnit: root.unit
             }
           }
         },
-        Column {
+        Components.SectionCard {
           width: parent.width
-          spacing: Commons.Style.space(6)
-          visible: root.info && root.info.packages.length > 0
-          Components.SectionHeader { width: parent.width; text: "PACKAGE POWER" }
-          Components.Disclosure {
-            width: parent.width
-            title: "Power accounting"
-            Note { text: "Each CPU package is reported once; core/uncore subdomains are excluded. Package totals can include integrated graphics." }
-          }
+          title: "Other temperatures"
+          visible: root.otherGroups.length > 0
+
           Repeater {
-            model: root.info ? root.info.packages : []
-            delegate: Column {
-              id: packageRow
+            model: root.otherGroups
+            delegate: Components.SensorGroup {
               required property var modelData
-              readonly property var reading: root.powers[modelData.id] || null
               width: parent.width
-              spacing: Commons.Style.space(3)
-              Components.StatRow {
-                wrapValue: true
-                width: parent.width
-                label: packageRow.modelData.label
-                value: Model.formatWatts(packageRow.reading ? packageRow.reading.watts : null)
-              }
-              Note { text: packageRow.modelData.source + (packageRow.reading && packageRow.reading.status ? " · " + packageRow.reading.status : "") }
+              group: modelData
+              readings: root.sensorValues
+              temperatureUnit: root.unit
             }
           }
         },
-        SensorSection { kind: "fan" },
-        Column {
+        Components.SectionCard {
           width: parent.width
-          spacing: Commons.Style.space(6)
+          title: "Graphics inventory"
           visible: graphicsActions.entries.length > 0
-          Components.SectionHeader { width: parent.width; text: "GRAPHICS INVENTORY" }
-          Components.Disclosure {
-            width: parent.width
-            title: "About GPU selection"
-            Note { text: "Details opens the current card. Select saves another card for its view; dedicated selection also changes the GPU bar." }
-          }
+
           Components.PanelActions {
             id: graphicsActions
             objectName: "hardwareGpuActions"
@@ -232,10 +177,133 @@ Item {
               root.panel.showTab(entry.integrated ? "cpu" : "gpu")
             }
           }
+
+          Components.Disclosure {
+            width: parent.width
+            title: "About GPU selection"
+            Note { text: "Details opens the current card. Select saves another card for its view; dedicated selection also changes the GPU bar." }
+          }
+        }
+      ]
+      secondary: [
+        Components.SectionCard {
+          width: parent.width
+          title: "Batteries"
+          visible: root.info && root.info.batteries.length > 0
+
+          Repeater {
+            model: root.batteryInventory
+            delegate: Column {
+              id: batteryRow
+              required property var modelData
+              readonly property var reading: root.batteryValues[modelData.id] || null
+              readonly property bool peripheral: modelData.scope === "Device"
+              width: parent.width
+              spacing: Commons.Style.space(8)
+              Note {
+                text: batteryRow.peripheral ? (batteryRow.modelData.model || batteryRow.modelData.name)
+                  : "System battery · " + batteryRow.modelData.name
+                color: Commons.Color.foreground
+                font.bold: true
+              }
+              Components.MetricReadout {
+                objectName: "hardwareBatteryCharge_" + batteryRow.modelData.id
+                visible: !batteryRow.peripheral
+                width: parent.width
+                value: Model.formatPct(batteryRow.reading ? batteryRow.reading.chargePct : null)
+                hint: (batteryRow.reading && batteryRow.reading.chargePct !== null ? "" : "Charge unavailable · ")
+                  + (batteryRow.reading ? batteryRow.reading.status : "Waiting for a reading…")
+              }
+              Components.StatRow {
+                width: parent.width
+                visible: batteryRow.peripheral
+                label: "Charge"
+                value: Model.formatPct(batteryRow.reading ? batteryRow.reading.chargePct : null)
+              }
+              Note {
+                visible: batteryRow.peripheral
+                text: (batteryRow.reading && batteryRow.reading.chargePct !== null ? "" : "Charge unavailable · ")
+                  + (batteryRow.reading ? batteryRow.reading.status : "Waiting for a reading…")
+              }
+              Components.CompositionBar {
+                width: parent.width
+                visible: !batteryRow.peripheral && batteryRow.reading !== null && batteryRow.reading.chargePct !== null
+                segments: [{ fraction: batteryRow.reading ? batteryRow.reading.chargePct / 100 : 0, color: Commons.Color.accent }]
+              }
+              Components.StatRow { visible: !batteryRow.peripheral || (batteryRow.reading && batteryRow.reading.healthPct !== null); wrapValue: true; width: parent.width; label: "Health / design"; value: Model.formatPct(batteryRow.reading ? batteryRow.reading.healthPct : null, 1) }
+              Components.StatRow { visible: !batteryRow.peripheral || (batteryRow.reading && (batteryRow.reading.fullWh !== null || batteryRow.reading.fullAh !== null)); wrapValue: true; width: parent.width; label: "Full capacity"; value: Model.batteryCapacity(batteryRow.reading) }
+              Components.StatRow { visible: !batteryRow.peripheral || (batteryRow.reading && batteryRow.reading.cycles !== null); wrapValue: true; width: parent.width; label: "Cycles"; value: batteryRow.reading && batteryRow.reading.cycles !== null ? String(batteryRow.reading.cycles) : "--" }
+              Components.Disclosure {
+                objectName: "hardwareBatteryDetails_" + batteryRow.modelData.id
+                width: parent.width
+                title: "Battery details"
+                Note { text: batteryRow.modelData.model + " · " + batteryRow.modelData.name + (batteryRow.peripheral ? " · peripheral" : " · system battery") }
+                Note { visible: text !== ""; text: batteryRow.modelData.manufacturer }
+                Components.StatRow { wrapValue: true; width: parent.width; label: "Design capacity"; value: Model.batteryCapacity(batteryRow.reading, true) }
+                Components.StatRow { wrapValue: true; width: parent.width; label: "Power"; value: Model.batteryPower(batteryRow.reading) }
+              }
+            }
+          }
+
+          Components.Disclosure {
+            width: parent.width
+            title: "About battery readings"
+            Note { text: "Readings belong to each device; system and peripheral charge are not combined. Power profiles remain in the shell's Power panel." }
+          }
+        },
+        Components.SectionCard {
+          width: parent.width
+          title: "Power & cooling"
+          visible: root.fanGroups.length > 0 || !!(root.info && root.info.packages.length > 0)
+
+          Repeater {
+            model: root.packageInventory
+            delegate: Column {
+              id: packageRow
+              required property var modelData
+              readonly property var reading: root.powers[modelData.id] || null
+              width: parent.width
+              spacing: Commons.Style.space(4)
+              Components.StatRow {
+                width: parent.width
+                wrapValue: true
+                label: packageRow.modelData.label
+                value: Model.formatWatts(packageRow.reading ? packageRow.reading.watts : null)
+              }
+              Note {
+                visible: text !== ""
+                text: packageRow.reading ? packageRow.reading.status : "Waiting for a reading…"
+              }
+            }
+          }
+
+          Repeater {
+            model: root.fanGroups
+            delegate: Components.SensorGroup {
+              required property var modelData
+              width: parent.width
+              group: modelData
+              readings: root.sensorValues
+              temperatureUnit: root.unit
+            }
+          }
+
+          Components.Disclosure {
+            width: parent.width
+            visible: root.info && root.info.packages.length > 0
+            title: "Power details"
+            Repeater {
+              model: root.packageInventory
+              delegate: Note {
+                required property var modelData
+                text: modelData.label + " · " + modelData.source
+              }
+            }
+            Note { text: "Each CPU package is reported once; core/uncore subdomains are excluded. Package totals can include integrated graphics." }
+          }
         }
       ]
     }
-
     Note {
       visible: !root.info && !(root.model && root.model.hardwareError)
       text: "Waiting for hardware inventory…"

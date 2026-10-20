@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Ui as Ui
+import "../lib/index.mjs" as Model
 
 // Keep the panel's shell shortcuts together so the real dispatch path can
 // also be exercised offscreen without creating a layer-shell window.
@@ -11,16 +12,7 @@ Ui.PanelKeyCatcher {
   // Tab belongs to the shell, so disclosures also need a direct keyboard
   // path. Traverse the active tab only, retaining each existing control.
   function toggleDetails(item) {
-    if (!item) return
-    var details = []
-    function collect(parent) {
-      if (!parent.visible) return
-      if ("detailsDisclosure" in parent && parent.detailsDisclosure) details.push(parent)
-      for (var child of parent.children) collect(child)
-    }
-    collect(item)
-    var expand = details.some(function (detail) { return !detail.expanded })
-    for (var detail of details) detail.expanded = expand
+    Model.toggleDetails(item)
   }
 
   onCloseRequested: {
