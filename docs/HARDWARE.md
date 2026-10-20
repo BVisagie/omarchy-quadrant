@@ -20,6 +20,8 @@ identity. An absent pin stays saved and warns until **R** rediscovers it or
 another sensor is selected. Moving hardware to a different physical path can
 require selecting it again; hardware without a serial cannot distinguish an
 identical replacement in the same location.
+Chips are ordered by driver and owner, with numeric channel order within each
+chip, so `temp2` precedes `temp10` and hwmon renumbering does not reorder them.
 
 **Temperature unit** changes every panel temperature between Celsius and
 Fahrenheit. Raw samples and critical thresholds stay in Celsius; conversion
@@ -29,8 +31,10 @@ Drives summary readings keep their restricted driver selection; a pinned
 board sensor does not replace either reading.
 
 Fan zero is shown as **0 RPM · stopped**. Missing, disabled, faulted, and
-invalid readings show **--** with a reason where reported. Thermistor inputs
-requiring calibration are unavailable rather than interpreted as Celsius.
+invalid readings show **--** with a reason where reported. A thermistor type
+does not suppress a driver's converted temperature. Inputs use the driver's
+millidegree readings; Quadrant does not apply board-specific libsensors
+conversion tables or infer calibration requirements from `temp*_type`.
 GPU-owned channels are identified but their input, fault, enable, type, and
 critical files are left to the existing selected-GPU collectors. Hardware
 shows **Read on the GPU detail tab** for those channels.
@@ -39,8 +43,12 @@ See the kernel's [hwmon ABI](https://docs.kernel.org/hwmon/sysfs-interface.html)
 ## Package watts and memory clocks
 
 The CPU tab shows **Package power**, or **Packages total** when several CPU
-packages are present. Hardware lists each package separately. Readable
-`powercap` package energy counters provide:
+packages are present, only when every package's energy and range files are
+readable. CPU alone does not poll known unreadable counters or show a permanent
+unknown total. Hardware still lists each package, including permission-denied
+counters, for diagnosis. Startup/R checks access without opening the counters;
+**R** picks up later permission changes. Readable `powercap` package energy
+counters provide:
 
 ```text
 watts = energy delta in microjoules / 1,000,000 / elapsed monotonic seconds
@@ -63,8 +71,8 @@ complete wrap at that bound. An ambiguous interval is unavailable, never
 clamped to zero. These are diagnostics, not billing-grade energy readings.
 
 CPU package totals may include integrated graphics. Where RAPL package
-inventory is absent, an existing AMD APU power reading appears on CPU as
-**APU package**; it is not also presented as independent iGPU consumption.
+inventory is absent or not fully readable, an existing AMD APU power reading
+appears on CPU as **APU package**; it is not also presented as independent iGPU consumption.
 Dedicated-card readings are labelled **GPU power**.
 
 **Memory clock** is separate from **Core clock**. AMD uses the active
@@ -85,7 +93,8 @@ history, notifications, or another battery bar widget.
 
 Each present `power_supply` Battery gets its own rows for charge, full/design
 capacity, health, cycles, power, and reported status. Scope distinguishes a
-peripheral from a system battery. No multi-device total is calculated. Health
+peripheral (`scope=Device`) from a system battery; a missing scope defaults to
+system battery. No multi-device total is calculated. Health
 is full/design from a matching pair of energy counters (Wh), or charge counters
 (Ah); the displayed capacities use that same pair. Wh and Ah are never mixed.
 Charge can fall back to a matching now/full ratio. `power_now` is preferred;
@@ -95,9 +104,13 @@ charge alone. See the [power-supply ABI](https://docs.kernel.org/power/power_sup
 
 The existing GPU selectors already choose a live card. **Graphics inventory**
 adds role and PCI identity across cards, including known-vendor devices that
-the existing telemetry gate excludes. **Details** selects the existing CPU
-iGPU view or dedicated GPU tab. An unavailable card has a disabled Details
-action with an explanation; **R** refreshes detection. There is no aggregated
+the existing telemetry gate excludes. **Details** opens the existing CPU iGPU
+view or dedicated GPU tab for its current card without saving a pin, preserving
+`auto`. A different card has **Select**, which saves that card as the shared
+selection and opens its view. Selecting a dedicated card also changes the
+GPU bar segment; selecting integrated graphics changes the CPU iGPU choice.
+An unavailable card has a disabled action with an explanation; **R** refreshes
+detection. There is no aggregated
 GPU percentage, no new polling of every card, and no overview on a single
 fully supported GPU machine. **A**, arrows, and Enter/Space operate these
 actions; outside action selection, up/down scroll Hardware. Shell Tab and Esc
@@ -108,9 +121,10 @@ keep their existing meanings.
 One serialized `hardware-info.py` sampler serves every monitor through the
 shared Store. Startup and **R** request `list` metadata. A visible Hardware
 tab requests `sample` at `panelIntervalMs`; CPU alone requests `power` when
-package counters were discovered. That mode does not walk hwmon or batteries;
-CPU without package counters adds no hardware polls. Closing the last relevant viewer stops
-polling and clears rates/baselines. A helper already running can finish, but
+all discovered package counters and ranges are readable. That mode does not
+walk hwmon or batteries; CPU with absent or unreadable package counters adds
+no hardware polls. Closing the last relevant viewer stops polling and clears
+rates/baselines. A helper already running can finish, but
 its result is discarded after a visibility, mode, or refresh generation change.
 Refresh and timer requests coalesce behind the active helper. Settings retains
 the underlying tab's viewer flag, consistent with other detail collectors.

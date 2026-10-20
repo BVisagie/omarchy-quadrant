@@ -7,7 +7,7 @@ const sensorId = "hwmon:" + "a".repeat(64);
 function sample(time, energy, extra = {}) {
   return { ok: true, mode: "sample", monotonicS: time, sensors: [], batteries: [],
     packages: [{ id: "package-0", label: "Package 0", source: "intel-rapl:0", energyUj: energy,
-      maxEnergyUj: 100000000000, monotonicS: time, status: "", ...extra }] };
+      maxEnergyUj: 100000000000, monotonicS: time, readable: true, status: "", ...extra }] };
 }
 
 test("temperature conversion only changes display, including zero and negative values", () => {
@@ -76,6 +76,14 @@ test("package watts use elapsed counter time and preserve a measured zero", () =
   assert.equal(Model.packagePower(old, Model.parseHardware(sample(12, 1000000000)))[0].watts, 0);
 });
 
+test("package access is explicit inventory metadata, not a measured value", () => {
+  for (const value of [undefined, false, "true", 1, true]) {
+    const parsed = Model.parseHardware(sample(1, null, { readable: value }));
+    assert.equal(parsed.packages[0].readable, value === true);
+    assert.equal(Model.hardwareInventory(parsed).packages[0].readable, value === true);
+  }
+});
+
 test("package wrap is conservative and resets, gaps, source changes and spikes are unknown", () => {
   const before = Model.parseHardware(sample(10, 99800000000));
   assert.equal(Model.packagePower(before, Model.parseHardware(sample(12, 100000000)))[0].watts, 150);
@@ -109,10 +117,16 @@ test("conditional navigation and GPU overview retain identities without live tel
   assert.equal(Model.panelTabs(true, true).length, 6);
   const integrated = { card: "card0", vendor: "intel", deviceId: "0000:00:02.0", name: "Integrated" };
   const dedicated = { card: "card2", vendor: "amd", deviceId: "0000:03:00.0", name: "Dedicated" };
-  const entries = Model.gpuOverviewEntries([integrated, dedicated], [integrated]);
+  const entries = Model.gpuOverviewEntries([integrated, dedicated], [integrated], dedicated, integrated);
   assert.deepEqual(entries.map(entry => entry.integrated), [true, false]);
   assert.equal(entries[1].target, dedicated.deviceId);
   assert.ok(entries[0].label.includes("integrated"));
+  assert.deepEqual(entries.map(entry => entry.actionText), ["Details", "Details"]);
+  const alternate = { ...dedicated, card: "card3", deviceId: "0000:04:00.0" };
+  const choices = Model.gpuOverviewEntries([integrated, dedicated, alternate], [integrated], dedicated, integrated);
+  assert.deepEqual(choices.map(entry => entry.actionText), ["Details", "Details", "Select"]);
+  assert.equal(choices[2].target, alternate.deviceId);
+  assert.deepEqual(choices[2].gpu, alternate);
   assert.deepEqual(Model.gpuOverviewEntries([integrated], [integrated]), []);
   const raw = { card: "card2", vendor: "amd", path: "/sys/class/drm/card2/device", slot: "0000:03:00.0", telemetryAvailable: false };
   const inventory = Model.normalizeGpuInventory({ gpus: [], inventory: [raw] });

@@ -90,12 +90,41 @@ class Hardware(unittest.TestCase):
         self.assertEqual(next(row["value"] for row in rows if row["kind"] == "fan"), 0)
         self.assertEqual(sorted(row["value"] for row in rows if row["kind"] == "temperature"), [42, 43])
 
-    def test_fault_disabled_malformed_and_calibration_are_unavailable(self):
-        self.hwmon("hwmon0", channels={"temp1_input": 42000, "temp1_fault": 1, "temp2_input": 1,
-                                     "temp2_type": 4, "fan1_input": 0, "fan1_enable": 0, "fan2_input": "N/A"})
+    def test_fault_disabled_and_malformed_are_unavailable(self):
+        self.hwmon("hwmon0", channels={"temp1_input": 42000, "temp1_fault": 1, "temp2_input": "bad",
+                                     "temp3_input": -273200, "fan1_input": 0, "fan1_enable": 0, "fan2_input": "N/A"})
         rows = hardware.snapshot(self.root, "sample")["sensors"]
         self.assertTrue(all(row["value"] is None for row in rows))
-        self.assertEqual({row["status"] for row in rows}, {"Sensor fault", "Thermistor calibration required", "Disabled", "Invalid reading"})
+        self.assertEqual({row["status"] for row in rows}, {"Sensor fault", "Disabled", "Invalid reading"})
+
+    def test_thermistor_type_does_not_hide_converted_millidegrees(self):
+        for index, driver in enumerate(["nct6775", "it87"]):
+            self.hwmon(f"hwmon{index}", f"platform/board.{index}", driver, {
+                "temp1_input": 33000, "temp1_type": 4, "temp1_label": "SYSTIN", "temp1_crit": 80000,
+                "temp2_input": 50000, "temp2_type": 3, "temp2_label": "CPUTIN",
+                "temp3_input": 28000, "temp3_type": 4, "temp3_label": "AUXTIN0",
+            })
+        rows = hardware.snapshot(self.root, "sample")["sensors"]
+        for driver in ["nct6775", "it87"]:
+            values = {row["label"]: row for row in rows if row["driver"] == driver}
+            self.assertEqual({label: row["value"] for label, row in values.items()}, {"SYSTIN": 33, "CPUTIN": 50, "AUXTIN0": 28})
+            self.assertEqual(values["SYSTIN"]["criticalC"], 80)
+            self.assertTrue(all(row["status"] == "" for row in values.values()))
+
+    def test_channels_sort_naturally_and_chip_order_survives_renumbering(self):
+        self.hwmon("hwmon0", "platform/board.0", "nct6775", {"temp1_input": 33000})
+        hw, alias = self.hwmon("hwmon9", "platform/cpu.0", "coretemp", {
+            f"temp{i}_input": 40000 + i * 100 for i in range(17, 0, -1)
+        })
+        before = hardware.snapshot(self.root, "sample")["sensors"]
+        self.assertEqual([row["channel"] for row in before[:-1]], [f"temp{i}" for i in range(1, 18)])
+        self.assertEqual(before[-1]["driver"], "nct6775")
+        alias.unlink()
+        moved = hw.with_name("hwmon1")
+        hw.rename(moved)
+        alias.with_name("hwmon1").symlink_to(moved)
+        after = hardware.snapshot(self.root, "sample")["sensors"]
+        self.assertEqual([row["id"] for row in before], [row["id"] for row in after])
 
     def test_gpu_channels_and_inventory_never_read_telemetry(self):
         hw, _ = self.hwmon("hwmon0", "pci0000:00/0000:01:00.0", "mystery", {"temp1_label": "GPU edge"})
@@ -131,6 +160,33 @@ class Hardware(unittest.TestCase):
         self.assertEqual(rows[0]["source"], "intel-rapl:0")
         self.assertEqual(rows[0]["energyUj"], 1000000000)
         self.assertGreater(rows[0]["monotonicS"], 0)
+
+    def test_package_list_reports_access_without_opening_energy_or_range(self):
+        path = self.package()
+        for field in ["energy_uj", "max_energy_range_uj"]:
+            (path / field).unlink()
+            os.mkfifo(path / field)
+        env = dict(os.environ, QUADRANT_SYS_PATH=str(self.root))
+        result = subprocess.run([os.sys.executable, str(Path(SCRIPTS) / "hardware-info.py"), "list"],
+                                env=env, capture_output=True, text=True, timeout=3)
+        self.assertEqual(result.returncode, 0, "metadata discovery must not open counters")
+        row = json.loads(result.stdout)["packages"][0]
+        self.assertTrue(row["readable"])
+        self.assertIsNone(row["energyUj"])
+        original_access = os.access
+        def denied_access(candidate, mode):
+            return False if Path(candidate).name == "energy_uj" else original_access(candidate, mode)
+        with patch.object(hardware.os, "access", side_effect=denied_access):
+            self.assertFalse(hardware.snapshot(self.root, "list")["packages"][0]["readable"])
+        # A readable energy file is insufficient when its range is denied.
+        def denied_range(candidate, mode):
+            return False if Path(candidate).resolve() == (path / "max_energy_range_uj").resolve() else original_access(candidate, mode)
+        with patch.object(hardware.os, "access", side_effect=denied_range):
+            self.assertFalse(hardware.snapshot(self.root, "list")["packages"][0]["readable"])
+            self.package("intel-rapl-mmio:0")
+            chosen = hardware.snapshot(self.root, "list")["packages"][0]
+            self.assertTrue(chosen["readable"])
+            self.assertEqual(chosen["source"], "intel-rapl-mmio:0")
 
     def test_permission_failure_stays_unknown_and_can_use_a_readable_alias(self):
         denied = self.package()

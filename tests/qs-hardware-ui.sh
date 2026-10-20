@@ -84,7 +84,7 @@ for mode in patched unpatched; do
 import json, pathlib, sys
 lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
 results = [json.loads(line.split("QHARDWAREUI ", 1)[1]) for line in lines if "QHARDWAREUI {" in line]
-assert len(results) == 1 and results[0]["passed"] >= 19 and results[0]["failed"] == 0, results
+assert len(results) == 1 and results[0]["passed"] >= 22 and results[0]["failed"] == 0, results
 assert not any(word in line for line in lines for word in ("TypeError", "ReferenceError", "Binding loop", "Failed to load", "Unable to assign"))
 print("qs-hardware-ui: ok")
 PY

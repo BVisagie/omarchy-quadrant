@@ -45,7 +45,7 @@ self-held FIFO provides timing. Setup and cleanup use external tools.
 | `gpu-stats sample amd/intel` → `gpu-drm` | GPU tab open, or GPU segment visible when DRM polling is needed for busy; integrated GPU while CPU tab is open |
 | `disk-info usage` | Drives tab open; mount capacity and NVMe temperatures |
 | `hardware-info.py list` | Startup and `R`; sensor/package/battery metadata, without telemetry inputs |
-| `hardware-info.py power/sample` | Hardware tab open, or CPU with discovered packages; one serialized helper shared across monitors; CPU alone reads package counters only |
+| `hardware-info.py power/sample` | Hardware tab open, or CPU with all package counters/ranges readable; one serialized helper shared across monitors; CPU alone reads package counters only |
 | `panel-action.py` | Explicit Copy/Open activation only; clipboard stdin or a validated mount URI passed to the desktop tool |
 
 `panelIntervalMs` controls poll timers, including GPU polls needed by a
@@ -211,17 +211,23 @@ details map. Capacity and access updates therefore do not replace delegates.
 `disk-info` reports read/search access hints with the existing mount polls;
 the action helper still checks current mount membership and access at activation.
 
-`qs-hardware-ui.sh` runs 19 cases in each load-patch mode against Hardware,
+`qs-hardware-ui.sh` runs 22 cases in each load-patch mode against Hardware,
 settings, six-tab headers, and the real Store with a private sysfs tree. It
 checks unit/pin persistence, missing pins, stopped versus unreadable fans,
 critical colours in Fahrenheit, CPU/APU package labels, separate memory clocks,
 per-battery units and real zero power, GPU Details routing and unavailable
-cards, mouse/keyboard controls, shell Tab, and Hardware scrolling. Native
+cards, mouse/keyboard controls, shell Tab, and Hardware scrolling. Details
+preserves automatic GPU choices; selecting another card explicitly saves the
+shared choice. Tests also cover singular/plural counts and default system
+battery labels without a scope attribute. Native
 lifecycle cases cover two viewers sharing one helper, metadata-only startup,
 no hidden polls, CPU-only package reads, late results after close/mode changes,
-coalesced refreshes, visible failures, and recovery. Layout cases use 320/440 px,
+coalesced refreshes, visible failures, and recovery. Known unreadable packages
+produce no CPU-only polls, remain diagnosable in Hardware, and recover after R
+refreshes access. Layout cases use 320/440 px,
 font size 18, and spacing scales 1/1.5/2. Python fixtures verify physical sensor
-identity across hwmon/NVMe renumbering, permission-denied counters, MSR/MMIO
+identity and ordering across hwmon/NVMe renumbering, numeric channel order,
+converted thermistor readings, permission-denied counters, MSR/MMIO
 deduplication, battery units, bounds, and actual AMD/NVIDIA clock helper paths.
 FIFO inputs establish that inventory and GPU-owned hwmon discovery never read
 telemetry. Pure tests cover elapsed-time rates, wraps/resets, source/range

@@ -12,6 +12,15 @@ collector = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(collector)
 state = json.loads(Path(os.environ["QUADRANT_TEST_HARDWARE_STATE"]).read_text())
 mode = sys.argv[1]
+if state.get("packageDenied"):
+    access = collector.os.access
+    read_number = collector.number
+    def denied_access(path, mode):
+        return False if Path(path).name in {"energy_uj", "max_energy_range_uj"} else access(path, mode)
+    def denied_number(path, *args, **kwargs):
+        return (None, "Permission denied") if Path(path).name in {"energy_uj", "max_energy_range_uj"} else read_number(path, *args, **kwargs)
+    collector.os.access = denied_access
+    collector.number = denied_number
 data = collector.snapshot(Path(os.environ["QUADRANT_SYS_PATH"]), mode)
 with open(os.environ["QUADRANT_TEST_HARDWARE_REQUESTS"], "a") as stream:
     stream.write(json.dumps({"mode": mode, "marker": state.get("marker"), "delay": state.get("delay", 0)}) + "\n")

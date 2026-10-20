@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bounded, read-only hwmon, package-energy and power-supply snapshots.
 
-list reads identity only. power samples package counters only. sample also
+list reads metadata/access hints only. power samples package counters only. sample also
 reads non-GPU sensors and battery diagnostics. No privilege changes, device
 controls, subprocesses, or GPU telemetry reads belong to this collector.
 """
@@ -19,6 +19,10 @@ MAX_BATTERIES = 16
 MAX_PACKAGES = 16
 MAX_ENTRIES = 512
 MAX_SAFE_INT = 9007199254740991
+
+
+def natural_key(value):
+    return tuple(int(part) if index % 2 else part for index, part in enumerate(re.split(r"([0-9]+)", value)))
 
 
 def text(path, limit=160):
@@ -56,7 +60,7 @@ def entries(path, pattern="*", coverage=None):
                     break
                 if fnmatch.fnmatchcase(entry.name, pattern):
                     out.append(path / entry.name)
-        return sorted(out)
+        return sorted(out, key=lambda path: natural_key(path.name))
     except OSError:
         return []
 
@@ -123,13 +127,10 @@ def sensors(root, sample, coverage=None):
             elif sample:
                 enabled, _ = number(hw / (channel + "_enable"), maximum=1)
                 fault, _ = number(hw / (channel + "_fault"), maximum=1)
-                sensor_type, _ = number(hw / (channel + "_type"), maximum=6)
                 if enabled == 0:
                     status = "Disabled"
                 elif fault == 1:
                     status = "Sensor fault"
-                elif kind == "temperature" and sensor_type == 4:
-                    status = "Thermistor calibration required"
                 else:
                     value, status = number(path, -273150 if kind == "temperature" else 0,
                                            1000000 if kind == "temperature" else 100000)
@@ -140,6 +141,9 @@ def sensors(root, sample, coverage=None):
             out.append({"id": key, "owner": owner["owner"], "driver": owner["driver"],
                         "channel": channel, "label": label, "kind": kind, "gpu": owner["gpu"],
                         "value": value, "criticalC": critical, "status": status})
+    # Device ownership, rather than hwmonN, keeps chip order stable across
+    # enumeration changes. Channel numbers retain the driver's natural order.
+    out.sort(key=lambda row: (row["driver"], row["owner"], natural_key(row["channel"])))
     return out, truncated
 
 
@@ -151,6 +155,7 @@ def packages(root, sample, coverage=None):
         name = text(path / "name", 64)
         if not re.fullmatch(r"package-[0-9]{1,3}", name):
             continue
+        readable = all(os.access(path / field, os.R_OK) for field in ("energy_uj", "max_energy_range_uj"))
         value, status, maximum = None, "Not sampled", None
         if sample:
             # powercap 'enabled' controls capping, not whether energy is
@@ -162,14 +167,14 @@ def packages(root, sample, coverage=None):
             if range_status:
                 value, status = None, range_status
         row = {"id": name, "label": name.replace("package-", "Package "),
-               "source": path.name[:80], "energyUj": value, "maxEnergyUj": maximum, "status": status,
+               "source": path.name[:80], "readable": readable, "energyUj": value, "maxEnergyUj": maximum, "status": status,
                "monotonicS": time.monotonic() if sample else None}
         # MMIO and MSR domains can describe the same package. Use one source,
         # preferring a readable counter, then the non-MMIO interface.
-        rank = (value is None if sample else not os.access(path / "energy_uj", os.R_OK), "mmio" in path.name, path.name)
+        rank = (value is None if sample else not readable, "mmio" in path.name, natural_key(path.name))
         if name not in candidates or rank < candidates[name][0]:
             candidates[name] = (rank, row)
-    return [candidates[key][1] for key in sorted(candidates)[:MAX_PACKAGES]], len(candidates) > MAX_PACKAGES
+    return [candidates[key][1] for key in sorted(candidates, key=natural_key)[:MAX_PACKAGES]], len(candidates) > MAX_PACKAGES
 
 
 def batteries(root, sample, coverage=None):

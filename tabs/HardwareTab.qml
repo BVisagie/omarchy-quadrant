@@ -67,7 +67,11 @@ Item {
     Components.Hero {
       width: parent.width
       title: "Hardware"
-      meta: (root.info ? root.info.sensors.length : 0) + " sensors · " + (root.info ? root.info.batteries.length : 0) + " batteries"
+      meta: {
+        var sensors = root.info ? root.info.sensors.length : 0
+        var batteries = root.info ? root.info.batteries.length : 0
+        return sensors + (sensors === 1 ? " sensor · " : " sensors · ") + batteries + (batteries === 1 ? " battery" : " batteries")
+      }
     }
     Note { text: "↑/↓ scroll · S for units and sensor pin" }
     Note {
@@ -102,18 +106,22 @@ Item {
       spacing: Commons.Style.space(6)
       visible: graphicsActions.entries.length > 0
       Components.SectionHeader { width: parent.width; text: "GRAPHICS INVENTORY" }
-      Note { text: "Cards are listed individually. Details selects a card; this overview does not poll every GPU." }
+      Note { text: "Details opens the current card. Select saves another card for its view; dedicated selection also changes the GPU bar." }
       Components.PanelActions {
         id: graphicsActions
         objectName: "hardwareGpuActions"
         width: parent.width
         panel: root.panel
         context: "gpu-inventory"
-        entries: Model.gpuOverviewEntries(root.model ? (root.model.detectedGpus || root.model.gpus) : [], root.model ? root.model.integratedGpus : [])
+        entries: Model.gpuOverviewEntries(root.model ? (root.model.detectedGpus || root.model.gpus) : [], root.model ? root.model.integratedGpus : [],
+          root.model ? root.model.gpu : null, root.model ? root.model.integratedGpu : null)
         onRequested: function (entry) {
           if (!root.model || !root.panel || entry.kind !== "gpu-details") return
-          if (entry.integrated) root.model.selectIntegratedGpu(entry.target)
-          else root.model.selectGpu(entry.target)
+          var current = entry.integrated ? root.model.integratedGpu : root.model.gpu
+          if (!Model.gpuIdentityEqual(current, entry.gpu)) {
+            if (entry.integrated) root.model.selectIntegratedGpu(entry.target)
+            else root.model.selectGpu(entry.target)
+          }
           root.panel.showTab(entry.integrated ? "cpu" : "gpu")
         }
       }
@@ -177,7 +185,7 @@ Item {
           spacing: Commons.Style.space(4)
           Note {
             text: (batteryRow.modelData.model || batteryRow.modelData.name) + " · " + batteryRow.modelData.name
-              + (batteryRow.modelData.scope === "Device" ? " · peripheral" : batteryRow.modelData.scope === "System" ? " · system battery" : " · scope unknown")
+              + (batteryRow.modelData.scope === "Device" ? " · peripheral" : " · system battery")
             color: Commons.Color.foreground
             font.bold: true
           }

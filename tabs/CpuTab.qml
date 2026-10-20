@@ -164,7 +164,7 @@ Item {
       Components.StatRow {
         objectName: "cpuPackagePower"
         width: parent.width
-        visible: root.model && root.model.hardwareInventory && root.model.hardwareInventory.packages.length > 0
+        visible: root.model && root.model.cpuPackagePowerAvailable === true
         label: root.model && root.model.hardwareInventory && root.model.hardwareInventory.packages.length > 1 ? "Packages total" : "Package power"
         value: Model.formatWatts(Model.totalPackageWatts(root.model ? root.model.packageReadings : []))
       }
@@ -172,7 +172,7 @@ Item {
         objectName: "cpuApuPower"
         width: parent.width
         visible: root.model && root.model.integratedGpu && root.model.integratedGpu.vendor === "amd"
-          && !(root.model.hardwareInventory && root.model.hardwareInventory.packages.length > 0)
+          && root.model.cpuPackagePowerAvailable !== true
           && root.model.integratedGpuLive && root.model.integratedGpuLive.powerW !== null && root.model.integratedGpuLive.powerW !== undefined
         label: "APU package"
         value: Model.formatWatts(root.model && root.model.integratedGpuLive ? root.model.integratedGpuLive.powerW : null)

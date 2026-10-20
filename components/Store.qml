@@ -833,8 +833,12 @@ Item {
     || hardwareInventory.batteries.length > 0 || hardwareInventory.packages.length > 0))
     || detectedGpus.length > 1 || detectedGpus.some(function (g) { return g.telemetryAvailable === false })
     || cfg.sensorId !== "" || hardwareError !== ""
+  // CPU shows a total only when every package can be read. Hardware retains
+  // individual denied counters for diagnosis; R refreshes access hints.
+  readonly property bool cpuPackagePowerAvailable: hardwareInventory !== null && hardwareInventory.packages.length > 0
+    && hardwareInventory.packages.every(function (p) { return p.readable === true })
   readonly property bool hardwareWanted: hardwareTabViewers > 0 || (cpuTabViewers > 0
-    && hardwareInventory !== null && hardwareInventory.packages.length > 0)
+    && cpuPackagePowerAvailable)
   readonly property string hardwareDemandMode: hardwareTabViewers > 0 ? "sample" : "power"
   property int hardwareGeneration: 0
   property int hardwareDemandEpoch: 0

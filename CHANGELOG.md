@@ -49,6 +49,13 @@
 
 ### Fixed
 
+- Hardware accepts converted thermistor temperatures and orders numbered
+  channels naturally, with chip order stable across hwmon renumbering.
+- CPU-only package polling skips unreadable counters, whose access errors
+  remain visible in Hardware. R refreshes access; incomplete package totals
+  stay hidden. GPU Details preserves automatic selection, with an explicit
+  Select action for changing the shared card. Battery labels default to
+  system scope without `scope=Device`, and counts use singular wording.
 - Mount paths retain up to 4096 characters, including spaces, backslashes and
   trailing whitespace, replacing the previous 128-character display limit.
 - Horizontal bar values stay beside their own labels and trends within fixed

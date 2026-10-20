@@ -66,7 +66,7 @@ from the tab strip. Device choices wrap too, with full names in tooltips.
 | `S` | settings view (gear in the header) |
 | `R` | re-read system, GPU, disk, sensor, package, and battery inventory and refresh the active tab |
 | `/` | open process search on CPU, Memory, or Drives |
-| `A` | select Network/Drives actions or Hardware GPU Details; `↑`/`↓` choose and `Enter`/Space activate |
+| `A` | select Network/Drives actions or Hardware GPU Details/Select; `↑`/`↓` choose and `Enter`/Space activate |
 | `Esc` | leave action selection, clear a search query or leave its editor, then close settings or the panel |
 | `Tab` | keeps its Quattro meaning: switch to the adjacent bar panel |
 
@@ -84,6 +84,11 @@ The last-used tab survives closing and reopening the panel within the
 running shell. The history-window choice also stays until changed; closing
 the panel closes the settings view and resets process search, expansion,
 and the cursor.
+
+In Hardware's graphics inventory, **Details** opens the current card's tab
+without changing automatic selection. **Select** saves a different card for
+the shared view; a dedicated-card selection also changes the GPU bar segment.
+See [Hardware diagnostics](HARDWARE.md#battery-and-gpu-scope).
 
 ## Copy addresses and open volumes
 

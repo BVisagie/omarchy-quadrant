@@ -78,6 +78,7 @@ ShellRoot {
   Component { id: storeComponent; Components.Store { } }
   Component { id: cpuComponent; Tabs.CpuTab { width: 408 } }
   Component { id: gpuComponent; Tabs.GpuTab { width: 408 } }
+  Component { id: hardwareComponent; Tabs.HardwareTab { width: 408 } }
   TestCase {
     id: tests
     name: "HardwareDetails"
@@ -120,6 +121,7 @@ ShellRoot {
       win.width = 440; win.height = 2400
       fixture.cfg = Model.readSettings({}); fixture.raw = initialRaw; fixture.gpus = initialGpus
       fixture.hardwareError = ""; fixture.selectedGpu = ""; fixture.selectedIntegratedGpu = ""
+      fixture.selectionWrites = 0; fixture.lastPatch = ({})
       fakePanel.opened = true; fakePanel.settingsOpen = false; fakePanel.currentTab = "hardware"
       fakePanel.switches = 0; fakePanel.closes = 0
       view.actionList.leaveFocus(); body.contentY = 0
@@ -156,15 +158,33 @@ ShellRoot {
       fixture.raw = initialRaw; wait(20)
       equal(view.pinnedSensor.id, id)
     }
-    function test_gpu_details_use_keyboard_and_pointer_without_desktop_actions() {
+    function test_gpu_details_preserve_auto_with_keyboard_and_pointer() {
+      equal(findChild(view.actionList, "actionButton_0").text, "Details")
+      equal(findChild(view.actionList, "actionButton_1").text, "Details")
       keyClick(Qt.Key_A); check(view.actionList.keyboardActive)
       keyClick(Qt.Key_Down); keyClick(Qt.Key_Return)
-      equal(fixture.selectedGpu, "0000:03:00.0"); equal(fakePanel.currentTab, "gpu")
+      equal(fixture.selectedGpu, ""); equal(fakePanel.currentTab, "gpu")
       equal(view.actionList.runner.message, ""); check(!view.actionList.runner.busy)
       fakePanel.currentTab = "hardware"; wait(20)
       mouseClick(findChild(view.actionList, "actionButton_0"))
-      equal(fixture.selectedIntegratedGpu, "0000:00:02.0"); equal(fakePanel.currentTab, "cpu")
+      equal(fixture.selectedIntegratedGpu, ""); equal(fakePanel.currentTab, "cpu")
       equal(view.actionList.runner.message, "")
+      equal(fixture.selectionWrites, 0)
+      equal(fixture.cfg.gpuDevice, "auto"); equal(fixture.cfg.gpuDeviceId, "")
+      equal(fixture.cfg.integratedGpuDevice, "auto"); equal(fixture.cfg.integratedGpuDeviceId, "")
+    }
+    function test_select_other_gpu_is_explicit_and_persists_the_shared_selection() {
+      var other = Object.assign({}, initialGpus[1], { card: "card2", deviceId: "0000:04:00.0", slot: "0000:04:00.0", name: "Other graphics" })
+      fixture.gpus = initialGpus.concat([other]); wait(20)
+      equal(findChild(view.actionList, "actionButton_2").text, "Select")
+      mouseClick(findChild(view.actionList, "actionButton_2")); wait(20)
+      equal(fixture.selectionWrites, 1); equal(fixture.selectedGpu, other.deviceId)
+      equal(fixture.cfg.gpuDeviceId, other.deviceId); equal(fixture.gpu.deviceId, other.deviceId)
+      equal(fakePanel.currentTab, "gpu")
+      fakePanel.currentTab = "hardware"; wait(20)
+      equal(findChild(view.actionList, "actionButton_2").text, "Details")
+      mouseClick(findChild(view.actionList, "actionButton_2"))
+      equal(fixture.selectionWrites, 1, "opening an already selected card does not rewrite settings")
     }
     function test_unavailable_gpu_stays_identified_without_selection() {
       fixture.gpus = [Object.assign({}, initialGpus[1], { telemetryAvailable: false })]
@@ -187,6 +207,18 @@ ShellRoot {
       check(fixture.hardwareAvailable)
       // A parent column hides the entire battery section, preserving its title.
       check(!texts(view).some(function (text) { return text.indexOf("Laptop battery") >= 0 }))
+    }
+    function test_header_plural_and_system_battery_without_scope() {
+      var battery = Object.assign({}, initialRaw.batteries[0], { scope: "" })
+      fixture.raw = Object.assign({}, initialRaw, { sensors: initialRaw.sensors.slice(0, 1), batteries: [battery] })
+      wait(20)
+      check(texts(view).indexOf("1 sensor · 1 battery") >= 0)
+      check(texts(view).some(function (text) { return text.indexOf("Laptop battery · BAT0 · system battery") >= 0 }))
+      fixture.raw = Object.assign({}, initialRaw, { sensors: [], batteries: [] })
+      wait(20); check(texts(view).indexOf("0 sensors · 0 batteries") >= 0)
+      fixture.raw = initialRaw; wait(20)
+      check(texts(view).indexOf("4 sensors · 2 batteries") >= 0)
+      check(texts(view).some(function (text) { return text.indexOf("mouse · peripheral") >= 0 }))
     }
     function test_battery_diagnostics_are_per_device_and_do_not_invent_values() {
       var values = texts(view)
@@ -259,6 +291,8 @@ ShellRoot {
       check(packageRow.visible); equal(packageRow.value, "40 W"); check(!apuRow.visible)
       check(texts(cpu).indexOf("140°F") >= 0)
       check(texts(cpu).indexOf("1000 MHz") >= 0)
+      store.hardwareInventory = { sensors: [], packages: [{ readable: true }, { readable: false }], batteries: [] }
+      wait(20); check(!packageRow.visible); check(apuRow.visible)
       store.hardwareInventory = { sensors: [], packages: [], batteries: [] }
       wait(20); check(!packageRow.visible); check(apuRow.visible); equal(apuRow.value, "22 W")
       store.gpu = { card: "card1", vendor: "amd", name: "Dedicated graphics" }
@@ -272,6 +306,29 @@ ShellRoot {
       wait(20); equal(memory.value, "--")
       store.discreteGpuLive = Object.assign({}, store.discreteGpuLive, { memoryClockSource: "" })
       wait(20); check(!memory.visible)
+    }
+    function test_denied_packages_do_not_poll_cpu_but_hardware_and_r_recover() {
+      state({ packageDenied: true })
+      var store = realStore()
+      var sampler = findChild(store, "hardwareSampler")
+      tryCompare(sampler, "running", false)
+      check(!store.cpuPackagePowerAvailable); check(store.hardwareAvailable)
+      var cpu = createTemporaryObject(cpuComponent, win.contentItem, { model: store })
+      var hardware = createTemporaryObject(hardwareComponent, win.contentItem, { model: store })
+      var row = findChild(cpu, "cpuPackagePower")
+      check(!row.visible)
+      var count = records().length
+      store.setViewer("cpu-denied", { open: true, cpuTab: true })
+      wait(650); equal(records().length, count, "CPU does not poll known unreadable package counters")
+      store.setViewer("inspect", { open: true, hardwareTab: true })
+      tryVerify(function () { return store.packageReadings.some(function (p) { return p.status === "Permission denied" }) }, 2000)
+      check(texts(hardware).some(function (text) { return text.indexOf("Permission denied") >= 0 }))
+      store.clearViewer("inspect"); tryCompare(sampler, "running", false)
+      count = records().length; wait(650); equal(records().length, count)
+      state({}); store.refreshHardwareDetails()
+      tryVerify(function () { return store.cpuPackagePowerAvailable && store.packageReadings.length && store.packageReadings[0].watts === 0 }, 3000)
+      check(row.visible); equal(row.value, "0.0 W")
+      store.clearViewer("cpu-denied"); tryCompare(sampler, "running", false)
     }
     function test_late_results_do_not_repopulate_hidden_details_and_r_recovers() {
       var store = realStore()
