@@ -47,6 +47,81 @@ test("ambiguous families and conflicting group identities never depend on invent
   }
 })
 
+test("shared launcher and icon keys do not hide an application's desktop identity", () => {
+  const fixtures = [
+    { comm: "foot", exe: "foot", app: { id: "foot", name: "Foot", icon: "foot", command: ["foot"] },
+      shortcut: { id: "foot-server", name: "Foot Server", icon: "foot", startupClass: "foot", command: ["foot", "--server"] } },
+    { comm: "steam", exe: "steam", app: { id: "steam", name: "Steam", icon: "steam", command: ["steam", "%U"] },
+      shortcut: { id: "steam-game-570", name: "Dota 2", icon: "steam", command: ["steam", "steam://rungameid/570"] } },
+    { comm: "chromium", exe: "chromium", app: { id: "chromium", name: "Chromium", icon: "chromium", command: ["chromium", "%U"] },
+      shortcut: { id: "chromium-pwa", name: "Web App", icon: "chromium", command: ["/usr/bin/chromium", "--app-id=example"] } },
+    { comm: "lutris", exe: "python3.13", app: { id: "lutris", name: "Lutris", icon: "lutris", command: ["lutris"] },
+      shortcut: { id: "lutris-game", name: "Game", icon: "lutris", command: ["env", "LUTRIS_SKIP_INIT=1", "lutris", "lutris:rungame/test"] } }
+  ]
+  for (const fixture of fixtures) {
+    const row = nameAndCollapse([{ pid: 1, start: 1, comm: fixture.comm, exe: fixture.exe, value: 1 }], 1)[0]
+    for (const entries of [[fixture.app, fixture.shortcut], [fixture.shortcut, fixture.app]]) {
+      const index = processAppIndex(entries)
+      assert.equal(processDesktopEntry(index, row), fixture.app, fixture.comm)
+      assert.equal(processDesktopEntry(index, { comm: fixture.comm, appKeys: [] }), fixture.app, "friendly identity: " + fixture.comm)
+    }
+  }
+})
+
+test("desktop IDs and startup classes outrank shared display and icon names", () => {
+  const app = { id: "actual-app", name: "Shared name", startupClass: "app-window", icon: "shared-icon" }
+  const other = { id: "other", name: "Shared name", icon: "actual-app", command: ["different-executable"] }
+  for (const entries of [[app, other], [other, app]]) {
+    const index = processAppIndex(entries)
+    assert.equal(processDesktopEntry(index, { comm: "actual-app" }), app)
+    assert.equal(processDesktopEntry(index, { comm: "app-window" }), app)
+    assert.equal(processDesktopEntry(index, { comm: "Shared name" }), null)
+    assert.equal(processDesktopEntry(index, { comm: "worker", appKeys: ["actual-app", "other"] }), null)
+  }
+})
+
+test("conflicting retained identities remain unresolved across matching tiers", () => {
+  const one = { id: "one", name: "First", command: ["sh", "-c", "one"] }
+  const two = { id: "two", name: "Second", startupClass: "second", command: ["sh", "-c", "second"] }
+  for (const entries of [[one, two], [two, one]]) {
+    const index = processAppIndex(entries)
+    for (const appKeys of [["one", "second"], ["second", "one"]])
+      assert.equal(processDesktopEntry(index, { comm: "worker", appKeys }), null)
+  }
+})
+
+test("generated friendly labels do not override retained raw identities", () => {
+  const origin = { id: "brave-origin", name: "Brave Origin", command: ["origin-wrapper"] }
+  const other = { id: "brave", name: "Other Brave", command: ["brave-browser"] }
+  const row = nameAndCollapse([{ pid: 1, comm: "chrome", exe: "brave-origin", value: 1 }], 1)[0]
+  assert.equal(row.comm, "Brave")
+  assert.deepEqual(row.appKeys, ["brave-origin"])
+  for (const entries of [[origin, other], [other, origin]]) {
+    const index = processAppIndex(entries)
+    assert.equal(processDesktopEntry(index, row), origin)
+    assert.equal(processDesktopEntry(index, { comm: "Brave", appKeys: [] }), other)
+  }
+})
+
+test("hidden launchers cannot claim visible apps or executable-only processes", () => {
+  const quickshell = { id: "org.quickshell", name: "Quickshell", icon: "org.quickshell", noDisplay: true }
+  const xwayland = { id: "org.freedesktop.Xwayland", name: "Xwayland", command: ["Xwayland", "-decorate"], noDisplay: true }
+  const handler = { id: "claude-code-url-handler", name: "Claude Code URL Handler", command: ["claude", "--handle-uri", "%u"], noDisplay: true }
+  const hiddenT3 = { id: "com.t3tools.T3Code", name: "T3 Code (Nightly)", startupClass: "t3code", icon: "hidden-t3", command: ["t3code"], noDisplay: true }
+  const entries = [quickshell, xwayland, handler, hiddenT3, t3]
+  for (const values of [entries, entries.slice().reverse()]) {
+    const index = processAppIndex(values)
+    assert.equal(processDesktopEntry(index, { comm: "quickshell" }), null)
+    assert.equal(processDesktopEntry(index, { comm: "Xwayland" }), null)
+    assert.equal(processDesktopEntry(index, { comm: "t3code" }), t3)
+    assert.equal(processDesktopEntry(index, { comm: "claude", exe: "claude" }), null)
+    assert.equal(processDesktopEntry(index, { comm: "hidden-t3" }), null, "hidden icon names do not identify a process")
+  }
+  assert.equal(processDesktopEntry(processAppIndex([hiddenT3]), { comm: "t3code", exe: "t3code" }), null)
+  const visible = { id: "visible-shell", name: "Quickshell", icon: "visible" }
+  assert.equal(processDesktopEntry(processAppIndex([quickshell, visible]), { comm: "quickshell" }), visible)
+})
+
 test("generic runtimes and arbitrary command arguments are not application identities", () => {
   const entries = [
     { id: "idle", name: "IDLE", command: ["python3", "-m", "idlelib"] },

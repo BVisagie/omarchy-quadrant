@@ -28,6 +28,8 @@ ShellRoot {
       expandable: true; expandedReady: true; expandedRows: rows
     }
     Components.ProcessList { id: second; apps: apps; active: false }
+    Component { id: resolverComponent; Components.ProcessApps { } }
+    Component { id: listComponent; Components.ProcessList { width: 400 } }
     QtObject {
       id: nativeBackend
       property var paths: ({})
@@ -51,6 +53,24 @@ ShellRoot {
       }
       function cleanup() {
         if (qtest_results.failed) console.error("QPROCESSICONS failure: " + qtest_results.functionName)
+      }
+      function test_shared_launcher_retains_the_apps_desktop_identity() {
+        var main = { id: "foot", name: "Foot", icon: Quickshell.env("QUADRANT_ICON_TEMPLATE"), command: ["foot"] }
+        var server = { id: "foot-server", name: "Foot Server", icon: "foot", startupClass: "foot", command: ["foot", "--server"] }
+        var resolver = createTemporaryObject(resolverComponent, win.contentItem, { desktopValues: [main] })
+        verify(resolver)
+        var rows = Model.nameAndCollapse([{ pid: 4, start: 4, comm: "foot", exe: "foot", value: 1 }], 1)
+        var view = createTemporaryObject(listComponent, win.contentItem, { apps: resolver })
+        verify(view)
+        view.rows = rows
+        for (var entries of [[server, main], [main, server]]) {
+          resolver.desktopValues = entries
+          compare(view.entryForRow(rows[0]).name, "Foot")
+          tryVerify(function() {
+            var image = findChild(view, "processIcon_0")
+            return image && String(image.source) === resolver.fileUrl(Quickshell.env("QUADRANT_ICON_TEMPLATE")) && image.status === Image.Ready
+          })
+        }
       }
       function test_existing_delegate_refreshes_after_a_late_icon_install() {
         compare(first.appResolver, second.appResolver)

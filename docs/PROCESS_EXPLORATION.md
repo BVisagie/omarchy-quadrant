@@ -39,13 +39,24 @@ other tabs suspend requests without changing process settings on disk.
 
 CPU, Memory and Drives groups retain up to eight distinct executable, script
 and raw process-name hints from the existing sample, separately from their
-friendly label. Matching prefers exact parsed launcher executables, then
-desktop identities such as ID and startup class, then an unambiguous known
-application alias. This handles `brave-origin` launching a process named
+friendly label. For each retained hint, matching prefers unambiguous parsed
+launcher executables, then desktop IDs, startup classes, display/icon names,
+and known application aliases. Shared launcher/icon keys supply no evidence,
+allowing the app's own desktop ID to resolve even when a server launcher, game
+shortcut or PWA uses the same binary. Conflicting matches from the row's own
+hints still stop the lookup, including matches across different metadata
+fields. The friendly
+label is only a fallback when the retained hints do not resolve an app.
+This also handles `brave-origin` launching a process named
 `brave`. Generic runtimes and arbitrary command-line arguments do not identify
 an app. Conflicting or truncated evidence uses the generic icon. Group totals,
 PID/start identities and selection behavior are unchanged. GPU and Network
 continue to use the names available from their attribution helpers.
+
+Matching uses Quickshell's visible application inventory. `NoDisplay` entries
+are excluded, so hidden-only utilities retain the generic fallback. This also
+prevents hidden URL handlers from claiming the process of the app they launch.
+Restoring hidden-only matches would require a separate inventory source.
 
 The resolver refreshes when a process view opens, its desktop inventory
 changes, or R is pressed. Overlapping requests are coalesced. Process samples

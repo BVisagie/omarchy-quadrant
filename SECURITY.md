@@ -101,6 +101,9 @@ data. Attribution limits are documented in [Measurements](docs/METRICS.md).
 - Desktop-entry matching uses bounded executable/script/name hints and parsed
   launcher commands, followed by unambiguous aliases from a fixed application
   map. Generic runtimes and arbitrary arguments do not establish app identity.
+  Inventory collisions fall through to stronger desktop identity matches;
+  conflicting evidence within a process row remains unresolved. Hidden
+  desktop handlers are excluded from this lookup.
   The shared icon helper checks filesystem metadata for at most 512 requested
   names in app/device icon directories and pixmaps. It writes no state; image
   loading stays with Qt, and icon URLs are not retained as cached misses.
