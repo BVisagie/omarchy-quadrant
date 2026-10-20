@@ -4,7 +4,7 @@
 <title>Quadrant screenshot hero</title>
 <style>
   * { box-sizing: border-box; }
-  html, body { margin: 0; width: 1920px; height: 1320px; }
+  html, body { margin: 0; width: 1920px; height: 2300px; }
   body {
     overflow: hidden;
     color: #edf3f7;
@@ -29,7 +29,7 @@
     text-align: right;
   }
   .metrics span { color: #6ac3bd; }
-  .panels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; }
+  .panels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 42px 36px; align-items: start; }
   figure { margin: 0; min-width: 0; }
   figcaption {
     font-family: "DejaVu Sans Mono", monospace;
@@ -58,9 +58,9 @@
     <p class="eyebrow">OMARCHY SYSTEM MONITOR</p>
     <h1>Quadrant</h1>
     <p class="tagline">Your system, at a glance.</p>
-    <p class="metrics">CPU <span>·</span> GPU <span>·</span> Memory<br>Drives <span>·</span> Network</p>
+    <p class="metrics">CPU <span>·</span> GPU <span>·</span> Memory<br>Drives <span>·</span> Network <span>·</span> Hardware</p>
   </header>
-  <section class="panels" aria-label="Quadrant in three Omarchy themes">
+  <section class="panels" aria-label="Current Quadrant panels in three palette fixtures">
     <figure>
       <figcaption>CPU <small>Dark theme</small></figcaption>
       <div class="screen"><img src="../screenshots/cpu.png" alt="CPU tab in a dark teal theme"></div>
@@ -73,7 +73,11 @@
       <figcaption>Memory <small>Monochrome theme</small></figcaption>
       <div class="screen"><img src="../screenshots/memory.png" alt="Memory tab in a black monochrome theme"></div>
     </figure>
+    <figure>
+      <figcaption>Hardware <small>Dark theme</small></figcaption>
+      <div class="screen"><img src="../screenshots/hardware.png" alt="Hardware cards with processor temperatures, batteries, power and cooling"></div>
+    </figure>
   </section>
-  <footer><span>One plugin. Your Omarchy palette.</span><span>Live usage · History · Processes</span></footer>
+  <footer><span>Native QML captures · Illustrative readings</span><span>Activity · Processes · Diagnostics</span></footer>
 </main>
 </html>

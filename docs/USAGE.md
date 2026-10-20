@@ -224,11 +224,11 @@ The shell must be running with Quadrant enabled. Tab names in IPC are
 The `set` method takes its value as JSON text:
 
 ```sh
-quickshell ipc -p "$OMARCHY_PATH/shell" call dev.bvisagie.quadrant showTab gpu     # cpu | gpu | mem | disk | net | hardware
-quickshell ipc -p "$OMARCHY_PATH/shell" call dev.bvisagie.quadrant settings
-quickshell ipc -p "$OMARCHY_PATH/shell" call dev.bvisagie.quadrant setBarSegment disk true
-quickshell ipc -p "$OMARCHY_PATH/shell" call dev.bvisagie.quadrant set processCount 8
-quickshell ipc -p "$OMARCHY_PATH/shell" call dev.bvisagie.quadrant set networkInterface '"wg0"'
+omarchy-shell dev.bvisagie.quadrant showTab gpu     # cpu | gpu | mem | disk | net | hardware
+omarchy-shell dev.bvisagie.quadrant settings
+omarchy-shell dev.bvisagie.quadrant setBarSegment disk true
+omarchy-shell dev.bvisagie.quadrant set processCount 8
+omarchy-shell dev.bvisagie.quadrant set networkInterface '"wg0"'
 omarchy-shell shell summon dev.bvisagie.quadrant '{}'   # open on last-used tab
 omarchy-shell shell hide dev.bvisagie.quadrant
 ```
@@ -238,9 +238,12 @@ methods. See [Settings](SETTINGS.md) for typed values and validation.
 
 ## Screenshots
 
-These captures show the current panel across dark, light, and monochrome
-Omarchy themes. GPU, Network, Drives and Hardware use fixture readings; CPU and Memory
-sample the development machine. Click a screenshot to view it at full size.
+These native QML captures show the current panel across dark, light, and
+monochrome palette fixtures. Every reading, process, address and device
+identity is synthetic. The captures use 720 logical units of content plus
+the renderer's margins; the installed panel adapts to your monitor and theme.
+Click a screenshot to view it at full size. See
+[reproduction instructions](DEVELOPMENT.md#documentation-screenshots).
 
 <table>
   <tr>
@@ -260,7 +263,7 @@ sample the development machine. Click a screenshot to view it at full size.
     </td>
     <td width="50%" valign="top">
       <p><strong>Drives</strong><br>Disk selection, throughput, and mounts.</p>
-      <a href="screenshots/drives.png"><img src="screenshots/drives.png" alt="Drives tab with fixture SSD identity, throughput history, mounted-volume Open buttons, capacity bars, and process I/O" width="420"></a>
+      <a href="screenshots/drives.png"><img src="screenshots/drives.png" alt="Drives cards with an example NVMe SSD, throughput history, mounted-volume Open buttons, capacity bars, and machine-wide process I/O" width="420"></a>
     </td>
   </tr>
 </table>
@@ -272,5 +275,11 @@ history, and TCP process attribution.
   <a href="screenshots/network.png"><img src="screenshots/network.png" alt="Network tab with a fixture Ethernet interface, traffic history, totals, and Copy buttons for MAC, IPv4 and IPv6 values in a light theme" width="540"></a>
 </p>
 
-The [Hardware guide includes a synthetic diagnostics capture](HARDWARE.md).
+**Hardware** — processor and device temperatures, batteries, package power,
+fans and GPU inventory. See [the diagnostic source limits](HARDWARE.md).
+
+<p align="center">
+  <a href="screenshots/hardware.png"><img src="screenshots/hardware.png" alt="Hardware diagnostics arranged into Processor, Other temperatures, Graphics inventory, Batteries, and Power and cooling cards" width="540"></a>
+</p>
+
 The [settings guide includes the full settings view](SETTINGS.md#settings-view).

@@ -48,7 +48,9 @@ These are actual offscreen QML captures using deterministic synthetic readings,
 not hardware measurements. The two horizontal examples use the same five
 enabled segments and canonical order at a 26 px bar size. The font, spacing,
 data, and theme match; graph width is 32 px. Header text belongs to the capture
-harness. Click an image for its original size.
+harness. Regenerate the published set with
+[`tests/render-docs.sh`](DEVELOPMENT.md#documentation-screenshots).
+Click an image for its original size.
 
 | Style | Widget size | Capture |
 | --- | --- | --- |
@@ -68,7 +70,7 @@ order is Network, Drives, CPU, Memory, with one Drives cell.
   </tr>
 </table>
 
-The visual review covered dark, light, and monochrome palettes; both styles
+The original feature review covered dark, light, and monochrome palettes; both styles
 and orientations; present/absent GPU; and 16/64 px graph widths (48 captures),
 plus default-width, 1.25×/2× scaling, letter/no-label, and two-widget examples.
 Native interaction tests separately check font size 18 and spacing scales
@@ -90,7 +92,7 @@ view in every case, so RSS includes the whole Qt/harness process.
 | Case | CPU time | One CPU core | Peak RSS | Peak child processes |
 | --- | --- | --- | --- | --- |
 | Merged text baseline | 0.01 s | 0.10% | 115.84 MiB | 0 |
-| Current text | 0.00 s | 0.00% | 120.00 MiB | 0 |
+| Reviewed text revision | 0.00 s | 0.00% | 120.00 MiB | 0 |
 | One graph widget | 0.02 s | 0.20% | 126.49 MiB | 0 |
 | Two graph widgets, shared service | 0.03 s | 0.30% | 126.83 MiB | 0 |
 

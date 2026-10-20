@@ -1,15 +1,17 @@
 # Quadrant
 
 <p align="center">
-  <img src="preview.png" alt="Quadrant CPU, GPU, and Memory panels in dark, light, and monochrome Omarchy themes" width="1000">
+  <img src="preview.png" alt="Quadrant CPU, GPU, Memory and Hardware cards in dark, light and monochrome palettes" width="1000">
 </p>
-<p align="center"><em>CPU, GPU, and Memory — one plugin, your Omarchy palette.</em></p>
+<p align="center"><em>Activity, processes, and hardware diagnostics — one plugin, your Omarchy palette.</em></p>
 
 A unified system monitor for the Omarchy Quattro bar: CPU, GPU, memory,
 drives and network in one compact bar slot and one tabbed panel. Each tab
 identifies the hardware it measures, shows live usage and history, and
 lists the processes behind the numbers.
 
+- Responsive cards put activity and processes side by side, with expandable
+  details and a single-column layout on smaller screens.
 - CPU topology and per-core load, RAM composition and pressure, GPU
   usage, drive throughput and mount capacity, and network traffic.
 - Last-minute graphs and an hour of saved history, shared across monitors,
@@ -25,10 +27,11 @@ lists the processes behind the numbers.
   package watts, individual batteries/peripherals, and a conditional GPU inventory.
 
 <p align="center">
-  <img src="docs/screenshots/bar.png" alt="Quadrant CPU, GPU, memory, and network segments beside Omarchy’s clock and weather" width="486">
+  <img src="docs/screenshots/bar.png" alt="Quadrant's default text bar with CPU, GPU, memory, and network segments" width="258">
 </p>
 
-See the [tab and settings screenshots](docs/USAGE.md#screenshots).
+The images use the real QML interface with synthetic readings. See the
+[tab and settings screenshots](docs/USAGE.md#screenshots).
 
 ## Requirements
 

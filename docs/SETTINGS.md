@@ -226,10 +226,12 @@ methods.
 
 The settings view groups ordered bar segments, appearance (including temperature units and sensor pin), panel graphs, sampling, and devices,
 with keyboard help and a **Reset to defaults** action at the bottom.
+The capture below uses the default settings with synthetic device inventory;
+changing a screenshot fixture never writes your installed configuration.
 
 <details>
   <summary>Show the full settings screenshot</summary>
   <p align="center">
-    <a href="screenshots/settings.png"><img src="screenshots/settings.png" alt="Full Quadrant settings view showing segment switches and ordering arrows, bar trends and width, panel graphs, sampling, devices, keyboard shortcuts, and Reset to defaults" width="520"></a>
+    <a href="screenshots/settings.png"><img src="screenshots/settings.png" alt="Full Quadrant settings with segment switches and ordering arrows, appearance, temperature units and sensor pin, graph layouts, sampling, device selectors, shortcuts, and Reset to defaults" width="520"></a>
   </p>
 </details>

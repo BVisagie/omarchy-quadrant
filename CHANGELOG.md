@@ -32,6 +32,11 @@
 
 ### Changed
 
+- Group all six resource tabs into theme-aware cards with an **Expand details /
+  Collapse details** control matching `D`. CPU core activity and Hardware core
+  temperatures start collapsed; missing and critical core counts stay visible.
+- Refresh the documentation, native screenshots and README artwork for the
+  grouped panels. Public captures use synthetic data with a repeatable renderer.
 - Prefer a wider, theme-scaled 720-unit panel with graphs and details beside
   processes. Header controls share a row when they fit; narrow screens stack
   the same content without resetting search, selection or disclosures.
@@ -56,6 +61,10 @@
 
 ### Fixed
 
+- Process-list refreshes and scrolling no longer trigger repeated details
+  scans. Hardware distinguishes colliding friendly sensor names, separates
+  waiting battery readings from unavailable charge, and shows singular or
+  equal-temperature core summaries without redundant ranges.
 - Hardware accepts converted thermistor temperatures and orders numbered
   channels naturally, with chip order stable across hwmon renumbering.
 - CPU-only package polling skips unreadable counters, whose access errors

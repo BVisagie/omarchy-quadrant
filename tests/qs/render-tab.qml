@@ -18,6 +18,17 @@ ShellRoot {
   property bool actionFixtureEnabled: Quickshell.env("QUADRANT_RENDER_ACTION_FIXTURE") === "1"
   property bool hardwareFixtureEnabled: Quickshell.env("QUADRANT_RENDER_HARDWARE_FIXTURE") === "1"
   property bool showHeader: Quickshell.env("QUADRANT_RENDER_HEADER") === "1" && tab !== "bar"
+  property bool documentation: Quickshell.env("QUADRANT_RENDER_DOCUMENTATION") === "1"
+  readonly property var renderOptions: ({
+    gpuGraphLayout: Quickshell.env("QUADRANT_RENDER_GPU_LAYOUT") || "overlay",
+    networkGraphLayout: Quickshell.env("QUADRANT_RENDER_NETWORK_LAYOUT") || "overlay",
+    diskGraphLayout: Quickshell.env("QUADRANT_RENDER_DISK_LAYOUT") || "overlay",
+    temperatureUnit: Quickshell.env("QUADRANT_RENDER_TEMPERATURE_UNIT") || "celsius"
+  })
+  readonly property var renderStore: documentation ? documentationFixture : liveStore.item || documentationFixture
+  readonly property var viewerState: ({ gpuSegment: tab === "bar", gpuTab: tab === "gpu", cpuTab: tab === "cpu",
+    memTab: tab === "mem", diskTab: tab === "disk", netTab: tab === "net", hardwareTab: tab === "hardware" && !hardwareFixtureEnabled,
+    expandedProcesses: Quickshell.env("QUADRANT_RENDER_EXPANDED") === "1", open: true })
 
   // Palette fixtures affect this throwaway process only; the installed theme
   // and user configuration are never changed.
@@ -30,15 +41,16 @@ ShellRoot {
     Commons.Color.urgent = palette === "mono" ? "#ffffff" : "#b34b4b"
   }
 
-  Components.Store {
-    id: renderStore
-    embedded: true
-    settingsRaw: ({
-      gpuGraphLayout: Quickshell.env("QUADRANT_RENDER_GPU_LAYOUT") || "overlay",
-      networkGraphLayout: Quickshell.env("QUADRANT_RENDER_NETWORK_LAYOUT") || "overlay",
-      diskGraphLayout: Quickshell.env("QUADRANT_RENDER_DISK_LAYOUT") || "overlay",
-      temperatureUnit: Quickshell.env("QUADRANT_RENDER_TEMPERATURE_UNIT") || "celsius"
-    })
+  DocumentationFixture {
+    id: documentationFixture
+    settingsRaw: harness.renderOptions
+    expandedProcesses: harness.viewerState.expandedProcesses
+  }
+  Loader {
+    id: liveStore
+    active: !harness.documentation
+    sourceComponent: Components.Store { embedded: true; settingsRaw: harness.renderOptions }
+    onLoaded: item.setViewer("render", harness.viewerState)
   }
 
   ActionFixture {
@@ -88,6 +100,7 @@ ShellRoot {
     property color background: Commons.Color.background
     property color urgent: Commons.Color.urgent
     property bool vertical: Quickshell.env("QUADRANT_RENDER_VERTICAL") === "1"
+    property bool foregroundAnimationEnabled: false
     property int barSize: 26
     property string position: "top"
     property var shell: null
@@ -187,12 +200,8 @@ ShellRoot {
     }
   }
 
-  Component.onCompleted: renderStore.setViewer("render", { gpuSegment: harness.tab === "bar", gpuTab: harness.tab === "gpu", cpuTab: harness.tab === "cpu",
-    memTab: harness.tab === "mem", diskTab: harness.tab === "disk", netTab: harness.tab === "net", hardwareTab: harness.tab === "hardware" && !harness.hardwareFixtureEnabled,
-    expandedProcesses: Quickshell.env("QUADRANT_RENDER_EXPANDED") === "1", open: true })
-
   Timer {
-    interval: 7000
+    interval: harness.documentation ? 500 : 7000
     running: true
     onTriggered: {
       harness.applyPalette()

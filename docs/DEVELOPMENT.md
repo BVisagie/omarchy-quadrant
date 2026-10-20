@@ -156,6 +156,12 @@ These style fixtures change only the throwaway test process. Device choices
 and hardware details keep long names within the panel. PSI prints its actual
 value without a gauge ceiling. Wide-header and responsive-column cases check
 that controls do not overlap and resizing preserves search and disclosures.
+The suite also runs `cards-ui.qml` in its own offscreen process. It checks
+all five activity/process layouts at 320 and 720 logical units, with 12 and
+18 px base text, detail-button interaction, and state retention through
+resizing. Repeated samples must preserve unchanged process groups and device
+choices; one active change produces one update. The `D` shortcut opens
+details when only some disclosures are open, then closes them together.
 A real Store fixture changes from 250 ms to 10 s
 and 60 s collection, verifying that minute history expires by timestamp
 rather than by the new cadence's point count. Both load-patch modes run.
@@ -213,15 +219,19 @@ details map. Capacity and access updates therefore do not replace delegates.
 `disk-info` reports read/search access hints with the existing mount polls;
 the action helper still checks current mount membership and access at activation.
 
-`qs-hardware-ui.sh` runs 22 cases in each load-patch mode against Hardware,
+`qs-hardware-ui.sh` exercises Hardware,
 settings, six-tab headers, and the real Store with a private sysfs tree. It
 checks unit/pin persistence, missing pins, stopped versus unreadable fans,
 critical colours in Fahrenheit, CPU/APU package labels, separate memory clocks,
 per-battery units and real zero power, GPU Details routing and unavailable
 cards, mouse/keyboard controls, shell Tab, and Hardware scrolling. Details
 preserves automatic GPU choices; selecting another card explicitly saves the
-shared choice. Tests also cover singular/plural counts and default system
-battery labels without a scope attribute. Native
+shared choice. Tests also cover singular/plural counts, equal and single-core
+temperature summaries, driver-name collisions after friendly-name mapping,
+default system battery labels without a scope attribute, waiting versus
+unavailable battery readings, and preservation of real zero values. Core
+summaries, live battery updates, and narrow layouts with large text run in
+both load-patch modes. Native
 lifecycle cases cover two viewers sharing one helper, metadata-only startup,
 no hidden polls, CPU-only package reads, late results after close/mode changes,
 coalesced refreshes, visible failures, and recovery. Known unreadable packages
@@ -252,23 +262,72 @@ collisions. CI checks this in plugin and harness QML. On Qt 6.12 and later,
 qmllint's block-scope `var` style diagnostic is informational; other enabled
 warnings still fail the gate.
 
+### Documentation screenshots
+
+Refresh the complete current screenshot set from the repository root:
+
+```sh
+bash tests/render-docs.sh
+# Or write a review set without replacing the checked-in images:
+bash tests/render-docs.sh /tmp/quadrant-docs
+```
+
+This runs the actual QML tabs, settings, bar widget, and graph components
+against deterministic synthetic data. The tab renderer's documentation mode
+uses `tests/qs/DocumentationFixture.qml` and does not instantiate the live
+sampling Store. Invented process names, device identifiers, mount paths, and
+documentation-range IP addresses keep the captures independent of the host.
+Fixtures establish presentation, not driver support, hardware accuracy, or
+power-management behavior.
+
+The script refreshes all 17 files in `docs/screenshots/`: six resource panels,
+settings, expanded process exploration, the bare README bar, five bar
+comparisons, and three graph comparisons. It resets inherited
+`QUADRANT_RENDER_*` options and fixes the timezone, scale, and font DPI.
+The bare README bar is captured at 2× (516 × 116 px) and displayed at its
+258 px logical width; the remaining captures use 1×.
+Panel captures have 720 px of content plus 16 px margins, use the dark,
+light, or monochrome palette fixtures, and fit their full content. The live
+popup may scroll on a smaller monitor. Fonts, Qt/icon versions, and the
+rendering environment can still affect antialiasing and raster output;
+inspect the refreshed images before committing.
+The archived proposals and original before-image under `docs/design/` are
+historical evidence and are not refreshed.
+
+The README artwork is a separate composition of the refreshed CPU, GPU,
+Memory, and Hardware captures. Serve the repository locally:
+
+```sh
+python3 -m http.server 8768 --bind 127.0.0.1
+```
+
+Open [artwork/hero.html](artwork/hero.html) through that server, wait for all
+images and fonts to load, and capture its 1920 × 2300 px viewport at 1× into
+`preview.png`. The HTML frames the native screenshots without modifying
+their UI text or measurements.
+
+### Individual panel captures
+
 `render.sh` needs Quickshell and Omarchy's shell imports. It uses Qt's
 offscreen platform and temporary state to render `cpu`, `gpu`, `mem`,
 `disk`, `net`, `hardware`, `settings`, or `bar`. Missing shell imports are an error,
-not a skip. It samples this machine's real hardware; inspect the output
-and any reported QML errors before using it. Public screenshot files are
-`preview.png` and `docs/screenshots/{bar,cpu,gpu,memory,drives,network,hardware,settings}.png`.
-The hero's editable layout is [artwork/hero.html](artwork/hero.html), rendered
-at 1920 × 1320 with the original CPU, GPU, and Memory captures. It frames
-the screenshots without changing their UI text, colours, or measurements.
+not a skip. By default it samples this machine's real hardware. Use
+`QUADRANT_RENDER_DOCUMENTATION=1` for synthetic panel/settings captures;
+use `render-bar.sh` for synthetic bar captures. Do not publish live captures
+without reviewing process names, addresses, and device identifiers.
 
 Use `QUADRANT_RENDER_PALETTE=dark`, `light`, or `mono` for temporary palette
 fixtures in the render process. `QUADRANT_RENDER_EXPANDED=1` opens the full
 process view; `QUADRANT_RENDER_QUERY`, `QUADRANT_RENDER_WIDTH`, and
 `QUADRANT_RENDER_HEIGHT` select a query and viewport for layout review.
 `QT_SCALE_FACTOR=1.25` or `2` exercises device scaling. These do not change the installed theme.
-The renderer uses isolated state and runtime directories and requires a fresh
-capture before replacing the output file. When a session Wayland socket is
+The renderer uses isolated state and runtime directories, requires a fresh
+capture, and rejects QML runtime errors before replacing the output file.
+`python3 -m unittest tests.py.test_render -v` checks output preservation and
+runtime isolation, and renders the real `bar` target in live and documentation
+modes. The native bar case skips when Quickshell or Omarchy imports are absent;
+the environment and error-handling cases run without either dependency.
+When a session Wayland socket is
 available, it links only that socket into the temporary runtime and retains
 the desktop platform theme so process icons match the live panel. Without a
 socket it disables the platform theme for headless rendering.
@@ -278,11 +337,9 @@ Use `QUADRANT_RENDER_HEADER=1` to include the shared panel header and
 `QUADRANT_RENDER_GPU_LAYOUT=aligned`,
 `QUADRANT_RENDER_NETWORK_LAYOUT=mirrored`, or
 `QUADRANT_RENDER_DISK_LAYOUT=mirrored` to render the corresponding setting
-without writing shell configuration. The dedicated-GPU
-documentation capture uses fixture telemetry because this machine has no
-dedicated card. Set `QUADRANT_RENDER_GPU_FIXTURE=percent` for that reproducible
-sample or `bytes` for a card without a VRAM denominator. These fixtures do not
-establish driver or power-management behavior.
+without writing shell configuration. For focused GPU cases, set
+`QUADRANT_RENDER_GPU_FIXTURE=percent` or `bytes` for a card without a VRAM
+denominator. The complete documentation fixture includes a dedicated GPU.
 
 Set `QUADRANT_RENDER_ACTION_FIXTURE=1` for deterministic Network and Drives
 captures with documentation-range addresses and literal mount-path characters.
@@ -290,12 +347,6 @@ The fixture supplies existing history data and never triggers clipboard or
 launcher actions. `QUADRANT_RENDER_FIT=1 QUADRANT_RENDER_HEADER=1` includes the
 panel header and fits the full content. These captures check presentation;
 they do not establish access to a physical removable volume.
-
-The panel UI check also runs `cards-ui.qml` in its own offscreen process.
-It checks all five activity/process layouts at 320 and 720 logical units,
-with 12 and 18 px base text, detail-button interaction, and state retention
-through resizing. The Hardware suite covers core summaries, missing/critical
-readings, live battery updates, and narrow layouts with large text.
 
 Set `QUADRANT_RENDER_WIDTH=752` for a 720 px content area at standard theme
 spacing, including the harness's 16 px margins. The production panel scales
@@ -349,7 +400,9 @@ The bar renderer uses the actual widget with deterministic minute histories
 from `BarFixture.qml`, one shared service, isolated runtime/state, and a panel
 contract stand-in. It fails on QML runtime errors. Its defaults show all five
 segments with Network first; `QUADRANT_RENDER_ORDER` accepts comma-separated
-segment names. `QUADRANT_RENDER_GRAPH_WIDTH`, `QUADRANT_RENDER_LABELS`,
+segment names. `QUADRANT_RENDER_SEGMENTS` controls membership and
+`QUADRANT_RENDER_BARE=1` captures just one widget without the harness title.
+`QUADRANT_RENDER_GRAPH_WIDTH`, `QUADRANT_RENDER_LABELS`,
 `QUADRANT_RENDER_BAR_SIZE`, `QUADRANT_RENDER_GPU_VENDOR=intel|amd|nvidia`,
 `QUADRANT_RENDER_MISSING_GPU=1`, and
 `QUADRANT_RENDER_MONITORS=2` select additional cases. Use

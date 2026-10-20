@@ -14,12 +14,14 @@ ShellRoot {
   property string style: Quickshell.env("QUADRANT_RENDER_BAR_STYLE") || "graph-text"
   property bool vertical: Quickshell.env("QUADRANT_RENDER_VERTICAL") === "1"
   property bool showSettings: Quickshell.env("QUADRANT_RENDER_TAB") === "settings"
+  property bool bare: Quickshell.env("QUADRANT_RENDER_BARE") === "1"
   property bool missingGpu: Quickshell.env("QUADRANT_RENDER_MISSING_GPU") === "1"
   property string gpuVendor: Model.parseEnumSetting(Quickshell.env("QUADRANT_RENDER_GPU_VENDOR"), ["intel", "amd", "nvidia"], "intel")
   property real stripSize: Number(Quickshell.env("QUADRANT_RENDER_BAR_SIZE")) || 26
   property var order: Model.barOrderFromSetting(Quickshell.env("QUADRANT_RENDER_ORDER") || "network,cpu,gpu,memory,disk")
   property int graphWidth: Number(Quickshell.env("QUADRANT_RENDER_GRAPH_WIDTH")) || 32
   property string labels: Quickshell.env("QUADRANT_RENDER_LABELS") || "glyph"
+  property var segments: Model.readSettings({ segments: Quickshell.env("QUADRANT_RENDER_SEGMENTS") || "cpu,gpu,memory,disk,network" }).segments
   property int duration: Number(Quickshell.env("QUADRANT_BENCH_SECONDS")) || 0
   property real timestamp: 1000
   property int copies: Math.max(1, Math.min(2, Number(Quickshell.env("QUADRANT_RENDER_MONITORS")) || 1))
@@ -28,7 +30,7 @@ ShellRoot {
     discreteGpuAvailable: !harness.missingGpu
     gpu: ({ vendor: harness.gpuVendor })
     settingsRaw: ({ barStyle: harness.style, barOrder: harness.order, barGraphWidth: harness.graphWidth,
-      barLabels: harness.labels, segments: ["cpu", "gpu", "memory", "disk", "network"] })
+      barLabels: harness.labels, segments: harness.segments })
   }
   BarHost { id: host; service: shared; vertical: harness.vertical; barSize: harness.stripSize; widgets: secondSlot.item ? [slot, secondSlot.item] : [slot] }
   function applyPalette() {
@@ -41,12 +43,12 @@ ShellRoot {
   Window {
     id: win
     visible: true
-    width: harness.showSettings ? 440 : Math.max(400, slot.implicitWidth + 32)
-    height: harness.showSettings ? settings.implicitHeight + 32 : harness.vertical ? slot.implicitHeight + 80 : harness.copies * (slot.implicitHeight + 12) + 68
+    width: harness.showSettings ? 440 : Math.max(harness.bare ? 0 : 400, slot.implicitWidth + 32)
+    height: harness.showSettings ? settings.implicitHeight + 32 : harness.bare ? slot.implicitHeight + 32 : harness.vertical ? slot.implicitHeight + 80 : harness.copies * (slot.implicitHeight + 12) + 68
     color: Commons.Color.background
     Rectangle { anchors.fill: parent; color: Commons.Color.background }
     Text {
-      visible: !harness.showSettings
+      visible: !harness.showSettings && !harness.bare
       x: 16; y: 10; width: parent.width - 32
       textFormat: Text.PlainText
       text: (harness.vertical ? "Vertical" : "Horizontal") + " · " + harness.style + " · " + harness.palette + "\nSynthetic history · one minute · " + (harness.missingGpu ? "GPU absent" : "all devices")
@@ -57,7 +59,7 @@ ShellRoot {
     Plugin.BarWidget {
       id: slot
       visible: !harness.showSettings
-      x: 16; y: 64
+      x: 16; y: harness.bare ? 16 : 64
       width: implicitWidth
       height: implicitHeight
       bar: host

@@ -1,17 +1,17 @@
-# Graph layout evaluation
+# Graph layouts
 
 [← Usage](USAGE.md#graphs-and-processes) · [Settings](SETTINGS.md#graph-layouts)
 
-This implements the graph-alternatives part of the monitoring plan. GPU has
-an aligned option; Network and Drives each have a mirrored option. Overlays
-remain the default for all three. Optional bar trends and ordering belong
-to the next deliverable.
+GPU has an aligned option; Network and Drives each have a mirrored option.
+Overlays remain the default for all three. Set each choice in
+**Settings → Panel graphs**. [Bar trends and ordering](BAR_TRENDS.md) are
+separate settings; their minute window is independent of the panel.
 
 ## Default and height tradeoff
 
 Paired renders use the same measurements, time window, graph width and
-palette. With a 440 px outer panel (408 px graph), standard shell style,
-and both series' summaries and live legends:
+palette. The comparison harness gives each resource 440 px (408 px for the
+graph), standard shell style, and both series' summaries and live legends:
 
 | Resource | Overlay block | Alternative block | Added height | Benefit |
 | --- | ---: | ---: | ---: | --- |
@@ -20,15 +20,14 @@ and both series' summaries and live legends:
 | Drives | 196 px | 240 px mirrored | 44 px | Read and write occupy separate halves around zero. |
 
 These are graph blocks, including controls, summaries, time axis and legend;
-they exclude the tab's hardware details and process list. Plot heights are
+they exclude card padding, hardware details and processes. The production
+panel prefers 720 logical units and shares that space between columns, so
+its graphs can be narrower than these comparisons. Plot heights are
 88 px for an overlay, two 88 px plots for aligned GPU, and 132 px for a
 mirrored plot. Text wrapping, font and spacing settings can increase totals.
 The same two-series fixture at 320 px outer width retained these heights.
-Compared with the previous implementation's 162 px blocks at standard style and
-408 px graph width, the default CPU/Memory blocks are now 182 px (+20 px),
-and two-series GPU/Network/Drives blocks are 196 px (+34 px). The time axis
-and additional series summary account for that default growth. Narrow or
-larger-text layouts can reserve additional space for wrapped hover readings.
+At a 408 px graph width, the CPU/Memory blocks use 182 px. Narrower graphs or
+larger text can reserve additional space for wrapped summaries and hover readings.
 
 A GPU that has never reported a VRAM percentage shows only busy. Its aligned
 setting falls back to the same 182 px single plot as the overlay. A known
@@ -87,14 +86,14 @@ Monochrome, 440 px, one minute, low activity. Network and Drives retain a
 ## Verification and reproduction
 
 `tests/render-graphs.sh` renders all three paired resources in one image.
-The reviewed matrix covered dark/light/monochrome, 320/440 px outer widths,
+The original layout review covered dark/light/monochrome, 320/440 px outer widths,
 minute/hour histories, and normal/gap/low/unknown patterns: 48 captures,
 plus device scaling at 1.25 and 2. Axes, series separation, time alignment,
 gaps, unknown values, low-activity scale and wrapped hover readings were
-inspected in representative captures. Real tab renders cover CPU, GPU,
-Memory, Drives, Network, Settings and Bar; this machine's dedicated-GPU
-telemetry is absent, so the paired fixture establishes that graph's visual
-comparison.
+inspected in representative captures. The current published set is regenerated
+with `bash tests/render-docs.sh`, including these three comparisons and all six
+resource tabs, settings, expanded processes and bar examples. All use
+synthetic readings; captures establish presentation, not physical GPU behavior.
 
 The Node graph tests check windowing, summaries, scales, runs, hover and
 bucket semantics. Qt Quick Test exercises the actual graphs and settings,
