@@ -31,7 +31,25 @@ child_counters() {
 
 # Twelve ticks at 250 ms; we read the counters after tick 3 and after the
 # stream has emitted all twelve.
-QUADRANT_STREAM_TICKS=12 ./scripts/quadrant-stream 250 > "$XDG_RUNTIME_DIR/out.jsonl" &
+# Exercise the actual AMD path, including controls, PM and engine/clock reads.
+export QUADRANT_SYS_PATH="$XDG_RUNTIME_DIR/sys"
+gpu="$QUADRANT_SYS_PATH/class/drm/card0/device"
+mkdir -p "$gpu/power" "$gpu/hwmon/hwmon0" "$gpu/engine/gfx"
+printf 'active\n' > "$gpu/power/runtime_status"
+printf 'auto\n' > "$gpu/power/control"
+printf '5000\n' > "$gpu/power/autosuspend_delay_ms"
+printf '12\n' > "$gpu/gpu_busy_percent"
+printf '30\n' > "$gpu/engine/gfx/busy_percent"
+printf '45000\n' > "$gpu/hwmon/hwmon0/temp1_input"
+printf '0: 1200Mhz *\n' > "$gpu/pp_dpm_sclk"
+read -r up _ < /proc/uptime
+expires=$(( ${up%.*} * 1000 + 9000 ))
+write_control() {
+  printf '1\t2\t%s\t%s\t%s\tamd\t0\t-\t-\n' "$expires" "$1" "$gpu" > "$XDG_RUNTIME_DIR/control.new"
+  mv "$XDG_RUNTIME_DIR/control.new" "$XDG_RUNTIME_DIR/control"
+}
+write_control 1
+QUADRANT_STREAM_TICKS=12 ./scripts/quadrant-stream 250 --control "$XDG_RUNTIME_DIR/control" > "$XDG_RUNTIME_DIR/out.jsonl" &
 pid=$!
 
 lines=0
@@ -42,6 +60,9 @@ for _ in $(seq 1 80); do
 done
 (( lines >= 3 )) || { echo "stream produced no output"; kill "$pid" 2>/dev/null; exit 1; }
 before=$(child_counters "$pid")
+write_control 0
+sleep 0.6
+write_control 1
 
 for _ in $(seq 1 80); do
   lines=$(wc -l < "$XDG_RUNTIME_DIR/out.jsonl")
@@ -56,7 +77,8 @@ if [[ $before != "$after" ]]; then
   echo "quadrant-stream forked on the tick path: child counters moved $before -> $after"
   exit 1
 fi
-echo "stream-forks: no child process between tick 3 and tick 11 (counters $after)"
+echo "stream-forks: AMD enabled/disabled/toggled without tick forks (counters $after)"
+jq -s -e 'any(.[]; .gpu.state == "held") and any(.[]; .gpu.state == "fresh" and .gpu.busy == 12)' "$XDG_RUNTIME_DIR/out.jsonl" >/dev/null
 
 # Every line must be a complete JSON object.
 while IFS= read -r line; do

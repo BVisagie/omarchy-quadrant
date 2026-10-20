@@ -147,6 +147,7 @@ Item {
             gpuInfo: root.model ? root.model.integratedGpu : null
             live: root.model ? root.model.integratedGpuLive : null
             errorText: root.model ? String(root.model.integratedGpuError || "") : ""
+            statusText: root.model ? String(root.model.integratedGpuCollectionText || "") : ""
             temperatureUnit: root.model && root.model.cfg ? (root.model.cfg.temperatureUnit || "celsius") : "celsius"
           }
         }

@@ -46,6 +46,7 @@ They do not mount volumes or request additional permissions.
 | Process counter cache | `$XDG_RUNTIME_DIR/quadrant-procs.json`; timestamps and CPU/I/O counters keyed by PID and start time, without names or command lines | Used for interval rates; not removed on plugin exit |
 | Process cache fallback | `~/.cache/quadrant-procs.json` if the process helper runs without `$XDG_RUNTIME_DIR` | Remains until deleted; the streaming sampler itself requires `$XDG_RUNTIME_DIR` |
 | Tick FIFO | `$XDG_RUNTIME_DIR/quadrant-stream.<pid>.<random>/tick.fifo` | Removed on normal exit; abandoned directories are swept on next sampler start |
+| GPU collection control | `$XDG_RUNTIME_DIR/quadrant-control.<shell-pid>.<random>/control`; device paths, visibility demand, generation and boot-time lease, in a private directory | Removed on Store destruction; directories of dead controllers are swept on stream startup; expired/malformed control suppresses AMD telemetry |
 | Settings | Quadrant's inline widget entry in `~/.config/omarchy/shell.json`, including selected GPU PCI addresses, disk by-id pins, and hashed sensor pins when set | Managed by the shell |
 
 History uses atomic writes and is validated on load. Process-cache writes
@@ -68,6 +69,9 @@ want to remove saved graphs. Remove `quadrant-procs.json`, its `.lock` file,
 and any `.tmp` file from the runtime directory (and `~/.cache` if that fallback was used)
 to clear process counters. Abandoned `quadrant-stream.*` directories can
 also be removed once their sampler has stopped.
+Abandoned `quadrant-control.*` directories can be removed after their
+controller has stopped. This file schedules reads; it is never sourced as
+shell code and does not write GPU power controls or driver configuration.
 
 ## Process data
 
@@ -116,7 +120,7 @@ data. Attribution limits are documented in [Measurements](docs/METRICS.md).
   bounds helper execution. Stream and process-sampler failures, GPU
   detection, disk identity, NVIDIA, and integrated-GPU errors have panel
   messages. Some optional failures retain previous data or omit metrics:
-  discrete AMD/Intel polls, DRM details, system identity, mount refresh,
+  discrete Intel polls, DRM details, system identity, mount refresh,
   and history-save failures do not all expose an error message.
 
 Runtime tools include `bash`, `jq`, `python3`, `ss`, `ip`, `df`, `base64`, `awk`,

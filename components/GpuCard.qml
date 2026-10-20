@@ -12,6 +12,7 @@ Item {
   property var gpuInfo: null
   property var live: null
   property string errorText: ""
+  property string statusText: ""
   property string temperatureUnit: "celsius"
   property color foreground: Commons.Color.foreground
   property string fontFamily: Commons.Style.font.family
@@ -66,6 +67,17 @@ Item {
     id: column
     width: root.width
     spacing: Commons.Style.space(10)
+
+    Text {
+      textFormat: Text.PlainText
+      visible: root.statusText !== ""
+      text: root.statusText
+      color: root.pal.dim
+      font.family: root.fontFamily
+      font.pixelSize: Commons.Style.font.caption
+      width: parent.width
+      wrapMode: Text.Wrap
+    }
 
     Text {
       textFormat: Text.PlainText

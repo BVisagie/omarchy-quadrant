@@ -65,10 +65,19 @@ See [Process exploration](PROCESS_EXPLORATION.md) for collection contracts and
 performance observations, [Measurements](METRICS.md) for calculations and [Security](../SECURITY.md)
 for state paths and failure behavior.
 
-The [deferred AMD runtime power-management work](AMD_RUNTIME_POWER.md) records
-the current reader audit, proposed collection boundaries, planned fixture coverage,
-and the baseline/patched hardware procedure for a future PR. It is a follow-up
-plan, not a guarantee provided by the current collectors.
+The [AMD runtime telemetry policy](AMD_RUNTIME_POWER.md) describes the shared
+leased control, visible-only AMD reads, runtime-state gating, acquisition-aware
+history and remaining hardware validation. `gpu-policy.sh` supplies the common
+Bash eligibility checks without tick forks; `amd-runtime-power.py` is a read-only
+PM observer. `qs-gpu-power.sh` runs the real Store with two viewers and private
+AMD devices, covering hidden/sleeping/detail/settings/refresh, measured zero,
+held age, history gaps, selection without restart and combined CPU demand.
+`qs-gpu-review.sh` covers delayed/failed/retried control setup without stopping
+system samples, NVIDIA-only control inactivity, unrelated CPU demand, helper
+cancellation, newest-source selection, late results across gaps and sleeping
+helper suppression. Model tests exercise two hours of rapid PM transitions
+to verify aligned, bounded hour history and normal storage for other metrics.
+Fixture results do not establish physical suspend or wattage savings.
 
 ## Checks
 
@@ -78,11 +87,11 @@ checks need the runtime tools, ShellCheck, Ruff, mawk, and gawk.
 ```sh
 node --test tests/lib/*.test.js
 python3 -m unittest discover -s tests/py -t . -v
-ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/process-icons.py tests/py tests/bench-bar.py tests/qs/*.py
-python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/process-icons.py tests/bench-bar.py tests/qs/*.py
+ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/amd-runtime-power.py scripts/process-icons.py tests/py tests/bench-bar.py tests/qs/*.py
+python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/amd-runtime-power.py scripts/process-icons.py tests/bench-bar.py tests/qs/*.py
 bash tests/intel-freq-paths.sh
 bash tests/stream-forks.sh
-shellcheck -x scripts/quadrant-stream scripts/system-info scripts/disk-info scripts/gpu-stats scripts/gpu-intel-paths.sh scripts/process-sample scripts/process-net tests/*.sh
+shellcheck -x scripts/quadrant-stream scripts/system-info scripts/disk-info scripts/gpu-stats scripts/gpu-intel-paths.sh scripts/gpu-policy.sh scripts/process-sample scripts/process-net tests/*.sh
 mawk -f tests/check-plaintext.awk *.qml components/*.qml tabs/*.qml tests/qs/*.qml
 gawk -f tests/check-plaintext.awk *.qml components/*.qml tabs/*.qml tests/qs/*.qml
 mawk -f tests/check-qml-imports.awk *.qml components/*.qml tabs/*.qml tests/qs/*.qml
@@ -98,6 +107,8 @@ syntax, and runs helper smoke checks in a mawk/gawk matrix. The
 ```sh
 bash tests/qs-smoke.sh
 bash tests/qs-device-identity.sh
+bash tests/qs-gpu-power.sh
+bash tests/qs-gpu-review.sh
 bash tests/qs-process-lifecycle.sh
 bash tests/qs-process-ui.sh
 bash tests/qs-process-icons.sh
@@ -461,4 +472,5 @@ hwmon renumbering, duplicate drivers, stopped/faulted fans, a laptop and a
 peripheral battery, multi-GPU role routing, and a card without telemetry.
 Verify memory clocks on physical AMD/NVIDIA hardware and GPU sleep behavior
 on a suitable hybrid machine. Fixture coverage does not establish those
-hardware properties. AMD runtime power-management work remains deferred.
+hardware properties. AMD collection gates are fixture-tested; physical runtime
+suspend preservation remains unverified without a suspending baseline.
