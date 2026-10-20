@@ -226,12 +226,14 @@ Item {
             value: root.swapRate ? Model.formatRate(root.swapRate.inKBs * 1024) + " / " + Model.formatRate(root.swapRate.outKBs * 1024) : "--"
           }
           Components.Disclosure {
+            objectName: "swapDevices"
             width: parent.width
+            visible: root.swapDeviceRows.length > 0
             title: "Swap devices"
             Repeater {
               model: root.swapDeviceRows
               delegate: Components.StatRow {
-   wrapValue: true
+                wrapValue: true
                 required property var modelData
                 width: parent.width
                 label: modelData.label

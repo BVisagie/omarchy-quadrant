@@ -4,8 +4,8 @@ import qs.Ui
 import "../lib/index.mjs" as Model
 import "../components" as Components
 
-// GPU tab (dedicated cards only): identity, card picker, busy and VRAM
-// rings, busy/VRAM history, stat rows and the per-process roster. AMD and
+// GPU tab (dedicated cards only): identity, card picker, overview values,
+// busy/VRAM history, stat rows and the per-process roster. AMD and
 // Intel data ride the stream plus DRM fdinfo; NVIDIA comes from the
 // store's on-demand nvidia-smi poll.
 Item {
@@ -193,21 +193,25 @@ Item {
           onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
         },
         Column {
+          id: deviceDetails
+          readonly property bool hasMemoryClock: !!(root.live && root.live.memoryClockSource !== undefined && root.live.memoryClockSource !== "")
           width: parent.width
           spacing: Commons.Style.space(6)
+          visible: root.vendor !== "intel" || hasMemoryClock || !!(root.live && root.live.engines && root.live.engines.length > 0)
 
           Components.SectionHeader { width: parent.width; text: "DEVICE" }
           Components.StatRow {
             wrapValue: true
             width: parent.width
-            label: root.vendor === "intel" ? "Frequency" : "Core clock"
+            visible: root.vendor !== "intel"
+            label: "Core clock"
             value: root.clockText
           }
           Components.StatRow {
             wrapValue: true
             objectName: "gpuMemoryClock"
             width: parent.width
-            visible: root.live && root.live.memoryClockSource !== undefined && root.live.memoryClockSource !== ""
+            visible: deviceDetails.hasMemoryClock
             label: "Memory clock"
             value: Model.formatGpuClock(root.live ? root.live.memoryClockMhz : null)
           }
@@ -221,7 +225,7 @@ Item {
           Repeater {
             model: root.live && root.live.engines ? root.live.engines : []
             delegate: Components.StatRow {
-   wrapValue: true
+              wrapValue: true
               required property var modelData
               width: parent.width
               label: String(modelData.id || "")

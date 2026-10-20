@@ -41,6 +41,7 @@ ShellRoot {
     function focusProcessKeys() { keys.forceActiveFocus() }
     function scrollActionItem(item) { }
     function refreshActiveTab() { view.refresh() }
+    function activeTabItem() { return currentTab === "hardware" ? view : null }
     function moveCursor(d) { body.contentY = Model.clamp(body.contentY + d * Commons.Style.space(48), 0, Math.max(0, body.contentHeight - body.height)) }
   }
   Components.PanelKeys {
@@ -98,10 +99,11 @@ ShellRoot {
       if (actual !== expected) console.error("QHARDWAREUI compare: " + actual + " / " + expected + " " + message + " " + new Error().stack)
       compare(actual, expected, message)
     }
-    function texts(item) {
+    function texts(item, visibleOnly) {
       var result = []
+      if (visibleOnly && !item.visible) return result
       if ("text" in item && typeof item.text === "string") result.push(item.text)
-      for (var child of item.children) result = result.concat(texts(child))
+      for (var child of item.children) result = result.concat(texts(child, visibleOnly))
       return result
     }
     function records() {
@@ -236,6 +238,74 @@ ShellRoot {
       check(fixture.hardwareAvailable)
       // A parent column hides the entire battery section, preserving its title.
       check(!texts(view).some(function (text) { return text.indexOf("Laptop battery") >= 0 }))
+    }
+    function test_details_shortcut_ignores_disclosures_inside_hidden_sections() {
+      fixture.gpus = []
+      fixture.raw = Object.assign({}, initialRaw, { batteries: [], packages: [] })
+      wait(20)
+      var all = []
+      function collect(item) {
+        if ("detailsDisclosure" in item && item.detailsDisclosure) all.push(item)
+        for (var child of item.children) collect(child)
+      }
+      collect(view)
+      var shown = all.filter(function (item) { return item.visible })
+      var hidden = all.filter(function (item) { return !item.visible })
+      check(shown.length > 0)
+      equal(hidden.length, 3, "battery, package and GPU explanations still exist in hidden sections")
+      for (var detail of all) detail.expanded = detail.visible
+      keys.forceActiveFocus()
+      keyClick(Qt.Key_D)
+      check(shown.every(function (item) { return !item.expanded }), "one key press collapses every open visible detail")
+      check(hidden.every(function (item) { return !item.expanded }), "hidden sections remain untouched")
+      keyClick(Qt.Key_D)
+      check(shown.every(function (item) { return item.expanded }), "the next press expands visible details")
+      check(hidden.every(function (item) { return !item.expanded }))
+      for (var item of all) item.expanded = false
+    }
+    function test_cpu_gpu_overview_uses_inventory_and_marks_estimates() {
+      var store = realStore()
+      store.integratedGpu = { card: "card0", vendor: "intel", name: "Integrated graphics" }
+      store.integratedGpuLive = { busy: null, freqCurMhz: 500, freqMaxMhz: 1000 }
+      var cpu = createTemporaryObject(cpuComponent, win.contentItem, { model: store })
+      check(cpu); wait(20)
+      var overview = findChild(cpu, "cpuGpuOverview")
+      equal(overview.modelData.label, "Integrated GPU")
+      equal(overview.value, "~50%")
+      equal(overview.modelData.hint, "Frequency estimate")
+      cpu.visible = false; wait(20)
+      equal(overview.modelData.label, "Integrated GPU", "hiding an ancestor must not turn GPU data into uptime")
+      equal(overview.value, "~50%")
+      store.integratedGpuLive = { busy: 25, busySource: "drm", freqCurMhz: 500, freqMaxMhz: 1000 }
+      wait(20); overview = findChild(cpu, "cpuGpuOverview")
+      equal(overview.value, "25%"); equal(overview.modelData.hint, "Busy")
+      store.integratedGpuLive = null
+      wait(20); overview = findChild(cpu, "cpuGpuOverview")
+      equal(overview.value, "--", "unavailable estimates remain unknown")
+      store.integratedGpu = null
+      wait(20); overview = findChild(cpu, "cpuGpuOverview")
+      equal(overview.modelData.label, "Uptime")
+    }
+    function test_intel_frequency_appears_once_without_hiding_other_device_readings() {
+      var store = realStore()
+      store.gpu = { card: "card1", vendor: "intel", name: "Dedicated graphics" }
+      store.discreteGpuLive = { freqCurMhz: 500, freqMaxMhz: 1000 }
+      var gpu = createTemporaryObject(gpuComponent, win.contentItem, { model: store })
+      check(gpu); wait(20)
+      function clockCount() { return texts(gpu, true).filter(function (text) { return text === gpu.clockText }).length }
+      equal(clockCount(), 1, "the overview already shows Intel frequency")
+      check(texts(gpu, true).indexOf("DEVICE") < 0, "no empty device section")
+      store.discreteGpuLive = { freqCurMhz: 500, freqMaxMhz: 1000, engines: [{ id: "Render", busy: 12 }] }
+      wait(20); equal(clockCount(), 1)
+      check(texts(gpu, true).indexOf("Render") >= 0, "engine readings remain visible")
+      check(texts(gpu, true).indexOf("DEVICE") >= 0)
+      store.discreteGpuLive = { freqCurMhz: 500, freqMaxMhz: 1000, memoryClockMhz: 800, memoryClockSource: "fixture" }
+      wait(20); equal(clockCount(), 1)
+      check(findChild(gpu, "gpuMemoryClock").visible, "a separate memory clock remains visible")
+      store.gpu = { card: "card1", vendor: "amd", name: "Dedicated graphics" }
+      store.discreteGpuLive = { clockMhz: 1500 }
+      wait(20); equal(clockCount(), 1)
+      check(texts(gpu, true).indexOf("Core clock") >= 0, "other vendors retain the core clock row")
     }
     function test_header_plural_and_system_battery_without_scope() {
       var battery = Object.assign({}, initialRaw.batteries[0], { scope: "" })

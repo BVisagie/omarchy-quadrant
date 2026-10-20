@@ -353,6 +353,25 @@ ShellRoot {
       keyClick(Qt.Key_D); compare(editor.text, "d")
       verify(!accounting.expanded, "typing a search never expands hidden details")
     }
+    function test_swap_devices_only_appears_when_inventory_has_rows() {
+      var model = { sample: null, memComp: null, swapRate: null, sysInfo: null, memRows: [], memHistory: [],
+        memLong: [], procStats: null, procError: "", barIntervalMs: 1000 }
+      var view = createTemporaryObject(memoryComponent, keys, { width: Commons.Style.space(720), model: model })
+      verify(view)
+      wait(20)
+      var devices = findChild(view, "swapDevices")
+      verify(!devices.visible, "inventory has not arrived")
+      view.model = Object.assign({}, model, { sysInfo: { mem: { swaps: [] } } })
+      wait(20); verify(!devices.visible, "no swap is configured")
+      view.model = Object.assign({}, model, { sysInfo: { mem: { swaps: [{ kind: "file", file: "/swapfile", sizeKb: 1024 }] } } })
+      wait(20); verify(devices.visible)
+      fakePanel.detailItem = view
+      keys.forceActiveFocus(); keyClick(Qt.Key_D)
+      verify(devices.expanded)
+      compare(view.swapDeviceRows.length, 1)
+      view.model = Object.assign({}, model, { sysInfo: { mem: { swaps: [] } } })
+      wait(20); verify(!devices.visible, "removing the last device hides the disclosure")
+    }
     function test_hero_wraps_identity_and_bounds_detail() {
       var hero = createTemporaryObject(heroComponent, keys, {
         width: 288, title: "A long hardware model with useful identity", meta: "driver · topology · capacity", detail: "12.3 GiB used"

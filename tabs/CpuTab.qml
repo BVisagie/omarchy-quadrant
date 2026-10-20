@@ -20,6 +20,7 @@ Item {
   readonly property var cpuPct: model ? model.cpuPct : null
   readonly property var sysCpu: model && model.sysInfo ? model.sysInfo.cpu : null
   readonly property var cpuFreqMhz: model ? model.cpuFreqMhz : null
+  readonly property bool hasIgpu: !!(model && model.integratedGpu)
   readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(Commons.Color.foreground), String(Commons.Color.background))
 
   implicitWidth: 200
@@ -99,7 +100,9 @@ Item {
         { label: "CPU load", value: root.cpuPct ? Model.formatPct(root.cpuPct.nonIdle) : "--", hint: "Whole machine" },
         { label: "Frequency", value: root.cpuDetail || "--", hint: root.sysCpu && root.sysCpu.maxMhz ? Model.formatMhz(root.sysCpu.maxMhz) + " max" : "Current clock" },
         { label: "Temperature", value: root.sample ? Model.formatTemp(root.sample.tempC, root.model && root.model.cfg ? root.model.cfg.temperatureUnit : "celsius") : "--", hint: "CPU package" },
-        { label: integratedCard.visible ? "Integrated GPU" : "Uptime", value: integratedCard.visible ? (integratedCard.busyPct < 0 ? "--" : Model.formatPct(integratedCard.busyPct)) : (root.sample ? Model.formatUptime(root.sample.uptimeS) : "--"), hint: integratedCard.visible ? (integratedCard.busyIsEstimate ? "Frequency estimate" : "Busy") : "Since boot" }
+        { name: "cpuGpuOverview", label: root.hasIgpu ? "Integrated GPU" : "Uptime",
+          value: root.hasIgpu ? (integratedCard.busyPct < 0 ? "--" : (integratedCard.busyIsEstimate ? "~" : "") + Model.formatPct(integratedCard.busyPct)) : (root.sample ? Model.formatUptime(root.sample.uptimeS) : "--"),
+          hint: root.hasIgpu ? (integratedCard.busyIsEstimate ? "Frequency estimate" : "Busy") : "Since boot" }
       ]
     }
 

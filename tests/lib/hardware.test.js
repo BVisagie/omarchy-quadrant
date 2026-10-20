@@ -37,6 +37,19 @@ test("sensor groups keep device identities, kinds, order and sparse core labels"
   assert.equal(drives[1].title, "nvme · 0000:02:00.0/nvme/controller");
 });
 
+test("sensor titles distinguish owners without counting kinds as extra devices", () => {
+  for (const driver of ["nct6799", "__proto__"]) {
+    const sensors = ["temperature", "fan"].map((kind, i) => ({
+      id: String(i), kind, driver, owner: "devices/platform/nct6775.656", label: kind
+    }));
+    assert.deepEqual(Model.hardwareSensorGroups(sensors).map(g => g.title), [driver, driver]);
+    sensors.push({ ...sensors[0], id: "2", owner: "devices/platform/nct6775.657" });
+    assert.deepEqual(Model.hardwareSensorGroups(sensors).map(g => g.title), [
+      `${driver} · nct6775.656`, `${driver} · nct6775.656`, `${driver} · nct6775.657`
+    ]);
+  }
+});
+
 test("temperature conversion only changes display, including zero and negative values", () => {
   assert.equal(Model.formatTemp(0), "0°C");
   assert.equal(Model.formatTemp(0, "fahrenheit"), "32°F");

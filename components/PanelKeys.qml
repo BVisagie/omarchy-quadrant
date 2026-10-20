@@ -14,6 +14,7 @@ Ui.PanelKeyCatcher {
     if (!item) return
     var details = []
     function collect(parent) {
+      if (!parent.visible) return
       if ("detailsDisclosure" in parent && parent.detailsDisclosure) details.push(parent)
       for (var child of parent.children) collect(child)
     }

@@ -75,7 +75,7 @@ Resizing preserves process search, selection and open detail sections.
 | `R` | re-read system, GPU, disk, sensor, package, and battery inventory and refresh the active tab |
 | `/` | open process search on CPU, Memory, or Drives |
 | `A` | select Network/Drives actions or Hardware GPU Details/Select; `↑`/`↓` choose and `Enter`/Space activate |
-| `D` | expand the current tab's detail sections, or collapse them when all are open |
+| `D` | expand the current tab's visible detail sections, or collapse them when all are open |
 | `Esc` | leave action selection, clear a search query or leave its editor, then close settings or the panel |
 | `Tab` | keeps its Quattro meaning: switch to the adjacent bar panel |
 
@@ -163,8 +163,9 @@ composition shows a separate physical-RAM breakdown, with an application
 estimate after free RAM, cache, and kernel (unreclaimable slab). Used,
 available, pressure and swap usage appear as compact overview values.
 Pressure prints the actual PSI percentage, without a gauge ceiling.
-**Memory accounting** expands the explanation; **Swap devices** reveals
-individual files and zram. Swap remains outside the physical-RAM breakdown.
+**Memory accounting** expands the explanation; **Swap devices** appears when
+there are individual files or zram to show. Swap remains outside the
+physical-RAM breakdown.
 
 CPU, Memory, and Drives start with a compact top-consumer list. **Show all**
 opens a searchable roster; **Show less** returns to the compact list. Search
