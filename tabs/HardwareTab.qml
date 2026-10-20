@@ -198,6 +198,8 @@ Item {
               required property var modelData
               readonly property var reading: root.batteryValues[modelData.id] || null
               readonly property bool peripheral: modelData.scope === "Device"
+              readonly property string statusText: !reading ? "Waiting for a reading…"
+                : [reading.chargePct === null ? "Charge unavailable" : "", reading.status].filter(Boolean).join(" · ")
               width: parent.width
               spacing: Commons.Style.space(8)
               Note {
@@ -211,8 +213,7 @@ Item {
                 visible: !batteryRow.peripheral
                 width: parent.width
                 value: Model.formatPct(batteryRow.reading ? batteryRow.reading.chargePct : null)
-                hint: (batteryRow.reading && batteryRow.reading.chargePct !== null ? "" : "Charge unavailable · ")
-                  + (batteryRow.reading ? batteryRow.reading.status : "Waiting for a reading…")
+                hint: batteryRow.statusText
               }
               Components.StatRow {
                 width: parent.width
@@ -222,8 +223,7 @@ Item {
               }
               Note {
                 visible: batteryRow.peripheral
-                text: (batteryRow.reading && batteryRow.reading.chargePct !== null ? "" : "Charge unavailable · ")
-                  + (batteryRow.reading ? batteryRow.reading.status : "Waiting for a reading…")
+                text: batteryRow.statusText
               }
               Components.CompositionBar {
                 width: parent.width
@@ -237,7 +237,7 @@ Item {
                 objectName: "hardwareBatteryDetails_" + batteryRow.modelData.id
                 width: parent.width
                 title: "Battery details"
-                Note { text: batteryRow.modelData.model + " · " + batteryRow.modelData.name + (batteryRow.peripheral ? " · peripheral" : " · system battery") }
+                Note { text: [batteryRow.modelData.model, batteryRow.modelData.name, batteryRow.peripheral ? "peripheral" : "system battery"].filter(Boolean).join(" · ") }
                 Note { visible: text !== ""; text: batteryRow.modelData.manufacturer }
                 Components.StatRow { wrapValue: true; width: parent.width; label: "Design capacity"; value: Model.batteryCapacity(batteryRow.reading, true) }
                 Components.StatRow { wrapValue: true; width: parent.width; label: "Power"; value: Model.batteryPower(batteryRow.reading) }

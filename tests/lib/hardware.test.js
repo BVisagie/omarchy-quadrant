@@ -62,6 +62,26 @@ test("friendly sensor names preserve device identity and only classify recognize
   assert.deepEqual(groups.map(g => g.sensors[0].id), drivers.map((_, i) => String(i)));
 });
 
+test("friendly sensor names distinguish different drivers in the same family", () => {
+  const sensors = [
+    { id: "one", driver: "iwlwifi_1", owner: "devices/first", kind: "temperature" },
+    { id: "two", driver: "iwlwifi_2", owner: "devices/second", kind: "temperature" },
+    { id: "three", driver: "iwlwifi_2", owner: "devices/third", kind: "temperature" },
+    { id: "fan", driver: "iwlwifi_2", owner: "devices/second", kind: "fan" }
+  ];
+  const before = structuredClone(sensors);
+  const groups = Model.hardwareSensorGroups(sensors);
+  assert.deepEqual(groups.map(g => g.displayTitle), [
+    "Wireless · iwlwifi_1", "Wireless · iwlwifi_2 · second",
+    "Wireless · iwlwifi_2 · third", "Wireless · iwlwifi_2 · second"
+  ]);
+  assert.deepEqual(groups.map(g => g.title), [
+    "iwlwifi_1", "iwlwifi_2 · second", "iwlwifi_2 · third", "iwlwifi_2 · second"
+  ]);
+  assert.deepEqual(groups.map(g => g.sensors[0].id), sensors.map(s => s.id));
+  assert.deepEqual(sensors, before);
+});
+
 test("collapsed core summaries preserve missing and critical readings without inventing thresholds", () => {
   const sensors = ["zero", "cold", "critical", "no-threshold", "missing", "waiting"].map(id => ({ id }));
   const readings = {

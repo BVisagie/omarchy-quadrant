@@ -215,7 +215,7 @@ Item {
             expandable: true
             expandedRows: root.expandedRows
             expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
-            scopeText: "Machine-wide I/O; not limited to this drive. " + Model.processScope(root.model ? root.model.procStats : null, "io", expanded)
+            scopeText: Model.processScope(root.model ? root.model.procStats : null, "io", expanded)
             width: parent.width
             rows: root.rows
             valueHeader: "DISK I/O"

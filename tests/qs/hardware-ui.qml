@@ -175,6 +175,71 @@ ShellRoot {
       check(details.expanded)
       details.expanded = false
     }
+    function test_battery_missing_metadata_and_reading_states() {
+      var snapshot = Model.parseHardware(Object.assign({}, initialRaw, {
+        batteries: initialRaw.batteries.map(function (battery) { return Object.assign({}, battery, { model: "" }) })
+      }))
+      var batteryView = createTemporaryObject(hardwareComponent, win.contentItem, {
+        model: { hardwareInventory: Model.hardwareInventory(snapshot), hardwareReadings: null, detectedGpus: [] }
+      })
+      check(batteryView)
+      wait(20)
+      for (var battery of snapshot.batteries) {
+        var details = findChild(batteryView, "hardwareBatteryDetails_" + battery.id)
+        check(texts(details).indexOf(battery.name + (battery.scope === "Device" ? " · peripheral" : " · system battery")) >= 0,
+              "missing battery models do not leave a leading separator")
+      }
+      function checkStatus(expected, chargeText) {
+        for (var battery of snapshot.batteries) {
+          var charge = findChild(batteryView, "hardwareBatteryCharge_" + battery.id)
+          equal(charge.value, chargeText)
+          if (battery.scope === "Device") {
+            check(texts(charge.parent, true).indexOf(expected) >= 0, "peripheral status: " + expected)
+          } else equal(charge.hint, expected)
+        }
+      }
+      checkStatus("Waiting for a reading…", "--")
+      for (var state of [
+        { chargePct: null, status: "", expected: "Charge unavailable", charge: "--" },
+        { chargePct: null, status: "Discharging", expected: "Charge unavailable · Discharging", charge: "--" },
+        { chargePct: 0, status: "Discharging", expected: "Discharging", charge: "0%" }
+      ]) {
+        var readings = Object.assign({}, snapshot, {
+          batteries: snapshot.batteries.map(function (battery) {
+            return Object.assign({}, battery, { chargePct: state.chargePct, status: state.status })
+          })
+        })
+        batteryView.model = Object.assign({}, batteryView.model, { hardwareReadings: readings })
+        wait(20)
+        checkStatus(state.expected, state.charge)
+      }
+    }
+    function test_core_summary_single_equal_and_missing_readings_data() {
+      return [
+        { tag: "one core", values: [50], label: "1 core", range: "50°C", warning: "", unit: "celsius" },
+        { tag: "equal cores", values: [50, 50], label: "2 cores", range: "50°C", warning: "", unit: "celsius" },
+        { tag: "partially missing", values: [0, null], label: "2 cores", range: "32°F", warning: "1 unavailable", unit: "fahrenheit" },
+        { tag: "all missing", values: [null, null], label: "2 cores", range: "--", warning: "2 unavailable", unit: "celsius" },
+        { tag: "range", values: [-5, 50], label: "2 cores", range: "-5°C – 50°C", warning: "", unit: "celsius" },
+        { tag: "critical", values: [100, 100], label: "2 cores", range: "212°F", warning: "2 at or above critical temperature", unit: "fahrenheit" }
+      ]
+    }
+    function test_core_summary_single_equal_and_missing_readings(data) {
+      fixture.cfg = Model.readSettings({ temperatureUnit: data.unit })
+      fixture.raw = Object.assign({}, initialRaw, {
+        sensors: data.values.map(function (value, i) {
+          return Object.assign({}, initialRaw.sensors[0], {
+            id: "hwmon:" + "0".repeat(62) + (32 + i).toString(16), label: "Core " + (i * 4), value: value
+          })
+        })
+      })
+      wait(20)
+      var range = findChild(view, "coreTemperatureRange")
+      equal(range.label, data.label); equal(range.value, data.range)
+      var warning = findChild(view, "coreTemperatureWarnings")
+      equal(warning.visible, data.warning !== ""); equal(warning.text, data.warning)
+      check(!findChild(view, "coreTemperatureDetails").expanded)
+    }
     function test_grouped_core_grid_keeps_live_identity_and_error_states() {
       win.width = Commons.Style.space(720) + 32
       var cores = []

@@ -68,9 +68,9 @@ Below the two-column breakpoint, content stacks without reducing the font.
 The tab strip stays visible while the body scrolls to fit the screen.
 Resizing preserves process search, selection and open detail sections.
 **Expand details** beside the device identity opens the current tab's details;
-**Collapse details** closes them. `D` performs the same action. Hardware core
-temperatures start collapsed, with their range and any unavailable or critical
-reading counts visible.
+**Collapse details** closes them. `D` performs the same action. CPU **Core activity**
+and Hardware **Core temperatures** start collapsed. Hardware keeps the core
+temperature range and any unavailable or critical reading counts visible.
 
 | Key | Action |
 | --- | --- |
@@ -245,7 +245,7 @@ sample the development machine. Click a screenshot to view it at full size.
 <table>
   <tr>
     <td width="50%" valign="top">
-      <p><strong>CPU</strong><br>Core activity and process CPU.</p>
+      <p><strong>CPU</strong><br>Processor activity and top processes, with core details collapsed.</p>
       <a href="screenshots/cpu.png"><img src="screenshots/cpu.png" alt="CPU cards for processor activity, integrated graphics, top processes and system readings" width="420"></a>
     </td>
     <td width="50%" valign="top">

@@ -11,6 +11,8 @@ import "../lib/index.mjs" as Model
 // data is requested here; TextField paste requires the user's normal shortcut.
 Column {
   id: root
+  // No disclosures here; keep the details scan independent of live delegates.
+  readonly property bool detailsLeaf: true
 
   property var panel: null
   property bool active: true

@@ -170,16 +170,6 @@ Item {
           width: parent.width
           title: "Interface"
 
-          Text {
-            textFormat: Text.PlainText
-            width: parent.width
-            wrapMode: Text.Wrap
-            color: root.pal.dim
-            font.family: Commons.Style.font.family
-            font.pixelSize: Commons.Style.font.caption
-            text: root.iface ? Model.interfaceSummary(root.iface, false) : "No interface information"
-          }
-
           Components.StatRow { width: parent.width; wrapValue: true; label: "Link state"; value: root.iface && root.iface.operstate ? root.iface.operstate : "--" }
 
           Components.PanelActions {

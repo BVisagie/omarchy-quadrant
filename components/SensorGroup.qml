@@ -106,9 +106,9 @@ Column {
     objectName: "coreTemperatureRange"
     width: parent.width
     visible: root.cores.length > 0
-    label: root.coreSummary.count + " cores"
+    label: root.coreSummary.count + (root.coreSummary.count === 1 ? " core" : " cores")
     value: root.coreSummary.available ? Model.formatTemp(root.coreSummary.min, root.temperatureUnit)
-      + " – " + Model.formatTemp(root.coreSummary.max, root.temperatureUnit) : "--"
+      + (root.coreSummary.min === root.coreSummary.max ? "" : " – " + Model.formatTemp(root.coreSummary.max, root.temperatureUnit)) : "--"
     wrapValue: true
   }
   Text {

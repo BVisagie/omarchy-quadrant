@@ -20,6 +20,7 @@ ShellRoot {
   Component { id: memoryComponent; Tabs.MemoryTab { } }
   Component { id: diskComponent; Tabs.DiskTab { } }
   Component { id: networkComponent; Tabs.NetworkTab { } }
+  Component { id: disclosureSpy; SignalSpy { signalName: "disclosuresChanged" } }
   TestCase {
     id: testCase
     name: "ResourceCards"
@@ -30,6 +31,54 @@ ShellRoot {
     }
     function cleanup() {
       if (qtest_results.failed) console.error("QPANELUI failure: " + qtest_results.functionName + " " + qtest_results.dataTag)
+    }
+    function test_process_updates_do_not_rescan_details() {
+      Commons.Style.applyShellValues({ "font.base-size": 12 })
+      testWindow.width = 752
+      var view = createTemporaryObject(cpuComponent, testWindow.contentItem, { width: 720 })
+      verify(view)
+      var roster = view.processList
+      function rows(count, sample) {
+        return Model.nameAndCollapse(Array.from({ length: count }, function (_, i) {
+          return { pid: 1000 + i, start: i + 1, comm: "worker-" + i, value: sample + i }
+        }), count).map(function (row) {
+          return Object.assign({}, row, { sortKey: row.value, valueText: String(row.value) })
+        })
+      }
+      roster.rows = rows(6, 0)
+      wait(30)
+      var list = findChild(roster, "processRows")
+      var button = findChild(view, "expandDetails")
+      var spy = createTemporaryObject(disclosureSpy, testCase, { target: button })
+      verify(spy && spy.valid)
+      compare(list.count, 6)
+      for (var sample = 0; sample < 100; sample++) {
+        roster.rows = rows(6 + sample % 3, sample)
+        list.forceLayout()
+        wait(1)
+      }
+      compare(list.count, 6)
+      compare(spy.count, 0, "live process delegates do not invalidate the details scan")
+
+      roster.expandedReady = true
+      roster.expandedRows = rows(100, 0)
+      roster.expanded = true
+      wait(30)
+      compare(list.count, 100)
+      spy.clear()
+      for (var offset = 0; offset < 10; offset++) {
+        list.contentY = list.originY + offset * roster.rowHeight * 8
+        roster.expandedRows = rows(100, offset)
+        list.forceLayout()
+        wait(1)
+      }
+      verify(list.contentY > roster.rowHeight * 50, "the expanded roster scrolled and recycled delegates")
+      compare(spy.count, 0, "scrolling and refreshing the expanded roster do not rescan details")
+      mouseClick(button); wait(20)
+      compare(button.text, "Collapse details")
+      verify(Model.visibleDetails(view).every(function (item) { return item.expanded }))
+      mouseClick(button); wait(20)
+      compare(button.text, "Expand details")
     }
     function test_resource_cards_and_details_fit_data() {
       var cases = []
