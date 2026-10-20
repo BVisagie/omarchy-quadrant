@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quadrant — wider panel studies</title>
+<style>
+  :root { color-scheme: dark; --ink:#dce1ee; --soft:#9da8bd; --line:#343c4e; --blue:#89acff; }
+  * { box-sizing:border-box }
+  body { margin:0; color:var(--foreground,var(--ink)); font:14px/1.55 var(--font-sans,system-ui,sans-serif); background:transparent }
+  button,select,input { font:inherit }
+  button { cursor:pointer }
+  button:focus-visible,summary:focus-visible,select:focus-visible,input:focus-visible { outline:2px solid #9bb8ff; outline-offset:3px }
+  button:disabled { cursor:default; opacity:.4 }
+  .review { width:100%; padding:0; }
+  .intro { margin:0 0 20px; max-width:75ch; color:var(--muted-foreground,var(--soft)); }
+  .intro strong { color:var(--foreground,var(--ink)); font-weight:600 }
+  .options { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px }
+  .option { color:var(--foreground,var(--ink)); text-align:left; border:1px solid var(--border,var(--line)); border-radius:6px; background:transparent; padding:13px 16px; }
+  .option[aria-pressed=true] { border-color:#87a8ee; background:#7aa2f710 }
+  .option .label { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:14px; font-weight:650; }
+  .option small { display:block; font-size:12px; color:var(--muted-foreground,var(--soft)); margin-top:4px }
+  .recommended { font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:#9bb8ff }
+  .review-tools { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px; font-size:12px; color:var(--muted-foreground,var(--soft)); }
+  .review-tools label { display:flex; align-items:center; gap:8px; }
+  .review-tools input { accent-color:#8aa9fa }
+  .sizing { display:flex; align-items:center; gap:8px }
+  .sizing select { color:var(--foreground,var(--ink)); border:1px solid var(--border,var(--line)); border-radius:4px; padding:5px 8px; background:var(--card,#20232e); }
+  .canvas-wrap { width:100%; overflow-x:auto; overflow-y:hidden; }
+  .canvas { transform-origin:top left; }
+  .widget {
+    --bg:#1a1b26; --surface:#20222f; --fg:#b9c2e3; --dim:#929cba; --border:#363a4e;
+    --accent:#7aa2f7; --purple:#bb9af7; --mint:#73daca; --amber:#e0af68;
+    color:var(--fg); background:var(--bg); border:1px solid #596786;
+    border-radius:var(--radius,8px); padding:18px;
+    font:12px/1.5 "JetBrainsMono Nerd Font","JetBrains Mono","DejaVu Sans Mono",monospace;
+    font-variant-numeric:tabular-nums;
+  }
+  .widget button { color:inherit; background:transparent; border:0; padding:6px 9px; border-radius:3px }
+  .widget * { line-height:1.5 }
+  .widget button:hover:not(:disabled) { background:#b9c2e310 }
+  .widget .muted,.widget small { color:var(--dim) }
+  .widget .accent { color:var(--accent) }
+  .widget small { font-size:10px }
+  .topbar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:14px }
+  .tabs { display:flex; gap:4px; align-items:center; }
+  .tabs button { padding:7px 10px; border:1px solid transparent; font-size:11px }
+  .tabs button[aria-selected=true] { background:#7aa2f71a; border-color:#647caf; color:#b8ceff }
+  .top-actions { display:flex; align-items:center; gap:12px; }
+  .bar-switch { display:flex; align-items:center; gap:8px; font-size:10px; white-space:nowrap }
+  .widget .switch { width:27px; height:16px; background:#515b75; padding:0; border:1px solid #6e7b9c; border-radius:2px; position:relative }
+  .switch::after { content:""; position:absolute; width:10px; height:10px; background:#c6d4f5; top:2px; right:2px; }
+  .widget .switch[aria-checked=false] { background:#282b3b }
+  .switch[aria-checked=false]::after { right:13px; background:#78819b }
+  .brand { display:flex; align-items:center; gap:9px; font-weight:600; font-size:14px; letter-spacing:.01em }
+  .brand-mark { display:grid; grid-template-columns:5px 5px; gap:3px; }
+  .brand-mark i { height:5px; background:var(--accent); }
+  .brand-mark i:nth-child(2) { opacity:.4 }
+  .brand-mark i:nth-child(3) { opacity:.7 }
+  .inspector-label { text-transform:uppercase; letter-spacing:.12em; margin-left:6px; font-size:9px; font-weight:400; color:var(--dim) }
+  .body-layout { display:flex; gap:20px; align-items:stretch }
+  .resource-nav { width:142px; flex-shrink:0; border-right:1px solid var(--border); padding-right:14px; display:flex; flex-direction:column; gap:6px }
+  .resource-nav .nav-item { text-align:left; display:block; width:100%; padding:12px 10px; border-left:2px solid transparent; border-radius:0 }
+  .resource-nav .nav-item[aria-selected=true] { background:#7aa2f712; border-color:var(--accent); }
+  .resource-nav .nav-title { display:flex; justify-content:space-between; align-items:center; font-size:11px; }
+  .resource-nav .nav-sub { color:var(--dim); font-size:10px; margin-top:6px }
+  .nav-mini { height:18px; width:100%; margin-top:9px; display:block }
+  .nav-foot { margin-top:auto; padding:20px 8px 0; color:var(--dim); font-size:9px; line-height:1.8 }
+  .content { flex:1; min-width:0 }
+  .identity { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:16px }
+  .identity h1 { font-size:18px; line-height:1.35; margin:0 0 4px; font-weight:600; letter-spacing:-.025em }
+  .identity p { margin:0; color:var(--dim); font-size:10px }
+  .identity .stamp { font-size:9px; color:var(--dim); white-space:nowrap; padding-top:5px }
+  .stat-strip { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--border); background:#ffffff02; margin-bottom:18px }
+  .stat { padding:11px 13px; min-width:0; position:relative }
+  .stat+.stat { border-left:1px solid var(--border) }
+  .stat .stat-label { font-size:9px; color:var(--dim); display:block; margin-bottom:2px; text-transform:uppercase; letter-spacing:.06em }
+  .stat strong { font-size:22px; line-height:1.2; letter-spacing:-.06em; font-weight:500; color:var(--fg) }
+  .stat strong em { font-style:normal; font-size:11px; letter-spacing:0; margin-left:3px; color:var(--dim) }
+  .stat .stat-foot { display:block; font-size:9px; color:var(--dim); margin-top:2px }
+  .split { display:grid; grid-template-columns:minmax(0,1.17fr) minmax(0,1fr); gap:22px; align-items:start }
+  .pane { min-width:0; display:flex; flex-direction:column; gap:16px }
+  .split>.pane+.pane { border-left:1px solid var(--border); padding-left:20px }
+  .section-title { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+  .section-title h2 { font-size:10px; text-transform:uppercase; letter-spacing:.09em; font-weight:600; margin:0; color:var(--dim) }
+  .section-title .aside { font-size:9px; color:var(--dim) }
+  .range { display:flex; border:1px solid var(--border); padding:2px; gap:2px }
+  .range button { font-size:9px; padding:3px 8px; border-radius:0 }
+  .range button[aria-pressed=true] { background:#7aa2f724; color:#bcd0ff }
+  .graph-caption { color:var(--dim); font-size:9px; margin:-3px 0 6px; }
+  .graph { width:100%; height:112px; display:block; overflow:visible }
+  .graph text { font-family:inherit; font-size:9px; fill:var(--dim) }
+  .graph .gridline { stroke:var(--border); stroke-width:1; }
+  .graph-axis { display:flex; justify-content:space-between; color:var(--dim); font-size:9px; margin-top:5px; padding-right:34px }
+  .legend { display:flex; gap:13px; flex-wrap:wrap; margin-top:10px; font-size:9px; color:var(--dim) }
+  .dot { display:inline-block; width:6px; height:6px; background:var(--accent); margin-right:6px; border-radius:1px }
+  .dot.purple { background:var(--purple) }
+  .dot.mint { background:var(--mint) }
+  .dot.free { background:#51566e }
+  .rule { border-top:1px solid var(--border); padding-top:14px }
+  .kv { display:flex; justify-content:space-between; align-items:baseline; gap:14px; padding:4px 0; font-size:11px; }
+  .kv .k { color:var(--dim) }
+  .kv .v { text-align:right; min-width:0 }
+  .cores { display:flex; flex-direction:column; gap:7px; }
+  .core-row { display:flex; align-items:center; gap:5px }
+  .core-type { color:var(--dim); font-size:9px; width:22px; }
+  .core-cell { height:13px; width:19px; background:#5d709f70; border:1px solid #6f82b030; border-radius:2px; }
+  .core-row small { margin-left:auto; font-size:9px }
+  .gpu { display:flex; align-items:center; gap:12px; }
+  .ring { width:57px; height:57px; flex-shrink:0; position:relative }
+  .ring svg { width:100%; height:100%; transform:rotate(-90deg) }
+  .ring span { position:absolute; inset:0; display:grid; place-items:center; font-size:11px; }
+  .gpu h3 { font-size:11px; margin:0 0 3px; font-weight:500 }
+  .gpu p { color:var(--dim); font-size:9px; margin:2px 0 }
+  .process-head { display:grid; grid-template-columns:1fr 40px 65px; gap:8px; font-size:9px; color:var(--dim); border-bottom:1px solid var(--border); padding-bottom:7px; align-items:center }
+  .process-head>span:nth-child(n+2) { text-align:right }
+  .process-head .sort { padding:0; color:var(--dim); font-size:9px; text-align:right; }
+  .process { display:grid; grid-template-columns:minmax(0,1fr) 40px 65px; gap:8px; align-items:center; min-height:40px; border-bottom:1px solid #363a4e88; }
+  .proc-name { display:flex; align-items:center; gap:8px; min-width:0 }
+  .proc-name>div { min-width:0 }
+  .proc-name b { display:block; font-weight:400; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:11px }
+  .proc-name small { display:block; font-size:9px; }
+  .proc-icon { width:20px; height:20px; display:grid; place-items:center; font-size:9px; border:1px solid #4d5267; background:#303444; color:#c0c9e5; border-radius:4px; flex-shrink:0 }
+  .proc-icon.t3 { color:#d8d3ff; background:#444078; border-color:#5b5690 }
+  .proc-metric { font-size:11px; text-align:right; }
+  .proc-metric small { font-size:9px; display:block }
+  .spark { width:40px; height:18px; }
+  .process-more { display:none }
+  .show-all .process-more { display:grid }
+  .widget .link { color:var(--accent); font-size:9px; padding:0; }
+  details { font-size:9px; color:var(--dim) }
+  summary { cursor:pointer; padding:7px 0; }
+  details p { margin:4px 0 8px; line-height:1.7; overflow-wrap:anywhere }
+  .process-note { padding-top:4px; }
+  .composition { display:flex; height:12px; overflow:hidden; margin:10px 0; background:#3b4056; }
+  .composition span { height:100%; }
+  .comp-rows { display:grid; grid-template-columns:1fr 1fr; gap:2px 20px; }
+  .memory-summary { display:flex; justify-content:space-between; align-items:baseline; gap:8px }
+  .memory-summary strong { font-size:17px; font-weight:500 }
+  .memory-summary small { font-size:9px }
+  .system-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 12px }
+  .system-grid .kv { display:block; padding:0 }
+  .system-grid .kv .k { display:block; font-size:9px; margin-bottom:3px }
+  .system-grid .kv .v { display:block; text-align:left; font-size:10px }
+  .status-line { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px }
+  .status-line strong { font-size:15px; font-weight:500 }
+  .status-line small { font-size:9px }
+  .status-tag { background:#b9c2e30b; border:1px solid #42495f; padding:2px 5px; font-size:8px; color:var(--dim) }
+  .temp-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; }
+  .temp-cell { background:#242838; border:1px solid #353d53; padding:6px 7px; }
+  .temp-cell .temp-label { color:var(--dim); font-size:8px; display:block }
+  .temp-cell strong { font-size:12px; font-weight:500; display:block }
+  .sensor-meta { margin-top:8px }
+  .sensor-meta code { font:8px/1.5 inherit; color:var(--dim) }
+  .device-line { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:7px 0; border-bottom:1px solid #363a4e77; }
+  .device-line strong { font-size:10px; font-weight:400 }
+  .device-line small { display:block; font-size:8px }
+  .device-line .device-value { font-size:11px }
+  .battery-level { height:6px; background:#343a4f; margin:13px 0 8px; }
+  .battery-level span { display:block; width:78%; height:100%; background:var(--accent) }
+  .battery-hero { display:flex; justify-content:space-between; align-items:center }
+  .battery-hero strong { font-weight:500; font-size:29px; letter-spacing:-.04em }
+  .battery-hero small { display:block; font-size:9px }
+  .battery-hero .charging { font-size:9px; color:var(--dim) }
+  .issue { display:flex; align-items:flex-start; gap:8px; padding:8px 0; font-size:9px }
+  .issue .issue-icon { color:var(--amber); font-size:11px }
+  .issue strong { font-weight:400; display:block; }
+  .issue small { font-size:8px; display:block; margin-top:2px; }
+  .footer { display:flex; justify-content:space-between; gap:12px; font-size:8px; color:var(--dim); padding-top:12px; margin-top:17px; border-top:1px solid var(--border); }
+  .footer kbd { border:1px solid #464e65; font:inherit; padding:1px 3px; color:#afb9d4; border-radius:2px }
+  .footer .shortcut { display:flex; gap:10px; flex-wrap:wrap }
+  .sidebar-mode .split { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) }
+  .sidebar-mode .stat-strip { margin-bottom:20px }
+  .sidebar-mode .graph { height:119px }
+  .sidebar-mode .resource-nav { min-height:555px }
+  .compact .split { grid-template-columns:1fr; gap:18px }
+  .compact .split>.pane+.pane { border-left:0; padding-left:0; border-top:1px solid var(--border); padding-top:17px; }
+  .compact .stat-strip { grid-template-columns:repeat(2,1fr) }
+  .compact .stat:nth-child(3) { border-left:0 }
+  .compact .stat:nth-child(n+3) { border-top:1px solid var(--border) }
+  .compact .topbar { align-items:flex-start; flex-wrap:wrap; gap:12px }
+  .compact .tabs { width:100%; justify-content:space-between }
+  .compact .top-actions { margin-left:auto }
+  .compact .identity .stamp { display:none }
+  .compact .resource-nav { display:none }
+  .compact .tabs button { padding:6px 8px }
+  .compact .inspector-label { display:none }
+  .compact .footer { flex-direction:column }
+  .compact .identity h1 { font-size:17px }
+  .notes { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:20px; }
+  .note { font-size:12px; color:var(--muted-foreground,var(--soft)); }
+  .note b { display:block; color:var(--foreground,var(--ink)); font-weight:600; margin-bottom:4px; }
+  .note .num { font:10px var(--font-mono,monospace); color:#90aeef; margin-right:6px; }
+  .tradeoff { color:var(--muted-foreground,var(--soft)); font-size:12px; margin:17px 0 0; padding-top:14px; border-top:1px solid var(--border,var(--line)); }
+  .tradeoff strong { color:var(--foreground,var(--ink)); font-weight:500 }
+  .footnote { font-size:11px; color:var(--muted-foreground,var(--soft)); margin:13px 0 0; }
+  @media(max-width:520px) {
+    .options { grid-template-columns:1fr; gap:7px }
+    .option { padding:10px 12px }
+    .notes { grid-template-columns:1fr; gap:12px }
+    .review-tools { align-items:flex-start }
+    .intro { font-size:13px }
+  }
+</style>
+</head>
+<body>
+<main class="review">
+  <p class="intro"><strong>Give the readings room to sit together.</strong> Two layout studies for Quadrant, using your current palette and readings. Switch directions, then try CPU, Memory and Hardware.</p>
+  <div class="options" aria-label="Layout direction">
+    <button class="option" data-direction="popover" aria-pressed="true"><span class="label">A · Wider popover <span class="recommended">Recommended</span></span><small>720 px · familiar tabs · quick checks</small></button>
+    <button class="option" data-direction="inspector" aria-pressed="false"><span class="label">B · Resource inspector</span><small>960 px · persistent sidebar · deeper inspection</small></button>
+  </div>
+  <div class="review-tools">
+    <div class="sizing"><label for="size">Panel width</label><select id="size"><option value="wide">Proposed width</option><option value="compact">Narrow screen · 440 px</option></select></div>
+    <label><input type="checkbox" id="actual"> View at 100%</label>
+    <span id="dimensions" aria-live="polite"></span>
+  </div>
+  <div class="canvas-wrap" id="canvasWrap"><div class="canvas" id="canvas"><section class="widget" id="widget" aria-label="Interactive Quadrant layout mockup"></section></div></div>
+  <div class="notes" id="notes"></div>
+  <p class="tradeoff" id="tradeoff"></p>
+  <p class="footnote">Design mockups · fixed sample data, not live telemetry. Graph shapes are illustrative. Drives and Network are context only. Widths are proposed logical units; the preview scales to fit.</p>
+</main>
+<script>
+const state={direction:'popover',tab:'cpu',range:'1m',size:'wide',actual:false,bar:{cpu:true,memory:true,hardware:false},sort:'desc',all:false};
+const $=s=>document.querySelector(s);
+const titles={cpu:'CPU',memory:'Memory',drives:'Drives',network:'Network',hardware:'Hardware'};
+const cpuData=[
+  {n:'quickshell',sub:'PID 6529',icon:'qs',value:0.7,display:'0.7%'},
+  {n:'Hyprland',sub:'PID 1391',icon:'Hy',value:0.4,display:'0.4%'},
+  {n:'kworker',sub:'8 processes',icon:'kw',value:0.3,display:'0.3%'},
+  {n:'T3 Code (Nightly)',sub:'2 processes',icon:'T3',value:0.1,display:'0.1%'},
+  {n:'khugepaged',sub:'PID 167',icon:'kh',value:0,display:'0.0%'}
+];
+const memoryData=[
+  {n:'codex',sub:'3 processes',icon:'cx',value:1434,display:'1.4 GiB',extra:'4.6% · PSS'},
+  {n:'T3 Code (Nightly)',sub:'7 processes',icon:'T3',value:701,display:'701 MiB',extra:'2.2% · PSS'},
+  {n:'quickshell',sub:'PID 6529',icon:'qs',value:475,display:'475 MiB',extra:'1.5% · PSS'},
+  {n:'python3',sub:'PID 1192',icon:'py',value:180,display:'180 MiB',extra:'0.6% · RSS'},
+  {n:'Voxtype Configuration',sub:'PID 1575',icon:'vx',value:158,display:'158 MiB',extra:'0.5% · RSS'}
+];
+const section=(title,body,extra='',cls='')=>`<section class="${cls}"><div class="section-title"><h2>${title}</h2>${extra}</div>${body}</section>`;
+const kv=(k,v)=>`<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+const stat=(label,value,unit,foot)=>`<div class="stat"><span class="stat-label">${label}</span><strong>${value}<em>${unit}</em></strong><span class="stat-foot">${foot}</span></div>`;
+const ring=(value)=>`<div class="ring"><svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="25" fill="none" stroke="#303447" stroke-width="5"/><circle cx="30" cy="30" r="25" fill="none" stroke="#7aa2f7" stroke-width="5" stroke-dasharray="${157*value/100} 157" stroke-linecap="round"/></svg><span>${value}%</span></div>`;
+function spark(seed=0){
+  let points=Array.from({length:23},(_,i)=>`${i*2.5},${14-((Math.sin(i*1.9+seed)+1)*2+(i%7===seed%7?4:0))}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 55 18" aria-hidden="true"><polyline points="${points}" fill="none" stroke="#7aa2f7" stroke-width="1" opacity=".7"/></svg>`;
+}
+function tabs(){
+  return `<nav class="tabs" role="tablist" aria-label="Resource">${Object.entries(titles).map(([k,v])=>`<button role="tab" data-tab="${k}" aria-selected="${state.tab===k}" ${['drives','network'].includes(k)?'disabled title="Not included in this layout study"':''}>${v}</button>`).join('')}</nav>`;
+}
+function navigation(){
+  const sub={cpu:'3% · 695 MHz',memory:'6.7 / 31 GiB',drives:'No sample',network:'No sample',hardware:'77°C · 78% battery'};
+  return `<nav class="resource-nav" role="tablist" aria-label="Resource">${Object.entries(titles).map(([k,v],i)=>`<button class="nav-item" role="tab" data-tab="${k}" aria-selected="${state.tab===k}" ${['drives','network'].includes(k)?'disabled title="Not included in this layout study"':''}><span class="nav-title">${v}<span>${state.tab===k?'›':''}</span></span><div class="nav-sub">${sub[k]}</div>${['cpu','memory'].includes(k)?spark(i).replace('class="spark"','class="nav-mini"'):''}</button>`).join('')}<div class="nav-foot">LENOVO 83D4<br>16 cores · 22 threads<br><br>Sampled every 2 s</div></nav>`;
+}
+function history(kind='cpu'){
+  const mem=kind==='memory';
+  const data=Array.from({length:60},(_,i)=>mem
+    ? 21.8+Math.sin(i*.24)*.46+Math.sin(i*.8)*.16+(i>28&&i<40?.55:0)
+    : Math.max(.7,1.7+Math.sin(i*.8)*.5+(i%23===0?4.2:0)+(i%13===0?1.2:0)));
+  const vals=state.range==='1h'?data.map((v,i)=>mem?v+Math.sin(i*.15)*.1:v+(i%19===0?3:0)):data;
+  const y=v=>mem?100-(v-19.9)/(23.7-19.9)*96:100-v*.96;
+  const path=vals.map((v,i)=>`${i===0?'M':'L'}${(i/59*330).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const axis=mem?['23.7%','21.8%','19.9%']:['100%','50%','0%'];
+  const ranges=`<div class="range" aria-label="History period"><button data-range="1m" aria-pressed="${state.range==='1m'}">1 min</button><button data-range="1h" aria-pressed="${state.range==='1h'}">1 hour</button></div>`;
+  return section(mem?'Memory history':'CPU load',`<p class="graph-caption">${mem?'avg 22.0% · peak 23.1% · cropped Y-axis':'avg 1% · peak 6% · whole machine'}</p>
+    <svg class="graph" viewBox="0 0 368 108" preserveAspectRatio="none" role="img" aria-label="${mem?'Memory usage on a cropped 19.9 to 23.7 percent scale':'CPU usage on a fixed zero to one hundred percent scale'}; illustrative ${state.range} history">
+      ${[4,52,100].map((y,i)=>`<line class="gridline" x1="0" x2="330" y1="${y}" y2="${y}"/><text x="338" y="${y+3}">${axis[i]}</text>`).join('')}
+      <path d="${path} L330,100 L0,100 Z" fill="#7aa2f7" opacity=".13"/>
+      <path d="${path}" fill="none" stroke="#7aa2f7" stroke-width="1.8" vector-effect="non-scaling-stroke"/>
+      ${mem?'':`<path d="M0,99 L120,99 L131,96 L142,99 L238,99 L245,97 L251,99 L330,99" fill="none" stroke="#bb9af7" stroke-width="1"/>`}
+    </svg><div class="graph-axis"><span>−${state.range==='1m'?'1 min':'1 hour'}</span><span>08:12:12</span></div>
+    <div class="legend">${mem?'<span><i class="dot"></i>used 21.5%</span><span><i class="dot purple"></i>pressure 0.0%</span>':'<span><i class="dot"></i>user 1%</span><span><i class="dot purple"></i>system 1%</span><span><i class="dot mint"></i>iowait 1%</span>'}</div>`,ranges);
+}
+function cores(){
+  return section('Core activity',`<div class="cores">${[['P',6],['E',8],['LP',2]].map(([n,count],j)=>`<div class="core-row"><span class="core-type">${n}</span>${Array.from({length:count},(_,i)=>`<i class="core-cell" style="opacity:${.45+((i+j)%4)*.15}"></i>`).join('')}<small>${count} cores</small></div>`).join('')}</div>`,'<span class="aside">low ░ ▒ ▓ high</span>');
+}
+function gpu(){
+  return section('Integrated graphics',`<div class="gpu">${ring(25)}<div><h3>Intel Arc Graphics</h3><p>1,933 / 2,350 MHz</p><p>1.7 GiB shared · i915</p></div></div>`,'','rule');
+}
+function system(){
+  return section('System','<div class="system-grid">'+kv('Governor','powersave')+kv('Pressure · some / full','0.0% / 0.0%')+kv('Load average','0.86 · 0.64 · 0.31')+kv('Uptime','7 min')+'</div>','','rule');
+}
+function processes(kind='cpu'){
+  const mem=kind==='memory';
+  const extraRows=mem?[{n:'Hyprland',sub:'Example process',icon:'Hy',value:96,display:'96 MiB',extra:'0.3% · PSS'},{n:'pipewire',sub:'Example process',icon:'pw',value:64,display:'64 MiB',extra:'0.2% · PSS'}]:[{n:'systemd',sub:'Example process',icon:'sd',value:0,display:'0.0%'},{n:'pipewire',sub:'Example process',icon:'pw',value:0,display:'0.0%'}];
+  const rows=[...(mem?memoryData:cpuData),...(state.all?extraRows:[])];
+  rows.sort((a,b)=>state.sort==='desc'?b.value-a.value:a.value-b.value);
+  const renderRow=(r,i,extra='')=>`<div class="process ${extra}"><div class="proc-name"><span class="proc-icon ${r.icon==='T3'?'t3':''}">${r.icon}</span><div><b title="${r.n}">${r.n}</b><small>${r.sub}</small></div></div>${spark(i)}<div class="proc-metric">${r.display}${r.extra?`<small>${r.extra}</small>`:''}</div></div>`;
+  return section('Top processes',`<div class="process-table"><div class="process-head"><span>Application / group</span><span>Trend</span><button class="sort" data-sort>${mem?'Size':'CPU'} ${state.sort==='desc'?'↓':'↑'}</button></div>${rows.map((r,i)=>renderRow(r,i)).join('')}</div>
+    <details class="process-note"><summary>${mem?'Collection notes · 2 unreadable':'How these values are measured'}</summary><p>Up to 20 candidates per metric; group counts cover those candidates. ${mem?'PSS is preferred; RSS is labelled when used. Two processes were unreadable or exited during collection.':'CPU percentages are of the whole machine.'}</p></details>`,
+    `<button class="link" data-all>${state.all?'Show fewer':'Show all'} ↗</button>`);
+}
+function composition(){
+  return section('RAM composition',`<div class="composition" role="img" aria-label="Illustrative rounded composition: applications 3.5 GiB, cache 5.5 GiB, kernel 231 MiB, free 22 GiB"><span style="width:11.2%;background:var(--accent)"></span><span style="width:17.6%;background:var(--purple)"></span><span style="width:.7%;background:var(--mint)"></span></div>
+    <div class="comp-rows">${kv('<i class="dot"></i>Apps','3.5 GiB')+kv('<i class="dot purple"></i>Cache','5.5 GiB')+kv('<i class="dot mint"></i>Kernel','231 MiB')+kv('<i class="dot free"></i>Free','22 GiB')}</div>
+    <details><summary>About used and available memory</summary><p>Used = total − available. Free and available are different: available includes memory the kernel estimates it can reclaim. Composition separates free RAM, cache, unreclaimable kernel slab and the remaining application estimate. Rounded example values.</p></details>`);
+}
+function swap(){
+  return section('Swap',kv('Used','0 B / 62 GiB')+kv('In / out','0 B/s / 0 B/s')+`<details><summary>2 swap devices</summary>${kv('/swap/swapfile','31 GiB')+kv('zram0 · zstd','31 GiB')}</details>`,'<span class="aside">No swap activity</span>','rule');
+}
+function memoryDetails(){
+  return section('Memory hardware',kv('Installed','Samsung 8 × 4 GiB')+kv('Type / speed','LPDDR5 · 7467 MT/s')+`<details><summary>What does memory pressure mean?</summary><p>Pressure measures time tasks are stalled waiting for memory. 0.0% “some” means no measured stalls in this sample. Show the numerical value without an empty gauge occupying the overview.</p></details>`,'','rule');
+}
+function thermal(){
+  const temps=[44,45,45,44,44,44,44,44,54,45,48,45,45,48,50,50],ids=[0,1,2,3,4,5,6,7,8,12,16,20,24,28,32,33];
+  return section('CPU temperatures',`<div class="status-line"><div><strong>77°C</strong> <small>package 0</small></div><span class="status-tag">coretemp</span></div>
+    <div class="temp-grid">${temps.map((t,i)=>`<div class="temp-cell"><span class="temp-label">Core ${ids[i]}</span><strong>${t}°</strong></div>`).join('')}</div>
+    <details class="sensor-meta"><summary>Device path & sensor details</summary><p>coretemp · devices/platform/coretemp.0<br>Each tile retains the sensor’s reported core ID. This grid represents temperatures, not CPU topology.</p></details>`,'<span class="aside">16 core readings</span>');
+}
+function devices(){
+  return section('Other temperatures',`<div class="device-line"><div><strong>NVMe · Composite</strong><small>Sensor 1: 39°C · Sensor 2: 29°C</small></div><span class="device-value">29°C</span></div><div class="device-line"><div><strong>Wi-Fi · temp1</strong><small>iwlwifi_1</small></div><span class="device-value">43°C</span></div>
+    <details><summary>Device paths</summary><p>NVMe · devices/pci0000:00/0000:00:06.0/0000:01:00.0/nvme/controller<br>Wi-Fi · devices/virtual/thermal/thermal_zone8</p></details>`,'','rule');
+}
+function battery(){
+  return section('System battery',`<div class="battery-hero"><div><strong>78%</strong><small>L23M4PF1 · BAT0</small></div><span class="charging">Not charging</span></div><div class="battery-level" role="img" aria-label="Battery charge 78 percent"><span></span></div>
+    ${kv('Health / design','93.0%')+kv('Capacity / design','78.1 / 84.0 Wh')+kv('Cycles','62')}
+    <details><summary>Battery & power details</summary>${kv('Power','0.0 W')}<p>Charge belongs to this device. System and peripheral batteries are not combined. Power profiles remain in the shell’s Power panel.</p></details>`);
+}
+function issues(){
+  return section('Unavailable readings',`<div class="issue"><span class="issue-icon">!</span><div><strong>Package power · permission denied</strong><small>Package 0 · intel-rapl:0</small></div></div><div class="issue"><span class="issue-icon">–</span><div><strong>Fan speed · unavailable</strong><small>fan1 · acpi_fan</small></div></div><details><summary>1 invalid temperature reading</summary><p>An invalid reading is present in the source screenshot. Its device label is outside the supplied crop; no value or device identity is inferred.</p></details>`,'','rule');
+}
+function peripherals(){
+  return section('Peripherals',`<div class="device-line"><div><strong>MX Vertical</strong><small>hidpp_battery_0 · charge unavailable</small></div><span class="device-value">—</span></div>`,'','rule');
+}
+function content(){
+  let identity='',stats='',left='',right='';
+  const b=state.direction==='inspector';
+  if(state.tab==='cpu'){
+    identity='<h1>Intel Core Ultra 9 185H</h1><p>16 cores · 22 threads · 6P / 8E / 2LP · 24 MB L3</p>';
+    stats=stat('CPU load','3','%','whole machine')+stat('Frequency','695','MHz','5,100 MHz max')+stat('Temperature','79','°C','CPU package')+stat('iGPU busy','25','%','Intel Arc Graphics');
+    left=b?history()+processes():history()+cores()+gpu();
+    right=b?cores()+system()+gpu():processes()+system();
+  }else if(state.tab==='memory'){
+    identity='<h1>Memory</h1><p>31 GiB usable · Samsung 8 × 4 GiB · LPDDR5 7467 MT/s</p>';
+    stats=stat('Used','6.7','GiB','22% of usable')+stat('Available','24.3','GiB','includes reclaimable')+stat('Pressure','0.0','%','some · no measured stalls')+stat('Swap used','0','B','62 GiB total');
+    left=b?history('memory')+processes('memory'):history('memory')+composition();
+    right=b?composition()+swap()+memoryDetails():processes('memory')+swap();
+  }else{
+    identity='<h1>Hardware</h1><p>LENOVO 83D4 · sensors, batteries & peripherals</p>';
+    stats=stat('CPU package','77','°C','coretemp · package 0')+stat('Core range','44–54','°C','16 reported sensors')+stat('NVMe','29','°C','composite')+stat('Battery','78','%','not charging');
+    left=thermal()+devices();
+    right=battery()+peripherals()+issues();
+  }
+  return `<div class="identity"><div>${identity}</div><span class="stamp">SAMPLE · 08:12</span></div><div class="stat-strip">${stats}</div><div class="split"><div class="pane">${left}</div><div class="pane">${right}</div></div>`;
+}
+function render(){
+  const b=state.direction==='inspector',compact=state.size==='compact';
+  const actions=`<div class="top-actions">${state.tab==='hardware'?'<span class="muted" style="font-size:9px">Temperature · °C</span>':`<span class="bar-switch">Show ${titles[state.tab]} in bar <button class="switch" role="switch" aria-label="Show ${titles[state.tab]} in bar" aria-checked="${state.bar[state.tab]}" data-bar></button></span>`}</div>`;
+  $('#widget').className=`widget ${b?'sidebar-mode':''} ${compact?'compact':''}`;
+  $('#widget').innerHTML=`<header class="topbar">${b?'<div class="brand"><span class="brand-mark"><i></i><i></i><i></i><i></i></span>Quadrant <span class="inspector-label">System inspector</span></div>':tabs()}${actions}${b&&compact?tabs():''}</header><div class="body-layout">${b?navigation():''}<div class="content" role="tabpanel" aria-label="${titles[state.tab]}">${content()}</div></div><footer class="footer"><span>${state.tab==='hardware'?'Grouped by device · unavailable readings stay visible':'458 processes · 1 running · 1,000 threads'}</span><span class="shortcut"><span><kbd>←</kbd> <kbd>→</kbd> tabs</span><span><kbd>H</kbd> history</span><span>Sample data</span></span></footer>`;
+  document.querySelectorAll('[data-direction]').forEach(el=>el.setAttribute('aria-pressed',el.dataset.direction===state.direction));
+  const notes=state.tab==='hardware'?[
+    ['Group the sensors','Sixteen temperatures become a compact grid. Driver names and paths appear once per device.'],
+    ['Battery stays in view','Thermals and battery health sit side by side. Core readings no longer push power details below the fold.'],
+    ['Keep failures explicit','Unavailable and permission-denied readings remain visible, separate from valid numeric values.']
+  ]:state.tab==='memory'?[
+    ['Replace empty gauges','Used, available and pressure become a short row of values. Pressure keeps a precise numerical reading.'],
+    ['Compare usage and causes','History and processes are visible together. Composition and swap remain nearby.'],
+    ['Reveal the explanation','Memory definitions and collection caveats are available on demand. RSS / PSS labels stay with each value.']
+  ]:[
+    ['Use two reading lanes',b?'History and processes share the main column; hardware context stays alongside.':'History, cores and graphics sit beside processes and system details.'],
+    ['Surface the essentials','Load, frequency, temperature and graphics activity can be read in one sweep.'],
+    ['Preserve the character','Monospace type, restrained borders and the existing palette keep this recognisably Omarchy.']
+  ];
+  $('#notes').innerHTML=notes.map(([title,desc],i)=>`<div class="note"><b><span class="num">0${i+1}</span>${title}</b>${desc}</div>`).join('');
+  $('#tradeoff').innerHTML=b?'<strong>B trades more desktop space for persistent context.</strong> Better suited to an expanded inspection view. The sidebar keeps other resource readings visible, but is a bigger change to a quick bar popover.':'<strong>A is the smaller change.</strong> Keep the existing tab model, widen the panel and rearrange the content. On narrow screens, collapse to one column with the same reading order and font size.';
+  fit();
+}
+function fit(){
+  const width=state.size==='compact'?440:state.direction==='inspector'?960:720;
+  const available=$('#canvasWrap').clientWidth;
+  const scale=state.actual?1:Math.min(1,available/width);
+  $('#canvas').style.width=width+'px';
+  $('#canvas').style.transform=`scale(${scale})`;
+  $('#canvasWrap').style.overflowX=state.actual?'auto':'hidden';
+  const height=$('#widget').offsetHeight;
+  $('#canvasWrap').style.height=Math.ceil(height*scale)+'px';
+  $('#canvasWrap').style.minHeight='0';
+  $('#dimensions').textContent=`${width} × ${height} · ${Math.round(scale*100)}% preview`;
+}
+document.addEventListener('click',event=>{
+  const el=event.target.closest('button');
+  if(!el||el.disabled)return;
+  if(el.dataset.direction){state.direction=el.dataset.direction;render()}
+  if(el.dataset.tab){state.tab=el.dataset.tab;state.all=false;render()}
+  if(el.dataset.range){state.range=el.dataset.range;render()}
+  if(el.hasAttribute('data-bar')){state.bar[state.tab]=!state.bar[state.tab];render()}
+  if(el.hasAttribute('data-sort')){state.sort=state.sort==='desc'?'asc':'desc';render()}
+  if(el.hasAttribute('data-all')){state.all=!state.all;render()}
+});
+$('#size').addEventListener('change',e=>{state.size=e.target.value;render()});
+$('#actual').addEventListener('change',e=>{state.actual=e.target.checked;fit()});
+document.addEventListener('toggle',fit,true);
+document.addEventListener('keydown',e=>{
+  if(['INPUT','SELECT'].includes(e.target.tagName))return;
+  const available=['cpu','memory','hardware'];
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+    e.preventDefault();state.tab=available[(available.indexOf(state.tab)+(e.key==='ArrowRight'?1:2))%3];render();
+    document.querySelector(`[data-tab="${state.tab}"]`)?.focus();
+  }
+  if(e.key.toLowerCase()==='h'&&!e.ctrlKey&&!e.metaKey){state.range=state.range==='1m'?'1h':'1m';render()}
+});
+new ResizeObserver(fit).observe($('#canvasWrap'));
+if(window.innerWidth<520){state.size='compact';$('#size').value='compact'}
+const query=new URLSearchParams(location.search);
+if(['cpu','memory','hardware'].includes(query.get('tab')))state.tab=query.get('tab');
+if(['popover','inspector'].includes(query.get('direction')))state.direction=query.get('direction');
+render();
+document.fonts.ready.then(fit);
+</script>
+</body>
+</html>

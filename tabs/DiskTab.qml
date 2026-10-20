@@ -100,7 +100,7 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Commons.Style.space(10)
+    spacing: Commons.Style.space(12)
 
     Components.Hero {
       width: parent.width
@@ -130,88 +130,91 @@ Item {
       onChanged: function (value) { if (root.model) root.model.selectDisk(value) }
     }
 
-    Components.GraphBlock {
-      objectName: "diskHistory"
+    Components.AdaptiveColumns {
+      objectName: "resourceColumns"
       width: parent.width
-      title: "THROUGHPUT"
-      finePoints: root.model ? root.model.diskHistory : []
-      longPoints: root.model ? root.model.diskLong : []
-      longWindow: root.longWindow
-      sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
-      graphLayout: root.model && root.model.cfg ? root.model.cfg.diskGraphLayout : "overlay"
-      minimumMax: 1024
-      formatValue: function (v) { return Model.formatRate(v) }
-      fields: [
-        { key: "r", label: "read", color: root.pal.primary },
-        { key: "w", label: "write", color: root.pal.secondary }
+      primary: [
+        Components.GraphBlock {
+          objectName: "diskHistory"
+          width: parent.width
+          title: "THROUGHPUT"
+          finePoints: root.model ? root.model.diskHistory : []
+          longPoints: root.model ? root.model.diskLong : []
+          longWindow: root.longWindow
+          sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+          graphLayout: root.model && root.model.cfg ? root.model.cfg.diskGraphLayout : "overlay"
+          minimumMax: 1024
+          formatValue: function (v) { return Model.formatRate(v) }
+          fields: [
+            { key: "r", label: "read", color: root.pal.primary },
+            { key: "w", label: "write", color: root.pal.secondary }
+          ]
+          legend: [
+            { label: "read", color: root.pal.primary, value: root.rates ? Model.formatRate(root.rates.readBps) : "--" },
+            { label: "write", color: root.pal.secondary, value: root.rates ? Model.formatRate(root.rates.writeBps) : "--" }
+          ]
+          onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
+        },
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(6)
+
+          Components.SectionHeader { width: parent.width; text: "DEVICE" }
+          Components.StatRow {
+            wrapValue: true
+            width: parent.width
+            label: "Busy"
+            value: root.rates ? Model.formatPct(root.rates.utilPct) : "--"
+          }
+          Components.StatRow {
+            wrapValue: true
+            width: parent.width
+            label: "IOPS r/w"
+            value: root.rates ? String(Math.round(root.rates.readIops)) + " / " + String(Math.round(root.rates.writeIops)) : "--"
+          }
+        },
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(8)
+          visible: root.diskMounts.length > 0
+
+          Components.SectionHeader {
+            width: parent.width
+            text: "MOUNTS"
+          }
+
+          Components.PanelActions {
+            id: mountControls
+            objectName: "mountActions"
+            width: parent.width
+            panel: root.panel
+            context: root.diskName
+            entries: Model.mountActions(root.diskMounts)
+            details: Model.mountActionDetails(root.diskMounts)
+          }
+        }
       ]
-      legend: [
-        { label: "read", color: root.pal.primary, value: root.rates ? Model.formatRate(root.rates.readBps) : "--" },
-        { label: "write", color: root.pal.secondary, value: root.rates ? Model.formatRate(root.rates.writeBps) : "--" }
+      secondary: [
+        Components.ProcessList {
+          id: processRoster
+          panel: root.panel
+          active: root.active
+          expandable: true
+          expandedRows: root.expandedRows
+          expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
+          scopeText: Model.processScope(root.model ? root.model.procStats : null, "io", expanded)
+          width: parent.width
+          rows: root.rows
+          valueHeader: "DISK I/O"
+          emptyText: !root.active ? "Open this tab to sample processes"
+                     : !root.model || !root.model.procStats ? "Measuring disk I/O rates…"
+                     : root.model.procStats.ioVisible === 0 ? "Process I/O visibility is restricted"
+                     : root.model.procStats.rateState === "unavailable" ? "Disk I/O rates unavailable without counter state"
+                     : !(root.model.procStats.dt > 0) || root.model.procStats.ioReady === 0 ? "Measuring disk I/O rates…"
+                     : "No disk activity from visible processes"
+          errorText: root.errorText
+        }
       ]
-      onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
     }
-
-    Column {
-      width: parent.width
-      spacing: Commons.Style.space(6)
-
-      Components.SectionHeader { width: parent.width; text: "DEVICE" }
-      Components.StatRow {
-        width: parent.width
-        label: "Busy"
-        value: root.rates ? Model.formatPct(root.rates.utilPct) : "--"
-      }
-      Components.StatRow {
-        width: parent.width
-        label: "IOPS r/w"
-        value: root.rates ? String(Math.round(root.rates.readIops)) + " / " + String(Math.round(root.rates.writeIops)) : "--"
-      }
-    }
-
-    Column {
-      width: parent.width
-      spacing: Commons.Style.space(8)
-      visible: root.diskMounts.length > 0
-
-      Components.SectionHeader {
-        width: parent.width
-        text: "MOUNTS"
-      }
-
-      Components.PanelActions {
-        id: mountControls
-        objectName: "mountActions"
-        width: parent.width
-        panel: root.panel
-        context: root.diskName
-        entries: Model.mountActions(root.diskMounts)
-        details: Model.mountActionDetails(root.diskMounts)
-      }
-    }
-
-    PanelSeparator { }
-
-    Components.ProcessList {
-      id: processRoster
-      panel: root.panel
-      active: root.active
-      expandable: true
-      expandedRows: root.expandedRows
-      expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
-      scopeText: Model.processScope(root.model ? root.model.procStats : null, "io", expanded)
-      width: parent.width
-      rows: root.rows
-      valueHeader: "DISK I/O"
-      emptyText: !root.active ? "Open this tab to sample processes"
-                 : !root.model || !root.model.procStats ? "Measuring disk I/O rates…"
-                 : root.model.procStats.ioVisible === 0 ? "Process I/O visibility is restricted"
-                 : root.model.procStats.rateState === "unavailable" ? "Disk I/O rates unavailable without counter state"
-                 : !(root.model.procStats.dt > 0) || root.model.procStats.ioReady === 0 ? "Measuring disk I/O rates…"
-                 : "No disk activity from visible processes"
-      errorText: root.errorText
-    }
-
-
   }
 }

@@ -56,7 +56,15 @@ a missing saved sensor or collection error also keeps it accessible. See
 
 Tabs use equal slots and wrap on narrow panels. The resource-specific
 **Show … in bar** switch names its current target; the gear remains separate
-from the tab strip. Device choices wrap too, with full names in tooltips.
+from the tab strip. On wider panels, the switch shares the tab row. Device
+choices wrap too, with full names in tooltips.
+
+The panel prefers a theme-scaled width of 720 logical units, fitted to the
+available monitor. Graphs and device details sit beside processes; Hardware
+puts temperatures beside batteries, package power, fans and GPU actions.
+Below the two-column breakpoint, content stacks without reducing the font.
+The tab strip stays visible while the body scrolls to fit the screen.
+Resizing preserves process search, selection and open detail sections.
 
 | Key | Action |
 | --- | --- |
@@ -67,6 +75,7 @@ from the tab strip. Device choices wrap too, with full names in tooltips.
 | `R` | re-read system, GPU, disk, sensor, package, and battery inventory and refresh the active tab |
 | `/` | open process search on CPU, Memory, or Drives |
 | `A` | select Network/Drives actions or Hardware GPU Details/Select; `↑`/`↓` choose and `Enter`/Space activate |
+| `D` | expand the current tab's visible detail sections, or collapse them when all are open |
 | `Esc` | leave action selection, clear a search query or leave its editor, then close settings or the panel |
 | `Tab` | keeps its Quattro meaning: switch to the adjacent bar panel |
 
@@ -149,11 +158,14 @@ rate scale on each side. Overlays remain the compact default. See
 Changing refresh cadence retains recent minute samples until their timestamps
 leave the 60 s window, including samples collected at the previous cadence.
 
-Memory's used ring is total RAM minus the kernel's available estimate. Its
+Memory's used value is total RAM minus the kernel's available estimate. Its
 composition shows a separate physical-RAM breakdown, with an application
-estimate after free RAM, cache, and kernel (unreclaimable slab). The pressure ring
-labels its **0–25% visual scale** while printing the actual PSI percentage,
-including values above 25%. Swap remains outside that physical-RAM breakdown.
+estimate after free RAM, cache, and kernel (unreclaimable slab). Used,
+available, pressure and swap usage appear as compact overview values.
+Pressure prints the actual PSI percentage, without a gauge ceiling.
+**Memory accounting** expands the explanation; **Swap devices** appears when
+there are individual files or zram to show. Swap remains outside the
+physical-RAM breakdown.
 
 CPU, Memory, and Drives start with a compact top-consumer list. **Show all**
 opens a searchable roster; **Show less** returns to the compact list. Search
@@ -227,17 +239,17 @@ sample the development machine. Click a screenshot to view it at full size.
   <tr>
     <td width="50%" valign="top">
       <p><strong>CPU</strong><br>Core activity and process CPU.</p>
-      <a href="screenshots/cpu.png"><img src="screenshots/cpu.png" alt="CPU tab showing an Intel Core Ultra 9, labelled history controls, physical cores, and top processes in a dark teal theme" width="420"></a>
+      <a href="screenshots/cpu.png"><img src="screenshots/cpu.png" alt="Wider CPU tab with overview values, history and cores beside top processes and system details" width="420"></a>
     </td>
     <td width="50%" valign="top">
       <p><strong>GPU</strong><br>Dedicated GPU activity and VRAM.</p>
-      <a href="screenshots/gpu.png"><img src="screenshots/gpu.png" alt="GPU tab with Radeon fixture readings, busy and VRAM gauges, labelled history controls, and GPU processes in a light theme" width="420"></a>
+      <a href="screenshots/gpu.png"><img src="screenshots/gpu.png" alt="Wider GPU tab with Radeon fixture overview values, labelled history controls and GPU processes in a light theme" width="420"></a>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <p><strong>Memory</strong><br>RAM composition, pressure, and swap.</p>
-      <a href="screenshots/memory.png"><img src="screenshots/memory.png" alt="Memory tab showing used RAM, pressure, composition, memory history, swap, and process memory in a black monochrome theme" width="420"></a>
+      <a href="screenshots/memory.png"><img src="screenshots/memory.png" alt="Wider Memory tab with numeric pressure and usage, history and composition beside processes and swap" width="420"></a>
     </td>
     <td width="50%" valign="top">
       <p><strong>Drives</strong><br>Disk selection, throughput, and mounts.</p>

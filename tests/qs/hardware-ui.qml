@@ -41,6 +41,7 @@ ShellRoot {
     function focusProcessKeys() { keys.forceActiveFocus() }
     function scrollActionItem(item) { }
     function refreshActiveTab() { view.refresh() }
+    function activeTabItem() { return currentTab === "hardware" ? view : null }
     function moveCursor(d) { body.contentY = Model.clamp(body.contentY + d * Commons.Style.space(48), 0, Math.max(0, body.contentHeight - body.height)) }
   }
   Components.PanelKeys {
@@ -98,10 +99,11 @@ ShellRoot {
       if (actual !== expected) console.error("QHARDWAREUI compare: " + actual + " / " + expected + " " + message + " " + new Error().stack)
       compare(actual, expected, message)
     }
-    function texts(item) {
+    function texts(item, visibleOnly) {
       var result = []
+      if (visibleOnly && !item.visible) return result
       if ("text" in item && typeof item.text === "string") result.push(item.text)
-      for (var child of item.children) result = result.concat(texts(child))
+      for (var child of item.children) result = result.concat(texts(child, visibleOnly))
       return result
     }
     function records() {
@@ -158,6 +160,35 @@ ShellRoot {
       fixture.raw = initialRaw; wait(20)
       equal(view.pinnedSensor.id, id)
     }
+    function test_grouped_core_grid_keeps_live_identity_and_error_states() {
+      win.width = Commons.Style.space(720) + 32
+      var cores = []
+      for (var i = 0; i < 8; i++) cores.push(Object.assign({}, initialRaw.sensors[0], {
+        id: "hwmon:" + "0".repeat(62) + (32 + i).toString(16), label: "Core " + (i * 4), value: 40 + i
+      }))
+      fixture.raw = Object.assign({}, initialRaw, { sensors: [initialRaw.sensors[0]].concat(cores, initialRaw.sensors.slice(1)) })
+      wait(30)
+      var columns = findChild(view, "resourceColumns")
+      check(columns.wide)
+      var first = findChild(view, "hardwareSensorValue_" + cores[0].id)
+      var next = findChild(view, "hardwareSensorValue_" + cores[1].id)
+      check(first && next); check(next.x > first.x); equal(next.y, first.y)
+      var group = first.parent.parent
+      var details = findChild(group, "sensorDeviceDetails")
+      details.expanded = true
+      var changed = Object.assign({}, cores[0], { value: null, status: "Permission denied" })
+      fixture.raw = Object.assign({}, fixture.raw, { sensors: [initialRaw.sensors[0], changed].concat(cores.slice(1), initialRaw.sensors.slice(1)) })
+      wait(30)
+      equal(findChild(view, "hardwareSensorValue_" + cores[0].id), first)
+      equal(first.value, "--")
+      check(details.expanded)
+      check(texts(first).indexOf("Permission denied") >= 0)
+      check(texts(view).indexOf("Core 28") >= 0, "reported core IDs are not renumbered")
+      win.width = 320; wait(30)
+      check(!columns.wide)
+      equal(findChild(view, "hardwareSensorValue_" + cores[0].id), first)
+      check(details.expanded)
+    }
     function test_gpu_details_preserve_auto_with_keyboard_and_pointer() {
       equal(findChild(view.actionList, "actionButton_0").text, "Details")
       equal(findChild(view.actionList, "actionButton_1").text, "Details")
@@ -207,6 +238,74 @@ ShellRoot {
       check(fixture.hardwareAvailable)
       // A parent column hides the entire battery section, preserving its title.
       check(!texts(view).some(function (text) { return text.indexOf("Laptop battery") >= 0 }))
+    }
+    function test_details_shortcut_ignores_disclosures_inside_hidden_sections() {
+      fixture.gpus = []
+      fixture.raw = Object.assign({}, initialRaw, { batteries: [], packages: [] })
+      wait(20)
+      var all = []
+      function collect(item) {
+        if ("detailsDisclosure" in item && item.detailsDisclosure) all.push(item)
+        for (var child of item.children) collect(child)
+      }
+      collect(view)
+      var shown = all.filter(function (item) { return item.visible })
+      var hidden = all.filter(function (item) { return !item.visible })
+      check(shown.length > 0)
+      equal(hidden.length, 3, "battery, package and GPU explanations still exist in hidden sections")
+      for (var detail of all) detail.expanded = detail.visible
+      keys.forceActiveFocus()
+      keyClick(Qt.Key_D)
+      check(shown.every(function (item) { return !item.expanded }), "one key press collapses every open visible detail")
+      check(hidden.every(function (item) { return !item.expanded }), "hidden sections remain untouched")
+      keyClick(Qt.Key_D)
+      check(shown.every(function (item) { return item.expanded }), "the next press expands visible details")
+      check(hidden.every(function (item) { return !item.expanded }))
+      for (var item of all) item.expanded = false
+    }
+    function test_cpu_gpu_overview_uses_inventory_and_marks_estimates() {
+      var store = realStore()
+      store.integratedGpu = { card: "card0", vendor: "intel", name: "Integrated graphics" }
+      store.integratedGpuLive = { busy: null, freqCurMhz: 500, freqMaxMhz: 1000 }
+      var cpu = createTemporaryObject(cpuComponent, win.contentItem, { model: store })
+      check(cpu); wait(20)
+      var overview = findChild(cpu, "cpuGpuOverview")
+      equal(overview.modelData.label, "Integrated GPU")
+      equal(overview.value, "~50%")
+      equal(overview.modelData.hint, "Frequency estimate")
+      cpu.visible = false; wait(20)
+      equal(overview.modelData.label, "Integrated GPU", "hiding an ancestor must not turn GPU data into uptime")
+      equal(overview.value, "~50%")
+      store.integratedGpuLive = { busy: 25, busySource: "drm", freqCurMhz: 500, freqMaxMhz: 1000 }
+      wait(20); overview = findChild(cpu, "cpuGpuOverview")
+      equal(overview.value, "25%"); equal(overview.modelData.hint, "Busy")
+      store.integratedGpuLive = null
+      wait(20); overview = findChild(cpu, "cpuGpuOverview")
+      equal(overview.value, "--", "unavailable estimates remain unknown")
+      store.integratedGpu = null
+      wait(20); overview = findChild(cpu, "cpuGpuOverview")
+      equal(overview.modelData.label, "Uptime")
+    }
+    function test_intel_frequency_appears_once_without_hiding_other_device_readings() {
+      var store = realStore()
+      store.gpu = { card: "card1", vendor: "intel", name: "Dedicated graphics" }
+      store.discreteGpuLive = { freqCurMhz: 500, freqMaxMhz: 1000 }
+      var gpu = createTemporaryObject(gpuComponent, win.contentItem, { model: store })
+      check(gpu); wait(20)
+      function clockCount() { return texts(gpu, true).filter(function (text) { return text === gpu.clockText }).length }
+      equal(clockCount(), 1, "the overview already shows Intel frequency")
+      check(texts(gpu, true).indexOf("DEVICE") < 0, "no empty device section")
+      store.discreteGpuLive = { freqCurMhz: 500, freqMaxMhz: 1000, engines: [{ id: "Render", busy: 12 }] }
+      wait(20); equal(clockCount(), 1)
+      check(texts(gpu, true).indexOf("Render") >= 0, "engine readings remain visible")
+      check(texts(gpu, true).indexOf("DEVICE") >= 0)
+      store.discreteGpuLive = { freqCurMhz: 500, freqMaxMhz: 1000, memoryClockMhz: 800, memoryClockSource: "fixture" }
+      wait(20); equal(clockCount(), 1)
+      check(findChild(gpu, "gpuMemoryClock").visible, "a separate memory clock remains visible")
+      store.gpu = { card: "card1", vendor: "amd", name: "Dedicated graphics" }
+      store.discreteGpuLive = { clockMhz: 1500 }
+      wait(20); equal(clockCount(), 1)
+      check(texts(gpu, true).indexOf("Core clock") >= 0, "other vendors retain the core clock row")
     }
     function test_header_plural_and_system_battery_without_scope() {
       var battery = Object.assign({}, initialRaw.batteries[0], { scope: "" })
@@ -301,7 +400,7 @@ ShellRoot {
       check(gpu); wait(20)
       var memory = findChild(gpu, "gpuMemoryClock")
       check(memory.visible); equal(memory.value, "1000 MHz")
-      check(texts(gpu).indexOf("GPU power") >= 0); check(texts(gpu).indexOf("140°F") >= 0)
+      check(texts(gpu).some(function (text) { return text.toLowerCase() === "gpu power" })); check(texts(gpu).indexOf("140°F") >= 0)
       store.discreteGpuLive = Object.assign({}, store.discreteGpuLive, { memoryClockMhz: null })
       wait(20); equal(memory.value, "--")
       store.discreteGpuLive = Object.assign({}, store.discreteGpuLive, { memoryClockSource: "" })

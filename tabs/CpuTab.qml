@@ -1,6 +1,5 @@
 import QtQuick
 import qs.Commons as Commons
-import qs.Ui
 import "../lib/index.mjs" as Model
 import "../components" as Components
 
@@ -21,6 +20,7 @@ Item {
   readonly property var cpuPct: model ? model.cpuPct : null
   readonly property var sysCpu: model && model.sysInfo ? model.sysInfo.cpu : null
   readonly property var cpuFreqMhz: model ? model.cpuFreqMhz : null
+  readonly property bool hasIgpu: !!(model && model.integratedGpu)
   readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(Commons.Color.foreground), String(Commons.Color.background))
 
   implicitWidth: 200
@@ -49,20 +49,9 @@ Item {
     if (c.cacheKb) parts.push(Model.formatCache(c.cacheKb) + " L3")
     return parts.join(" · ")
   }
-  readonly property string cpuDetail: {
-    if (cpuFreqMhz !== null && cpuFreqMhz !== undefined) return Model.formatMhz(cpuFreqMhz)
-    if (sysCpu && sysCpu.governor) return sysCpu.governor
-    return ""
-  }
+  readonly property string cpuDetail: Model.formatMhz(cpuFreqMhz !== null && cpuFreqMhz !== undefined
+                                                    ? cpuFreqMhz : sysCpu ? sysCpu.mhzNow : null)
   readonly property string hostLine: model && model.sysInfo ? Model.hostLine(model.sysInfo.host) : ""
-  readonly property string cpuFreqValue: {
-    var cur = cpuFreqMhz
-    if (cur === null || cur === undefined) cur = sysCpu ? sysCpu.mhzNow : null
-    var max = sysCpu ? sysCpu.maxMhz : null
-    if (cur === null && max === null) return ""
-    if (max === null) return Model.formatMhz(cur)
-    return Model.formatMhz(cur) + " / " + Model.formatMhz(max)
-  }
   readonly property int coreCount: sample ? sample.cores : (sysCpu && sysCpu.threads ? sysCpu.threads : 1)
   readonly property bool loadHot: sample && sample.load[0] !== null && sample.load[0] > coreCount
   readonly property string pressureText: {
@@ -86,13 +75,12 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Commons.Style.space(10)
+    spacing: Commons.Style.space(12)
 
     Components.Hero {
       width: parent.width
       title: root.cpuTitle
       meta: root.cpuMeta
-      detail: root.cpuDetail
     }
 
     Text {
@@ -106,129 +94,141 @@ Item {
       elide: Text.ElideRight
     }
 
-    Components.GraphBlock {
+    Components.MetricStrip {
       width: parent.width
-      title: "LOAD"
-      finePoints: root.model ? root.model.cpuHistory : []
-      longPoints: root.model ? root.model.cpuLong : []
-      longWindow: root.longWindow
-      sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
-      stacked: true
-      fixedMax: 100
-      fields: [
-        { key: "u", label: "user", color: root.pal.primary },
-        { key: "s", label: "system", color: root.pal.secondary },
-        { key: "io", label: "iowait", color: root.pal.tertiary },
-        { key: "st", label: "steal", color: root.pal.hot }
+      metrics: [
+        { label: "CPU load", value: root.cpuPct ? Model.formatPct(root.cpuPct.nonIdle) : "--", hint: "Whole machine" },
+        { label: "Frequency", value: root.cpuDetail || "--", hint: root.sysCpu && root.sysCpu.maxMhz ? Model.formatMhz(root.sysCpu.maxMhz) + " max" : "Current clock" },
+        { label: "Temperature", value: root.sample ? Model.formatTemp(root.sample.tempC, root.model && root.model.cfg ? root.model.cfg.temperatureUnit : "celsius") : "--", hint: "CPU package" },
+        { name: "cpuGpuOverview", label: root.hasIgpu ? "Integrated GPU" : "Uptime",
+          value: root.hasIgpu ? (integratedCard.busyPct < 0 ? "--" : (integratedCard.busyIsEstimate ? "~" : "") + Model.formatPct(integratedCard.busyPct)) : (root.sample ? Model.formatUptime(root.sample.uptimeS) : "--"),
+          hint: root.hasIgpu ? (integratedCard.busyIsEstimate ? "Frequency estimate" : "Busy") : "Since boot" }
       ]
-      legend: [
-        { label: "user", color: root.pal.primary, value: root.cpuPct ? Model.formatPct(root.cpuPct.user) : "--" },
-        { label: "system", color: root.pal.secondary, value: root.cpuPct ? Model.formatPct(root.cpuPct.system) : "--" },
-        { label: "iowait", color: root.pal.tertiary, value: root.cpuPct ? Model.formatPct(root.cpuPct.iowait) : "--" },
-        { label: "steal", color: root.pal.hot, value: root.cpuPct ? Model.formatPct(root.cpuPct.steal) : "--",
-          visible: root.cpuPct !== null && root.cpuPct.steal > 0 }
+    }
+
+    Components.AdaptiveColumns {
+      objectName: "resourceColumns"
+      width: parent.width
+      primary: [
+        Components.GraphBlock {
+          width: parent.width
+          title: "LOAD"
+          finePoints: root.model ? root.model.cpuHistory : []
+          longPoints: root.model ? root.model.cpuLong : []
+          longWindow: root.longWindow
+          sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+          stacked: true
+          fixedMax: 100
+          fields: [
+            { key: "u", label: "user", color: root.pal.primary },
+            { key: "s", label: "system", color: root.pal.secondary },
+            { key: "io", label: "iowait", color: root.pal.tertiary },
+            { key: "st", label: "steal", color: root.pal.hot }
+          ]
+          legend: [
+            { label: "user", color: root.pal.primary, value: root.cpuPct ? Model.formatPct(root.cpuPct.user) : "--" },
+            { label: "system", color: root.pal.secondary, value: root.cpuPct ? Model.formatPct(root.cpuPct.system) : "--" },
+            { label: "iowait", color: root.pal.tertiary, value: root.cpuPct ? Model.formatPct(root.cpuPct.iowait) : "--" },
+            { label: "steal", color: root.pal.hot, value: root.cpuPct ? Model.formatPct(root.cpuPct.steal) : "--",
+              visible: root.cpuPct !== null && root.cpuPct.steal > 0 }
+          ]
+          onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
+        },
+        Components.CoreGrid {
+          width: parent.width
+          layout: Model.coreGridLayout(
+            root.sysCpu && root.sysCpu.topo ? root.sysCpu.topo : [],
+            root.model && root.model.coreUsage ? root.model.coreUsage : {}
+          )
+        },
+        Components.GpuCard {
+          id: integratedCard
+          width: parent.width
+          gpu: root.model ? root.model.integratedGpu : null
+          gpuInfo: root.model ? root.model.integratedGpu : null
+          live: root.model ? root.model.integratedGpuLive : null
+          errorText: root.model ? String(root.model.integratedGpuError || "") : ""
+          temperatureUnit: root.model && root.model.cfg ? (root.model.cfg.temperatureUnit || "celsius") : "celsius"
+        }
       ]
-      onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
-    }
+      secondary: [
+        Components.ProcessList {
+          id: processRoster
+          panel: root.panel
+          active: root.active
+          expandable: true
+          expandedRows: root.expandedRows
+          expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
+          scopeText: Model.processScope(root.model ? root.model.procStats : null, "cpu", expanded)
+          width: parent.width
+          rows: root.rows
+          valueHeader: "CPU"
+          emptyText: !root.active ? "Open this tab to sample processes"
+                     : !root.model || !root.model.procStats ? "Measuring CPU rates…"
+                     : root.model.procStats.rateState === "unavailable" ? "CPU rates unavailable without counter state"
+                     : !(root.model.procStats.dt > 0) || (root.model.procStats.procs > 0 && root.model.procStats.cpuReady === 0)
+                       ? "Measuring CPU rates…" : "No eligible CPU processes"
+          errorText: root.errorText
+        },
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(6)
 
-    Components.CoreGrid {
-      width: parent.width
-      layout: Model.coreGridLayout(
-        root.sysCpu && root.sysCpu.topo ? root.sysCpu.topo : [],
-        root.model && root.model.coreUsage ? root.model.coreUsage : {}
-      )
-    }
-
-    Column {
-      width: parent.width
-      spacing: Commons.Style.space(6)
-
-      Components.SectionHeader { width: parent.width; text: "SYSTEM" }
-      Components.StatRow {
-        width: parent.width
-        visible: root.cpuFreqValue !== ""
-        label: "Frequency"
-        value: root.cpuFreqValue
-      }
-      Components.StatRow {
-        width: parent.width
-        visible: root.sysCpu && root.sysCpu.governor !== ""
-        label: "Governor"
-        value: root.sysCpu ? root.sysCpu.governor : "--"
-      }
-      Components.StatRow {
-        width: parent.width
-        label: "Temperature"
-        value: root.sample ? Model.formatTemp(root.sample.tempC, root.model && root.model.cfg ? root.model.cfg.temperatureUnit : "celsius") : "--"
-      }
-      Components.StatRow {
-        objectName: "cpuPackagePower"
-        width: parent.width
-        visible: root.model && root.model.cpuPackagePowerAvailable === true
-        label: root.model && root.model.hardwareInventory && root.model.hardwareInventory.packages.length > 1 ? "Packages total" : "Package power"
-        value: Model.formatWatts(Model.totalPackageWatts(root.model ? root.model.packageReadings : []))
-      }
-      Components.StatRow {
-        objectName: "cpuApuPower"
-        width: parent.width
-        visible: root.model && root.model.integratedGpu && root.model.integratedGpu.vendor === "amd"
-          && root.model.cpuPackagePowerAvailable !== true
-          && root.model.integratedGpuLive && root.model.integratedGpuLive.powerW !== null && root.model.integratedGpuLive.powerW !== undefined
-        label: "APU package"
-        value: Model.formatWatts(root.model && root.model.integratedGpuLive ? root.model.integratedGpuLive.powerW : null)
-      }
-      Components.StatRow {
-        width: parent.width
-        visible: root.pressureText !== ""
-        label: "Pressure"
-        value: root.pressureText
-      }
-      Components.StatRow {
-        width: parent.width
-        label: "Load average"
-        value: root.sample
-               ? Model.formatLoad(root.sample.load[0]) + "  " + Model.formatLoad(root.sample.load[1]) + "  " + Model.formatLoad(root.sample.load[2])
-               : "--"
-        valueColor: root.loadHot ? Commons.Color.urgent : Commons.Color.foreground
-      }
-      Components.StatRow {
-        width: parent.width
-        label: "Uptime"
-        value: root.sample ? Model.formatUptime(root.sample.uptimeS) : "--"
-      }
-    }
-
-    Components.GpuCard {
-      width: parent.width
-      gpu: root.model ? root.model.integratedGpu : null
-      gpuInfo: root.model ? root.model.integratedGpu : null
-      live: root.model ? root.model.integratedGpuLive : null
-      errorText: root.model ? String(root.model.integratedGpuError || "") : ""
-      temperatureUnit: root.model && root.model.cfg ? (root.model.cfg.temperatureUnit || "celsius") : "celsius"
-    }
-
-    PanelSeparator { }
-
-    Components.ProcessList {
-      id: processRoster
-      panel: root.panel
-      active: root.active
-      expandable: true
-      expandedRows: root.expandedRows
-      expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
-      scopeText: Model.processScope(root.model ? root.model.procStats : null, "cpu", expanded)
-      width: parent.width
-      rows: root.rows
-      valueHeader: "CPU"
-      emptyText: !root.active ? "Open this tab to sample processes"
-                 : !root.model || !root.model.procStats ? "Measuring CPU rates…"
-                 : root.model.procStats.rateState === "unavailable" ? "CPU rates unavailable without counter state"
-                 : !(root.model.procStats.dt > 0) || (root.model.procStats.procs > 0 && root.model.procStats.cpuReady === 0)
-                   ? "Measuring CPU rates…" : "No eligible CPU processes"
-      errorText: root.errorText
+          Components.SectionHeader { width: parent.width; text: "SYSTEM" }
+          Components.StatRow {
+            wrapValue: true
+            width: parent.width
+            visible: root.sysCpu && root.sysCpu.governor !== ""
+            label: "Governor"
+            value: root.sysCpu ? root.sysCpu.governor : "--"
+          }
+          Components.StatRow {
+            wrapValue: true
+            objectName: "cpuPackagePower"
+            width: parent.width
+            visible: root.model && root.model.cpuPackagePowerAvailable === true
+            label: root.model && root.model.hardwareInventory && root.model.hardwareInventory.packages.length > 1 ? "Packages total" : "Package power"
+            value: Model.formatWatts(Model.totalPackageWatts(root.model ? root.model.packageReadings : []))
+          }
+          Components.StatRow {
+            wrapValue: true
+            objectName: "cpuApuPower"
+            width: parent.width
+            visible: root.model && root.model.integratedGpu && root.model.integratedGpu.vendor === "amd"
+              && root.model.cpuPackagePowerAvailable !== true
+              && root.model.integratedGpuLive && root.model.integratedGpuLive.powerW !== null && root.model.integratedGpuLive.powerW !== undefined
+            label: "APU package"
+            value: Model.formatWatts(root.model && root.model.integratedGpuLive ? root.model.integratedGpuLive.powerW : null)
+          }
+          Components.StatRow {
+            wrapValue: true
+            width: parent.width
+            visible: root.pressureText !== ""
+            label: "Pressure"
+            value: root.pressureText
+          }
+          Components.StatRow {
+            wrapValue: true
+            width: parent.width
+            label: "Load average"
+            value: root.sample
+                   ? Model.formatLoad(root.sample.load[0]) + "  " + Model.formatLoad(root.sample.load[1]) + "  " + Model.formatLoad(root.sample.load[2])
+                   : "--"
+            valueColor: root.loadHot ? Commons.Color.urgent : Commons.Color.foreground
+          }
+          Components.StatRow {
+            wrapValue: true
+            width: parent.width
+            label: "Uptime"
+            value: root.sample ? Model.formatUptime(root.sample.uptimeS) : "--"
+          }
+        }
+      ]
     }
 
     Text {
+      width: parent.width
+      wrapMode: Text.WordWrap
       textFormat: Text.PlainText
       visible: root.procFooter !== ""
       text: root.procFooter

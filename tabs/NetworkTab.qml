@@ -97,7 +97,7 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Commons.Style.space(10)
+    spacing: Commons.Style.space(12)
 
     Components.Hero {
       width: parent.width
@@ -127,72 +127,76 @@ Item {
       onChanged: function (value) { if (root.model) root.model.selectInterface(value) }
     }
 
-    Components.GraphBlock {
-      objectName: "networkHistory"
+    Components.AdaptiveColumns {
+      objectName: "resourceColumns"
       width: parent.width
-      title: "TRAFFIC"
-      finePoints: root.model ? root.model.netHistory : []
-      longPoints: root.model ? root.model.netLong : []
-      longWindow: root.longWindow
-      sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
-      graphLayout: root.model && root.model.cfg ? root.model.cfg.networkGraphLayout : "overlay"
-      minimumMax: 1024
-      formatValue: function (v) { return root.rate(v) }
-      fields: [
-        { key: "rx", label: "down", color: root.pal.primary },
-        { key: "tx", label: "up", color: root.pal.secondary }
+      primary: [
+        Components.GraphBlock {
+          objectName: "networkHistory"
+          width: parent.width
+          title: "TRAFFIC"
+          finePoints: root.model ? root.model.netHistory : []
+          longPoints: root.model ? root.model.netLong : []
+          longWindow: root.longWindow
+          sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+          graphLayout: root.model && root.model.cfg ? root.model.cfg.networkGraphLayout : "overlay"
+          minimumMax: 1024
+          formatValue: function (v) { return root.rate(v) }
+          fields: [
+            { key: "rx", label: "down", color: root.pal.primary },
+            { key: "tx", label: "up", color: root.pal.secondary }
+          ]
+          legend: [
+            { label: "down", color: root.pal.primary, value: root.ifaceRates ? root.rate(root.ifaceRates.rxBps) : "--" },
+            { label: "up", color: root.pal.secondary, value: root.ifaceRates ? root.rate(root.ifaceRates.txBps) : "--" }
+          ]
+          onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
+        },
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(6)
+
+          Components.SectionHeader { width: parent.width; text: "INTERFACE" }
+          Components.StatRow {
+            wrapValue: true
+            width: parent.width
+            visible: root.totals !== null
+            label: "Received / sent"
+            value: root.totals ? Model.formatBytes(root.totals.rx) + " / " + Model.formatBytes(root.totals.tx) : "--"
+          }
+          Components.PanelActions {
+            id: addressControls
+            objectName: "networkActions"
+            width: parent.width
+            panel: root.panel
+            context: root.ifname
+            entries: Model.addressActions(root.iface)
+          }
+        }
       ]
-      legend: [
-        { label: "down", color: root.pal.primary, value: root.ifaceRates ? root.rate(root.ifaceRates.rxBps) : "--" },
-        { label: "up", color: root.pal.secondary, value: root.ifaceRates ? root.rate(root.ifaceRates.txBps) : "--" }
+      secondary: [
+        Components.ProcessList {
+          id: processRoster
+          panel: root.panel
+          active: root.active
+          scopeText: "Per-process TCP attribution from visible sockets; UDP and other users may be missing. Full-roster search is unavailable."
+          width: parent.width
+          rows: root.rows
+          valueHeader: "TRAFFIC"
+          emptyText: root.active ? (root.interfaceValid ? "Sampling…" : "No interface to watch") : "Open this tab to sample processes"
+          errorText: root.errorText
+        },
+        Text {
+          textFormat: Text.PlainText
+          visible: root.attributionEmpty
+          text: "Traffic is moving, but no TCP socket of yours carried it this interval (UDP, or other users' sockets)."
+          color: root.pal.dim
+          font.family: Commons.Style.font.family
+          font.pixelSize: Commons.Style.font.caption
+          width: parent.width
+          wrapMode: Text.WordWrap
+        }
       ]
-      onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
-    }
-
-    Column {
-      width: parent.width
-      spacing: Commons.Style.space(6)
-
-      Components.SectionHeader { width: parent.width; text: "INTERFACE" }
-      Components.StatRow {
-        width: parent.width
-        visible: root.totals !== null
-        label: "Received / sent"
-        value: root.totals ? Model.formatBytes(root.totals.rx) + " / " + Model.formatBytes(root.totals.tx) : "--"
-      }
-      Components.PanelActions {
-        id: addressControls
-        objectName: "networkActions"
-        width: parent.width
-        panel: root.panel
-        context: root.ifname
-        entries: Model.addressActions(root.iface)
-      }
-    }
-
-    PanelSeparator { }
-
-    Components.ProcessList {
-      id: processRoster
-      panel: root.panel
-      active: root.active
-      scopeText: "Per-process TCP attribution from visible sockets; UDP and other users may be missing. Full-roster search is unavailable."
-      width: parent.width
-      rows: root.rows
-      valueHeader: "TRAFFIC"
-      emptyText: root.active ? (root.interfaceValid ? "Sampling…" : "No interface to watch") : "Open this tab to sample processes"
-      errorText: root.errorText
-    }
-
-    Text {
-      textFormat: Text.PlainText
-      visible: root.attributionEmpty
-      text: "Traffic is moving, but no TCP socket of yours carried it this interval (UDP, or other users' sockets)."
-      color: root.pal.dim
-      font.family: Commons.Style.font.family
-      font.pixelSize: Commons.Style.font.caption
-      width: parent.width
-      wrapMode: Text.WordWrap
     }
   }
 }

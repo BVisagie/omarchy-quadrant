@@ -24,6 +24,9 @@ Item {
     return info ? info.sensors.find(function (s) { return s.id === id }) || null : null
   }
   readonly property color dim: Model.dimColor(String(Commons.Color.foreground), String(Commons.Color.background))
+  // Only inventory changes rebuild groups; live values update the cells in place.
+  readonly property string sensorInventoryKey: JSON.stringify(root.info ? root.info.sensors : [])
+  readonly property var sensorGroups: Model.hardwareSensorGroups(JSON.parse(sensorInventoryKey))
   implicitWidth: 200
   implicitHeight: column.implicitHeight
   onActiveChanged: if (active) refresh()
@@ -34,14 +37,14 @@ Item {
     color: root.dim
     font.family: Commons.Style.font.family
     font.pixelSize: Commons.Style.font.caption
-    width: root.width
+    width: parent.width
     wrapMode: Text.Wrap
   }
   component SensorRow: Column {
     id: sensorRow
     required property var sensor
     readonly property var reading: sensor ? root.sensorValues[sensor.id] || null : null
-    width: root.width
+    width: parent.width
     spacing: Commons.Style.space(3)
     Components.StatRow {
       objectName: "hardwareSensorValue_" + (sensorRow.sensor ? sensorRow.sensor.id : "")
@@ -60,10 +63,31 @@ Item {
     }
   }
 
+  component SensorSection: Column {
+    id: sensorSection
+    required property string kind
+    readonly property var groups: root.sensorGroups.filter(function (g) { return g.kind === sensorSection.kind })
+    width: parent.width
+    visible: groups.length > 0
+    spacing: Commons.Style.space(10)
+    Components.SectionHeader { width: parent.width; text: sensorSection.kind === "temperature" ? "TEMPERATURES" : "FANS" }
+    Repeater {
+      model: sensorSection.groups
+      delegate: Components.SensorGroup {
+        required property var modelData
+        width: sensorSection.width
+        group: modelData
+        readings: root.sensorValues
+        temperatureUnit: root.unit
+      }
+    }
+  }
+
   Column {
     id: column
     width: root.width
     spacing: Commons.Style.space(12)
+
     Components.Hero {
       width: parent.width
       title: "Hardware"
@@ -73,18 +97,22 @@ Item {
         return sensors + (sensors === 1 ? " sensor · " : " sensors · ") + batteries + (batteries === 1 ? " battery" : " batteries")
       }
     }
-    Note { text: "↑/↓ scroll · S for units and sensor pin" }
+
+    Note { text: "↑/↓ scroll · D details · S units and sensor pin" }
+
     Note {
       objectName: "hardwareError"
       text: root.model ? String(root.model.hardwareError || "") : ""
       visible: text !== ""
       color: Commons.Color.urgent
     }
+
     Note {
       visible: root.info && root.info.truncated
       text: "Hardware inventory reached its limit; some channels or devices are omitted."
       color: Commons.Color.urgent
     }
+
     Column {
       width: parent.width
       spacing: Commons.Style.space(6)
@@ -93,7 +121,7 @@ Item {
       Loader {
         width: parent.width
         active: root.pinnedSensor !== null
-        sourceComponent: SensorRow { sensor: root.pinnedSensor }
+        sourceComponent: SensorRow { width: parent.width; sensor: root.pinnedSensor }
       }
       Note {
         objectName: "missingSensorPin"
@@ -101,104 +129,113 @@ Item {
         text: "The pinned sensor is not available. Its saved identity is retained; R refreshes inventory."
       }
     }
-    Column {
+
+    Components.AdaptiveColumns {
+      objectName: "resourceColumns"
       width: parent.width
-      spacing: Commons.Style.space(6)
-      visible: graphicsActions.entries.length > 0
-      Components.SectionHeader { width: parent.width; text: "GRAPHICS INVENTORY" }
-      Note { text: "Details opens the current card. Select saves another card for its view; dedicated selection also changes the GPU bar." }
-      Components.PanelActions {
-        id: graphicsActions
-        objectName: "hardwareGpuActions"
-        width: parent.width
-        panel: root.panel
-        context: "gpu-inventory"
-        entries: Model.gpuOverviewEntries(root.model ? (root.model.detectedGpus || root.model.gpus) : [], root.model ? root.model.integratedGpus : [],
-          root.model ? root.model.gpu : null, root.model ? root.model.integratedGpu : null)
-        onRequested: function (entry) {
-          if (!root.model || !root.panel || entry.kind !== "gpu-details") return
-          var current = entry.integrated ? root.model.integratedGpu : root.model.gpu
-          if (!Model.gpuIdentityEqual(current, entry.gpu)) {
-            if (entry.integrated) root.model.selectIntegratedGpu(entry.target)
-            else root.model.selectGpu(entry.target)
-          }
-          root.panel.showTab(entry.integrated ? "cpu" : "gpu")
-        }
-      }
-    }
-    Repeater {
-      model: ["temperature", "fan"]
-      delegate: Column {
-        id: sensorSection
-        required property string modelData
-        readonly property var entries: root.info ? root.info.sensors.filter(function (s) { return s.kind === sensorSection.modelData }) : []
-        width: root.width
-        visible: entries.length > 0
-        spacing: Commons.Style.space(8)
-        Components.SectionHeader { width: parent.width; text: sensorSection.modelData === "temperature" ? "TEMPERATURES" : "FANS" }
-        Repeater {
-          model: sensorSection.entries
-          delegate: SensorRow {
-            required property var modelData
-            sensor: modelData
-          }
-        }
-      }
-    }
-    Column {
-      width: parent.width
-      spacing: Commons.Style.space(6)
-      visible: root.info && root.info.packages.length > 0
-      Components.SectionHeader { width: parent.width; text: "PACKAGE POWER" }
-      Note { text: "Each CPU package is reported once; core/uncore subdomains are excluded. Package totals can include integrated graphics." }
-      Repeater {
-        model: root.info ? root.info.packages : []
-        delegate: Column {
-          id: packageRow
-          required property var modelData
-          readonly property var reading: root.powers[modelData.id] || null
-          width: root.width
-          spacing: Commons.Style.space(3)
-          Components.StatRow {
-            wrapValue: true
+      primary: [
+        SensorSection { kind: "temperature" }
+      ]
+      secondary: [
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(8)
+          visible: root.info && root.info.batteries.length > 0
+          Components.SectionHeader { width: parent.width; text: "BATTERIES & PERIPHERALS" }
+          Components.Disclosure {
             width: parent.width
-            label: packageRow.modelData.label
-            value: Model.formatWatts(packageRow.reading ? packageRow.reading.watts : null)
+            title: "About battery readings"
+            Note { text: "Readings belong to each device; system and peripheral charge are not combined. Power profiles remain in the shell's Power panel." }
           }
-          Note { text: packageRow.modelData.source + (packageRow.reading && packageRow.reading.status ? " · " + packageRow.reading.status : "") }
-        }
-      }
-    }
-    Column {
-      width: parent.width
-      spacing: Commons.Style.space(8)
-      visible: root.info && root.info.batteries.length > 0
-      Components.SectionHeader { width: parent.width; text: "BATTERIES & PERIPHERALS" }
-      Note { text: "Readings belong to each device; system and peripheral charge are not combined. Power profiles remain in the shell's Power panel." }
-      Repeater {
-        model: root.info ? root.info.batteries : []
-        delegate: Column {
-          id: batteryRow
-          required property var modelData
-          readonly property var reading: root.batteryValues[modelData.id] || null
-          width: root.width
-          spacing: Commons.Style.space(4)
-          Note {
-            text: (batteryRow.modelData.model || batteryRow.modelData.name) + " · " + batteryRow.modelData.name
-              + (batteryRow.modelData.scope === "Device" ? " · peripheral" : " · system battery")
-            color: Commons.Color.foreground
-            font.bold: true
+          Repeater {
+            model: root.info ? root.info.batteries : []
+            delegate: Column {
+              id: batteryRow
+              required property var modelData
+              readonly property var reading: root.batteryValues[modelData.id] || null
+              width: parent.width
+              spacing: Commons.Style.space(4)
+              Note {
+                text: (batteryRow.modelData.model || batteryRow.modelData.name) + " · " + batteryRow.modelData.name
+                  + (batteryRow.modelData.scope === "Device" ? " · peripheral" : " · system battery")
+                color: Commons.Color.foreground
+                font.bold: true
+              }
+              Components.StatRow { wrapValue: true; width: parent.width; label: "Charge"; value: Model.formatPct(batteryRow.reading ? batteryRow.reading.chargePct : null) }
+              Components.StatRow { visible: batteryRow.modelData.scope !== "Device" || (batteryRow.reading && batteryRow.reading.healthPct !== null); wrapValue: true; width: parent.width; label: "Health / design"; value: Model.formatPct(batteryRow.reading ? batteryRow.reading.healthPct : null, 1) }
+              Components.StatRow { visible: batteryRow.modelData.scope !== "Device" || (batteryRow.reading && (batteryRow.reading.fullWh !== null || batteryRow.reading.fullAh !== null)); wrapValue: true; width: parent.width; label: "Full capacity"; value: Model.batteryCapacity(batteryRow.reading) }
+              Components.StatRow { visible: batteryRow.modelData.scope !== "Device" || (batteryRow.reading && batteryRow.reading.cycles !== null); wrapValue: true; width: parent.width; label: "Cycles"; value: batteryRow.reading && batteryRow.reading.cycles !== null ? String(batteryRow.reading.cycles) : "--" }
+              Components.Disclosure {
+                width: parent.width
+                title: "Battery details"
+                Components.StatRow { wrapValue: true; width: parent.width; label: "Design capacity"; value: Model.batteryCapacity(batteryRow.reading, true) }
+                Components.StatRow { wrapValue: true; width: parent.width; label: "Power"; value: Model.batteryPower(batteryRow.reading) }
+              }
+              Note { text: batteryRow.reading ? batteryRow.reading.status : "Waiting for a reading…" }
+            }
           }
-          Components.StatRow { wrapValue: true; width: parent.width; label: "Charge"; value: Model.formatPct(batteryRow.reading ? batteryRow.reading.chargePct : null) }
-          Components.StatRow { wrapValue: true; width: parent.width; label: "Health / design"; value: Model.formatPct(batteryRow.reading ? batteryRow.reading.healthPct : null, 1) }
-          Components.StatRow { wrapValue: true; width: parent.width; label: "Full capacity"; value: Model.batteryCapacity(batteryRow.reading) }
-          Components.StatRow { wrapValue: true; width: parent.width; label: "Design capacity"; value: Model.batteryCapacity(batteryRow.reading, true) }
-          Components.StatRow { wrapValue: true; width: parent.width; label: "Cycles"; value: batteryRow.reading && batteryRow.reading.cycles !== null ? String(batteryRow.reading.cycles) : "--" }
-          Components.StatRow { wrapValue: true; width: parent.width; label: "Power"; value: Model.batteryPower(batteryRow.reading) }
-          Note { text: batteryRow.reading ? batteryRow.reading.status : "Waiting for a reading…" }
+        },
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(6)
+          visible: root.info && root.info.packages.length > 0
+          Components.SectionHeader { width: parent.width; text: "PACKAGE POWER" }
+          Components.Disclosure {
+            width: parent.width
+            title: "Power accounting"
+            Note { text: "Each CPU package is reported once; core/uncore subdomains are excluded. Package totals can include integrated graphics." }
+          }
+          Repeater {
+            model: root.info ? root.info.packages : []
+            delegate: Column {
+              id: packageRow
+              required property var modelData
+              readonly property var reading: root.powers[modelData.id] || null
+              width: parent.width
+              spacing: Commons.Style.space(3)
+              Components.StatRow {
+                wrapValue: true
+                width: parent.width
+                label: packageRow.modelData.label
+                value: Model.formatWatts(packageRow.reading ? packageRow.reading.watts : null)
+              }
+              Note { text: packageRow.modelData.source + (packageRow.reading && packageRow.reading.status ? " · " + packageRow.reading.status : "") }
+            }
+          }
+        },
+        SensorSection { kind: "fan" },
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(6)
+          visible: graphicsActions.entries.length > 0
+          Components.SectionHeader { width: parent.width; text: "GRAPHICS INVENTORY" }
+          Components.Disclosure {
+            width: parent.width
+            title: "About GPU selection"
+            Note { text: "Details opens the current card. Select saves another card for its view; dedicated selection also changes the GPU bar." }
+          }
+          Components.PanelActions {
+            id: graphicsActions
+            objectName: "hardwareGpuActions"
+            width: parent.width
+            panel: root.panel
+            context: "gpu-inventory"
+            entries: Model.gpuOverviewEntries(root.model ? (root.model.detectedGpus || root.model.gpus) : [], root.model ? root.model.integratedGpus : [],
+              root.model ? root.model.gpu : null, root.model ? root.model.integratedGpu : null)
+            onRequested: function (entry) {
+              if (!root.model || !root.panel || entry.kind !== "gpu-details") return
+              var current = entry.integrated ? root.model.integratedGpu : root.model.gpu
+              if (!Model.gpuIdentityEqual(current, entry.gpu)) {
+                if (entry.integrated) root.model.selectIntegratedGpu(entry.target)
+                else root.model.selectGpu(entry.target)
+              }
+              root.panel.showTab(entry.integrated ? "cpu" : "gpu")
+            }
+          }
         }
-      }
+      ]
     }
+
     Note {
       visible: !root.info && !(root.model && root.model.hardwareError)
       text: "Waiting for hardware inventory…"

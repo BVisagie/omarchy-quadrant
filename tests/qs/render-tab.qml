@@ -51,6 +51,7 @@ ShellRoot {
   HardwareFixture {
     id: hardwareFixture
     cfg: renderStore.cfg
+    includeCores: true
   }
 
   // Optional telemetry for dedicated-GPU presentation on machines without a
