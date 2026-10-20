@@ -21,6 +21,8 @@ lists the processes behind the numbers.
   inline settings view that follows the active Omarchy theme.
 - Optional minute trends beside bar values, with saved segment ordering.
 - Copy local addresses and MAC values, or open mounted volumes from the panel.
+- Hardware diagnostics with stable sensor pins, Celsius/Fahrenheit, readable
+  package watts, individual batteries/peripherals, and a conditional GPU inventory.
 
 <p align="center">
   <img src="docs/screenshots/bar.png" alt="Quadrant CPU, GPU, memory, and network segments beside Omarchy’s clock and weather" width="486">
@@ -130,6 +132,7 @@ temporarily missing devices keep their saved positions. See
 | [Usage](docs/USAGE.md) | Bar and panel controls, graphs, process rows, IPC, screenshots |
 | [Settings](docs/SETTINGS.md) | Every setting, defaults, validation, and CLI examples |
 | [Measurements](docs/METRICS.md) | Data sources, calculations, hardware support, and attribution limits |
+| [Hardware diagnostics](docs/HARDWARE.md) | Sensor identities, temperature units, package watts, memory clocks, batteries, and GPU inventory |
 | [Security](SECURITY.md) | User permissions, process data, stored files, and helper behavior |
 | [Development](docs/DEVELOPMENT.md) | Architecture, checks, rendering, and the manual test matrix |
 | [Changelog](CHANGELOG.md) | Release history |

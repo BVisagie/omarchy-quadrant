@@ -46,12 +46,8 @@ Panel {
   }
 
   readonly property bool gpuAvailable: store ? store.discreteGpuAvailable === true : false
-  readonly property var tabs: {
-    var all = ["cpu", "gpu", "mem", "disk", "net"]
-    if (gpuAvailable) return all
-    return all.filter(function (t) { return t !== "gpu" })
-  }
-  readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "Memory", "disk": "Drives", "net": "Network" })
+  readonly property var tabs: Model.panelTabs(gpuAvailable, store ? store.hardwareAvailable === true : false)
+  readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "Memory", "disk": "Drives", "net": "Network", "hardware": "Hardware" })
   readonly property var tabOptions: {
     var out = []
     for (var i = 0; i < tabs.length; i++) out.push({ value: tabs[i], label: tabLabels[tabs[i]] || tabs[i] })
@@ -103,7 +99,7 @@ Panel {
   }
 
   function activeTabItem() {
-    var map = { "cpu": cpuTab, "mem": memTab, "gpu": gpuTab, "net": netTab, "disk": diskTab }
+    var map = { "cpu": cpuTab, "mem": memTab, "gpu": gpuTab, "net": netTab, "disk": diskTab, "hardware": hardwareTab }
     return map[currentTab] || null
   }
 
@@ -114,6 +110,7 @@ Panel {
 
   function moveCursor(delta) {
     if (currentProcessList) currentProcessList.moveCursor(delta)
+    else if (currentTab === "hardware") bodyFlick.contentY = Model.clamp(bodyFlick.contentY + delta * Commons.Style.space(48), 0, Math.max(0, bodyFlick.contentHeight - bodyFlick.height))
   }
   function clearCursor() {
     if (currentProcessList) currentProcessList.clearCursor()
@@ -125,7 +122,7 @@ Panel {
   }
   function focusProcessKeys() { if (keyCatcher) keyCatcher.forceActiveFocus() }
   function leaveActionFocus() {
-    for (var item of [netTab, diskTab]) if (item && item.actionList) item.actionList.leaveFocus()
+    for (var item of [netTab, diskTab, hardwareTab]) if (item && item.actionList) item.actionList.leaveFocus()
   }
   function scrollActionItem(item) {
     var y = item.mapToItem(bodyColumn, 0, 0).y
@@ -296,6 +293,7 @@ Panel {
               Tabs.GpuTab { id: gpuTab; width: parent.width; visible: root.currentTab === "gpu"; panel: root; model: root.store }
               Tabs.NetworkTab { id: netTab; width: parent.width; visible: root.currentTab === "net"; panel: root; model: root.store }
               Tabs.DiskTab { id: diskTab; width: parent.width; visible: root.currentTab === "disk"; panel: root; model: root.store }
+              Tabs.HardwareTab { id: hardwareTab; width: parent.width; visible: root.currentTab === "hardware"; panel: root; model: root.store }
             }
           }
         }

@@ -201,3 +201,17 @@ class DeviceInventory(unittest.TestCase):
         self.assertEqual(gpu["subsystemId"], "1002:0e3b")
         self.assertEqual(gpu["revision"], "c8")
         self.assertEqual(data["gpus"][1]["slot"], "")
+
+    def test_gpu_metadata_keeps_unavailable_cards_out_of_live_targets(self):
+        self.card("card0", "0000:03:00.0")
+        self.card("card1", "0000:04:00.0")
+        absent_metric = self.sys / "class/drm/card1/device/gpu_busy_percent"
+        absent_metric.unlink()
+        data = self.run_helper("gpu-stats", "list")
+        self.assertEqual([g["card"] for g in data["gpus"]], ["card0"])
+        self.assertEqual([g["telemetryAvailable"] for g in data["inventory"]], [True, False])
+        self.assertEqual(data["inventory"][1]["slot"], "0000:04:00.0")
+        # Presence/access is enough for discovery: reading this FIFO would hang.
+        os.mkfifo(absent_metric)
+        data = self.run_helper("gpu-stats", "list")
+        self.assertEqual(len(data["gpus"]), 2)

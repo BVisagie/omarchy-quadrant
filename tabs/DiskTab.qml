@@ -69,7 +69,7 @@ Item {
   }
   readonly property string diskDetail: {
     var d = selectedDisk
-    if (d && d.tempC !== null && d.tempC !== undefined) return Model.formatTemp(d.tempC)
+    if (d && d.tempC !== null && d.tempC !== undefined) return Model.formatTemp(d.tempC, model && model.cfg ? model.cfg.temperatureUnit : "celsius")
     return ""
   }
   readonly property var diskOptions: {

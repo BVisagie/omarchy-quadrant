@@ -100,8 +100,9 @@ Item {
   }
   readonly property string tempText: {
     if (!live || live.tempC === null || live.tempC === undefined) return "--"
-    var t = Model.formatTemp(live.tempC)
-    if (live.tempJunctionC !== null && live.tempJunctionC !== undefined) t += " · " + Model.formatTemp(live.tempJunctionC) + " junction"
+    var unit = model && model.cfg ? model.cfg.temperatureUnit : "celsius"
+    var t = Model.formatTemp(live.tempC, unit)
+    if (live.tempJunctionC !== null && live.tempJunctionC !== undefined) t += " · " + Model.formatTemp(live.tempJunctionC, unit) + " junction"
     return t
   }
   readonly property string clockText: {
@@ -221,13 +222,20 @@ Item {
       Components.StatRow {
         width: parent.width
         visible: root.vendor !== "intel"
-        label: "Power"
+        label: "GPU power"
         value: root.live && root.live.powerW !== null && root.live.powerW !== undefined ? Model.formatWatts(root.live.powerW) : "--"
       }
       Components.StatRow {
         width: parent.width
         label: root.vendor === "intel" ? "Frequency" : "Core clock"
         value: root.clockText
+      }
+      Components.StatRow {
+        objectName: "gpuMemoryClock"
+        width: parent.width
+        visible: root.live && root.live.memoryClockSource !== undefined && root.live.memoryClockSource !== ""
+        label: "Memory clock"
+        value: Model.formatGpuClock(root.live ? root.live.memoryClockMhz : null)
       }
       Components.StatRow {
         width: parent.width

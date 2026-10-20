@@ -44,6 +44,8 @@ time any setting is saved.
 | `networkGraphLayout` | `"overlay"` | `overlay` or `mirrored`: download above zero, upload below, on one shared magnitude scale |
 | `diskGraphLayout` | `"overlay"` | `overlay` or `mirrored`: read above zero, write below, on one shared magnitude scale |
 | `rateUnit` | `"bytes"` | Network panel and tooltip rates in `bytes` (KiB/s, binary) or `bits` (Mb/s, decimal); compact bar rates stay in bytes |
+| `temperatureUnit` | `"celsius"` | `celsius` or `fahrenheit` throughout the panel; samples and critical thresholds remain Celsius |
+| `sensorId` | `""` | Stable `hwmon:` identity highlighted at the top of Hardware; choose from discovered sensors in Appearance |
 
 Every value is validated on read, whatever wrote it: numbers are clamped
 to the ranges above, enumerations fall back to their default, device names
@@ -60,6 +62,9 @@ Persistent GPU IDs must have the PCI form `DDDD:BB:DD.F`; disk IDs contain
 at most 255 safe basename characters and cannot contain paths, `..`, or a
 `-partN` suffix. Invalid IDs become empty. IDs are looked up in inventory;
 only resolved kernel names and device paths reach the samplers.
+Sensor IDs are `hwmon:` followed by 64 lowercase hexadecimal characters. A
+sensor pin survives hwmon renumbering and temporary absence; it never becomes
+a filesystem argument. See [sensor identities and units](HARDWARE.md#sensors-and-units).
 Unknown keys already present in the entry are preserved; settings at their
 defaults are omitted when Quadrant saves. The helper scripts check their arguments again before touching anything.
 
@@ -219,7 +224,7 @@ methods.
 
 ## Settings view
 
-The settings view groups ordered bar segments, appearance, panel graphs, sampling, and devices,
+The settings view groups ordered bar segments, appearance (including temperature units and sensor pin), panel graphs, sampling, and devices,
 with keyboard help and a **Reset to defaults** action at the bottom.
 
 <details>

@@ -14,6 +14,7 @@ Item {
   property color labelColor: Model.dimColor(String(foreground), String(Commons.Color.background))
   property color valueColor: foreground
   property bool valueBold: false
+  property bool wrapValue: false
   property real labelMaximumRatio: 0.42
   property real textSpacing: Commons.Style.space(8)
 
@@ -47,6 +48,7 @@ Item {
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
     horizontalAlignment: Text.AlignRight
-    elide: Text.ElideLeft
+    wrapMode: root.wrapValue ? Text.Wrap : Text.NoWrap
+    elide: root.wrapValue ? Text.ElideNone : Text.ElideLeft
   }
 }

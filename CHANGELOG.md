@@ -4,6 +4,13 @@
 
 ### Added
 
+- Conditional Hardware diagnostics: device-owned temperature/fan inventory,
+  stable sensor pins, Celsius/Fahrenheit across panels, readable CPU package
+  watts, and individual system/peripheral battery health, capacity, cycles,
+  and power. A measured stopped fan remains distinct from unavailable input.
+- Separate AMD/NVIDIA memory clocks and a metadata-only GPU overview with
+  Details actions, including detected cards without telemetry. Live hardware
+  reads are shared across monitors and stop with the last relevant viewer.
 - Copy buttons for collected local IPv4/IPv6 and MAC values, plus Open actions
   for mounted volumes. A/arrow/Enter navigation keeps shell Tab and staged Esc;
   success, missing tools, inaccessible/unmounted paths, and timeouts have visible
@@ -42,6 +49,13 @@
 
 ### Fixed
 
+- Hardware accepts converted thermistor temperatures and orders numbered
+  channels naturally, with chip order stable across hwmon renumbering.
+- CPU-only package polling skips unreadable counters, whose access errors
+  remain visible in Hardware. R refreshes access; incomplete package totals
+  stay hidden. GPU Details preserves automatic selection, with an explicit
+  Select action for changing the shared card. Battery labels default to
+  system scope without `scope=Device`, and counts use singular wording.
 - Mount paths retain up to 4096 characters, including spaces, backslashes and
   trailing whitespace, replacing the previous 128-character display limit.
 - Horizontal bar values stay beside their own labels and trends within fixed

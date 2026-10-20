@@ -4,12 +4,16 @@
 #   gpu-stats list
 #       Enumerate /sys/class/drm/cardN (not connectors) and report cards whose
 #       vendor is known (AMD 0x1002, Intel 0x8086, NVIDIA 0x10de) AND that
-#       have at least one readable metric. Output:
+#       have at least one readable metric in gpus (existing live targets).
+#       inventory also retains known-vendor cards without telemetry, with
+#       telemetryAvailable:false. Enumeration does not read metric values.
+#       Output:
 #       {"ok":true,"gpus":[{"card":"card0","vendor":"amd",
 #                           "path":"/sys/class/drm/card0/device","boot":true,
 #                           "slot":"0000:03:00.0","pciClass":"0x030000",
 #                           "pciId":"1002:744c","subsystemId":"1002:0e3b",
-#                           "revision":"c8","driver":"amdgpu"}]}
+#                           "revision":"c8","driver":"amdgpu"}],
+#        "inventory":[...]}
 #
 #   gpu-stats sample amd|intel <device_path>
 #       Emit readable sysfs fields as raw key=value lines inside the
@@ -89,7 +93,7 @@ vendor_name() {
 }
 
 cmd_list() {
-  local dev card vend vid boot fields=() slot driver pciClass pciId did vid_hex did_hex
+  local dev card vend vid boot fields=() slot driver pciClass pciId did vid_hex did_hex sampleable
   local sys_path=${QUADRANT_SYS_PATH:-/sys} count=0 subsystemId revision sv sd
   for dev in "$sys_path"/class/drm/card[0-9]*/device; do
     [[ -d $dev ]] || continue
@@ -100,16 +104,18 @@ cmd_list() {
     vid=$(trim "$vid")
     vend=$(vendor_name "$vid")
     [[ -n $vend ]] || continue
-    # A card qualifies only when at least one metric is readable.
+    # Keep metadata for unavailable cards without making them automatic live
+    # collection targets. These checks inspect access, not metric values.
+    sampleable=1
     case $vend in
       amd)
-        [[ -r $dev/gpu_busy_percent || -r $dev/mem_info_vram_used ]] || continue
+        [[ -r $dev/gpu_busy_percent || -r $dev/mem_info_vram_used ]] || sampleable=0
         ;;
       intel)
-        intel_freq_cur_path "$dev" >/dev/null || continue
+        intel_freq_cur_path "$dev" >/dev/null || sampleable=0
         ;;
       nvidia)
-        resolve_bin nvidia-smi >/dev/null || continue
+        resolve_bin nvidia-smi >/dev/null || sampleable=0
         ;;
     esac
     boot=0
@@ -159,18 +165,18 @@ cmd_list() {
     if [[ -r $dev/revision ]]; then IFS= read -r revision < "$dev/revision" || revision=""; fi
     revision=${revision#0x}; revision=${revision,,}
     [[ $revision =~ ^[0-9a-f]{2}$ ]] || revision=""
-    fields+=("$card" "$vend" "/sys/class/drm/$card/device" "$boot" "$slot" "$pciClass" "$pciId" "$driver" "$subsystemId" "$revision")
+    fields+=("$card" "$vend" "/sys/class/drm/$card/device" "$boot" "$slot" "$pciClass" "$pciId" "$driver" "$subsystemId" "$revision" "$sampleable")
     count=$(( count + 1 ))
     (( count >= 16 )) && break
   done
   if (( ${#fields[@]} == 0 )); then
-    "$JQ" -cn '{ok:true, gpus:[]}'
+    "$JQ" -cn '{ok:true, gpus:[], inventory:[]}'
     return 0
   fi
   # Kernel-controlled card names and paths; grouped through $ARGS.positional
   # so the JSON is built by jq, never by string concatenation.
   "$JQ" -cn --args '
-    {ok:true, gpus: [range(0; ($ARGS.positional | length); 10) as $i |
+    [range(0; ($ARGS.positional | length); 11) as $i |
       { card: $ARGS.positional[$i],
         vendor: $ARGS.positional[$i + 1],
         path: $ARGS.positional[$i + 2],
@@ -180,7 +186,9 @@ cmd_list() {
         pciId: $ARGS.positional[$i + 6],
         driver: $ARGS.positional[$i + 7],
         subsystemId: $ARGS.positional[$i + 8],
-        revision: $ARGS.positional[$i + 9] }]}' "${fields[@]}"
+        revision: $ARGS.positional[$i + 9],
+        telemetryAvailable: ($ARGS.positional[$i + 10] == "1") }] as $inventory |
+    {ok:true, inventory:$inventory, gpus:[$inventory[] | select(.telemetryAvailable) | del(.telemetryAvailable)]}' "${fields[@]}"
 }
 
 emit_file() {
@@ -214,6 +222,21 @@ emit_sample() {
       drm: (if ($drm | type) == "object" and $drm.ok then $drm else null end)}'
 }
 
+emit_dpm_clock() {
+  local key=$1 path=$2 line f
+  [[ -r $path ]] || return 0
+  while IFS= read -r line; do
+    case $line in
+      *'*')
+        f=${line%%[Mm][Hh]z*}
+        f=${f##*:}
+        f=${f//[[:space:]]/}
+        [[ $f =~ ^[0-9]+$ ]] && PAYLOAD+="$key=$f"$'\n'
+        ;;
+    esac
+  done < "$path" || true
+}
+
 cmd_sample_amd() {
   local dev=$1
   PAYLOAD=""
@@ -237,18 +260,10 @@ cmd_sample_amd() {
     break
   done
   # Active DPM sclk: the line ending in '*'.
-  if [[ -r $dev/pp_dpm_sclk ]]; then
-    local line f
-    while IFS= read -r line; do
-      case $line in
-        *'*')
-          f=${line%%[Mm][Hh]z*}
-          f=${f##*:}
-          f=${f//[[:space:]]/}
-          [[ $f =~ ^[0-9]+$ ]] && PAYLOAD+="sclk_mhz=$f"$'\n'
-          ;;
-      esac
-      done < "$dev/pp_dpm_sclk" || true
+  emit_dpm_clock sclk_mhz "$dev/pp_dpm_sclk"
+  if [[ -e $dev/pp_dpm_mclk ]]; then
+    PAYLOAD+="mclk_source=pp_dpm_mclk"$'\n'
+    emit_dpm_clock mclk_mhz "$dev/pp_dpm_mclk"
   fi
   local eng_dir name key eng_count=0
   for eng_dir in "$dev"/engine/*; do
@@ -306,7 +321,7 @@ cmd_sample_nvidia() {
   [[ -n $index ]] && select=(-i "$index")
   # Row cap via awk (drains stdin, no SIGPIPE); timeout bounds a hung driver.
   if ! payload=$("$TIMEOUT_BIN" 2 "$SMI" "${select[@]}" \
-      --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,clocks.gr \
+      --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,clocks.gr,clocks.mem \
       --format=csv,noheader,nounits 2>/dev/null | "$AWK_BIN" 'NR <= 8'); then
     fail "nvidia-smi failed or timed out"
   fi
@@ -327,7 +342,7 @@ cmd_sample_nvidia() {
     done <<< "$apps_raw"
   fi
   "$JQ" -cn --arg ts "$EPOCHREALTIME" --arg payload "$payload" --arg apps "$apps" \
-    '{ok:true, ts:($ts|tonumber), vendor:"nvidia", payload:$payload, apps:$apps}'
+    '{ok:true, ts:($ts|tonumber), vendor:"nvidia", memoryClock:true, payload:$payload, apps:$apps}'
 }
 
 case ${1:-} in
@@ -339,7 +354,9 @@ case ${1:-} in
     target=${3:-}
     case $vendor in
       amd|intel)
-        [[ -n $target && $target == /sys/class/drm/* && -d $target ]] \
+        target_root=${QUADRANT_SYS_PATH:-/sys}
+        target_root=${target_root%/}
+        [[ -n $target && $target == "$target_root"/class/drm/* && -d $target ]] \
           || fail "bad device path for sample"
         ;;
       nvidia)
