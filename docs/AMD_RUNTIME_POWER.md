@@ -76,6 +76,9 @@ Its measurement count includes only real readings; repeated transitions do not
 consume additional entries or shorten the hour window. Gaps survive v2 history
 reload. Late acquisitions preceding a suppression watermark are discarded using
 boot time, while a genuine wall-clock rollback still resets chronological history.
+An older queued suppression observation is clamped to each series' latest
+timestamp when boot time identifies it as delayed, preserving newer helper
+history without hiding a genuine clock rollback during suppression.
 Old history expires during suppression. DRM/rate baselines reset across demand
 and device generations and observed sleep/transition intervals.
 

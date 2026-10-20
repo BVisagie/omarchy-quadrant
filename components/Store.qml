@@ -361,11 +361,21 @@ Item {
   function markGpuGap(ts, observedMs) {
     if (!gpu || gpu.vendor !== "amd") return
     var mono = observedMs > 0 ? observedMs : currentGpuTimeMs()
+    var minuteAt = ts, hourAt = ts
+    // A newer helper may be handled before this queued stream observation.
+    // Clamp that gap without hiding a real wall-clock rollback observed at
+    // advancing boot time. Equal boot times can share /proc/uptime's tick.
+    if (mono > 0 && mono <= lastGpuHistoryMs) {
+      if (gpuHistory.length) minuteAt = Math.max(ts, gpuHistory[gpuHistory.length - 1].t)
+      if (gpuLong.length) hourAt = Math.max(ts, gpuLong[gpuLong.length - 1].t)
+    }
+    var gapAt = Math.max(minuteAt, hourAt)
+    if (mono > gpuGapMs) gpuGapAt = gapAt
+    else if (mono === gpuGapMs) gpuGapAt = Math.max(gpuGapAt, gapAt)
     gpuGapMs = Math.max(gpuGapMs, mono)
-    gpuGapAt = ts
     lastGpuHistoryMs = Math.max(lastGpuHistoryMs, mono)
-    gpuHistory = Model.pushHistoryGap(gpuHistory, ts, 60, historyLimit * 3)
-    gpuLong = Model.pushBucketGap(gpuLong, ts, longBucketS, longWindowS)
+    gpuHistory = Model.pushHistoryGap(gpuHistory, minuteAt, 60, historyLimit * 3)
+    gpuLong = Model.pushBucketGap(gpuLong, hourAt, longBucketS, longWindowS)
   }
 
   function acceptAmdStream(reading, observedAt, observedMs) {

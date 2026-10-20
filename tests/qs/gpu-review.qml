@@ -35,6 +35,40 @@ ShellRoot {
   function later(next, delay) { waitUntil = ticks + delay; phase = next }
   function done() { console.log("QGPUREVIEW ok " + mode); Qt.quit() }
 
+  function checkDelayedGapOrdering() {
+    var wall = Math.floor(Date.now() / 10000) * 10, mono = store.currentGpuTimeMs()
+    store.gpuHistory = []; store.gpuLong = []; store.gpuSourceSequences = ({})
+    store.lastGpuHistoryMs = 0; store.gpuGapMs = 0; store.gpuGapAt = 0
+    store.recordAmdHistory({ busy: 10, acquiredAt: wall - 20, acquiredMs: mono - 20000 }, "seed")
+    store.recordAmdHistory({ busy: 20, acquiredAt: wall + 1, acquiredMs: mono - 1000 }, "helper:newer")
+    // A sleeping stream packet queued before the helper arrives afterwards.
+    // Cross a bucket boundary so both the minute and hour reset paths apply.
+    store.acceptAmdStream({ state: "sleeping", pm: "suspended", generation: store.gpuControlGeneration,
+      path: store.gpu.path }, wall - 1, mono - 3000)
+    check(store.gpuHistory.length > 0 && store.gpuLong.length > 0, "delayed gap erased GPU history")
+    check(store.gpuHistory[0].b === 10 && store.gpuLong[0].b === 10, "delayed gap discarded older measurements")
+    check(store.gpuHistory.filter(function(p) { return p.gap !== 1 }).length === 2,
+      "delayed gap changed minute measurement count")
+    check(store.gpuHistory[store.gpuHistory.length - 1].gap === 1
+      && store.gpuLong[store.gpuLong.length - 1].gap === 1, "delayed gap was not represented")
+    store.markGpuGap(wall - 1, mono - 1000)
+    check(store.gpuHistory.length > 0 && store.gpuLong.length > 0, "equal boot-time tick erased history")
+    store.recordAmdHistory({ busy: 30, acquiredAt: wall + 2, acquiredMs: mono }, "resumed")
+    check(store.gpuHistory[0].b === 10 && store.gpuLong[0].b === 10, "resume after delayed gap erased history")
+    // Advancing boot time makes this a genuine wall-clock rollback, not a
+    // queued observation. Suppression must reset both chronological windows.
+    store.markGpuGap(wall - 100, mono + 100)
+    check(store.gpuHistory.length === 0 && store.gpuLong.length === 0, "clock rollback during suppression was clamped")
+    // Empty histories still retain the wall-time tie-breaker for the newest
+    // monotonic gap; an older packet cannot weaken that watermark.
+    store.markGpuGap(wall - 110, mono)
+    check(store.gpuGapMs === mono + 100 && store.gpuGapAt === wall - 100, "older gap weakened the empty-history watermark")
+    store.markGpuGap(wall - 111, mono + 100)
+    check(store.gpuGapAt === wall - 100, "equal-tick older gap weakened the watermark")
+    store.markGpuGap(wall - 99, mono + 100)
+    check(store.gpuGapAt === wall - 99, "equal-tick newer gap did not advance the watermark")
+  }
+
   function checkHistoryOrdering() {
     var now = Date.now() / 1000, mono = store.currentGpuTimeMs()
     store.gpuHistory = []; store.gpuLong = []; store.gpuSourceSequences = ({})
@@ -114,6 +148,7 @@ ShellRoot {
           harness.check(store.gpuControlGeneration > generation && store.discreteGpuLive === null,
             "generation change retained current helper data")
           store.setViewer("bar", { gpuSegment: true })
+          harness.checkDelayedGapOrdering()
           harness.checkHistoryOrdering()
           status.setText("suspended\n")
           harness.later(3, 10)
