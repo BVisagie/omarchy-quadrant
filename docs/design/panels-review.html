@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quadrant — consistent resource panels</title>
+<style>
+
+  * { box-sizing:border-box }
+  body { margin:0; background:transparent; color:var(--foreground,#c4cce1); font:14px/1.5 var(--font-sans,system-ui,sans-serif) }
+  button,select { font:inherit }
+  button,summary { cursor:pointer }
+  button:focus-visible,summary:focus-visible,select:focus-visible { outline:2px solid #8baaff; outline-offset:3px }
+  button { color:inherit }
+  [hidden] { display:none !important }
+  .intro { margin:0 0 14px; color:var(--muted-foreground,#a3acc0); max-width:76ch }
+  .intro strong { color:var(--foreground,#d1d8e9) }
+  .toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:14px }
+  .segmented { display:flex; gap:3px; border:1px solid var(--border,#383d50); border-radius:6px; padding:3px }
+  .segmented button { background:transparent; border:0; border-radius:3px; padding:6px 12px; font-size:12px }
+  .segmented button[aria-pressed=true] { background:var(--secondary,#303448); color:var(--foreground,#e0e5f0) }
+  .tools { display:flex; flex-wrap:wrap; gap:10px; align-items:center; color:var(--muted-foreground,#a3acc0); font-size:12px }
+  select { color:var(--foreground,#d1d8e9); background:var(--card,#232634); border:1px solid var(--border,#383d50); padding:5px 7px; border-radius:4px }
+  .widget {
+    --bg:#1a1b26; --surface:#1e202c; --fg:#b9c2df; --dim:#939db9;
+    --line:#343748; --accent:#8aaaff; --amber:#e0b879;
+    width:100%; max-width:752px; margin:auto; padding:16px;
+    background:var(--bg); color:var(--fg); border:1px solid #4b526b; border-radius:var(--radius,8px);
+    font:12px/1.5 "JetBrainsMono Nerd Font","JetBrains Mono","DejaVu Sans Mono",monospace;
+    font-variant-numeric:tabular-nums; container-type:inline-size;
+  }
+  .widget.narrow { max-width:360px }
+  .widget header { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:18px }
+  .widget h1 { font-size:17px; font-weight:600; margin:0 0 3px }
+  .widget header p { margin:0; color:var(--dim); font-size:11px }
+  .widget button { border:0; background:transparent; padding:5px 7px; border-radius:3px; font-size:10px; color:var(--dim) }
+  .widget button:hover { background:#b9c2df12; color:var(--fg) }
+  .groups { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; align-items:start }
+  .stack { display:grid; gap:14px; min-width:0 }
+  .group { min-width:0; padding:14px; background:var(--surface); border:1px solid var(--line); border-radius:4px }
+  .group-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px }
+  .group h2 { margin:0; font-weight:600; font-size:12px; color:#c6cfea }
+  .source { color:var(--dim); font-size:10px; font-weight:400; overflow-wrap:anywhere }
+  .reading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; min-width:0 }
+  .reading .label { color:var(--dim) }
+  .value { white-space:nowrap; font-weight:500; color:#c6cfea }
+  .package { margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--line); }
+  .package .value { font-size:24px; line-height:1.3 }
+  .package .label { font-size:11px }
+  .group p { margin:0 }
+  .cores summary { font-size:10px; display:flex; align-items:center; justify-content:space-between; gap:8px; list-style:none; color:var(--dim); }
+  summary::-webkit-details-marker { display:none }
+  .cores summary .chevron::before { content:"›"; margin-right:6px; color:var(--accent); display:inline-block }
+  .cores[open] summary .chevron::before { transform:rotate(90deg) }
+  .core-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin-top:8px; gap:4px }
+  .core { display:flex; flex-direction:column; gap:2px; padding:5px 7px; background:#b9c2df05; border-bottom:1px solid #363a4c }
+  .core small { font-size:9px; color:var(--dim); white-space:nowrap }
+  .core span { font-size:11px }
+  .details { margin-top:12px; padding-top:9px; border-top:1px solid var(--line); }
+  .details summary { display:flex; gap:6px; align-items:center; width:fit-content; color:var(--dim); font-size:10px; list-style:none }
+  .details summary::before { content:"›"; display:inline-block; color:var(--accent) }
+  .details[open] summary::before { transform:rotate(90deg) }
+  .details .info { margin-top:10px; color:var(--dim); font-size:10px; overflow-wrap:anywhere }
+  .info p+p { margin-top:7px }
+  .info strong { color:var(--fg); font-weight:500 }
+  .device-row+.device-row { border-top:1px solid var(--line); padding-top:11px; margin-top:11px }
+  .device-row .source { margin-top:2px }
+  .sensor-table { width:100%; border-collapse:collapse; margin-top:6px; font-size:11px }
+  .sensor-table th { text-align:left; color:var(--dim); font-weight:400; padding:2px 0 2px 10px }
+  .sensor-table td { text-align:right; padding:2px 0 }
+  .status { display:inline-flex; align-items:center; gap:5px; font-size:10px; color:var(--dim) }
+  .status.warn { color:var(--amber) }
+  .missing { color:var(--dim) }
+  .state-line { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; justify-content:space-between; margin-top:4px }
+  .battery-heading { display:flex; justify-content:space-between; gap:10px; align-items:baseline }
+  .battery-heading .name { font-size:11px; color:var(--fg) }
+  .charge { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:3px }
+  .charge strong { font-size:28px; font-weight:500; line-height:1.4; color:#cad4f1 }
+  .charge strong span { font-size:17px }
+  .charge-track { height:5px; background:#343748; margin:8px 0 14px; border-radius:2px; overflow:hidden }
+  .charge-track span { width:78%; height:100%; display:block; background:var(--accent) }
+  .battery-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding-bottom:13px; border-bottom:1px solid var(--line) }
+  .battery-metrics dt { font-size:9px; color:var(--dim); margin-bottom:3px }
+  .battery-metrics dd { margin:0; font-size:12px; white-space:nowrap }
+  .battery-metrics dl { margin:0 }
+  .mouse { margin-top:12px }
+  .mouse .mouse-name { max-width:100%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; display:block; font-size:11px }
+  .mouse .state-line { margin-top:6px }
+  .mouse .reading { margin-top:5px }
+  .mouse .reading .label { font-size:10px }
+  .power-row+.power-row { border-top:1px solid var(--line); padding-top:12px; margin-top:12px }
+  .power-row .reading { font-size:11px }
+  .power-row .state-line { align-items:flex-start }
+  .footer { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; border-top:1px solid var(--line); margin-top:16px; padding-top:10px; color:var(--dim); font-size:9px }
+  .footer kbd { color:var(--fg); font:inherit }
+  .capture { max-width:752px; margin:0 auto; background:#1a1b26; padding:16px; border:1px solid #4b526b; border-radius:var(--radius,8px) }
+  .capture img { width:100%; display:block }
+  .caption { margin:10px auto 18px; font-size:11px; color:var(--muted-foreground,#a3acc0); max-width:752px }
+  .principles { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; border-top:1px solid var(--border,#383d50); padding-top:16px }
+  .principles h3 { margin:0 0 5px; font-size:12px; font-weight:600 }
+  .principles p { margin:0; font-size:12px; color:var(--muted-foreground,#a3acc0) }
+  .plan { margin-top:18px; color:var(--muted-foreground,#a3acc0); font-size:12px }
+  .plan summary { color:var(--foreground,#d1d8e9); font-weight:500; }
+  .plan ol { padding-left:21px }
+  .plan li+li { margin-top:7px }
+  @container (max-width:620px) { .groups { grid-template-columns:1fr } }
+  @container (max-width:360px) {
+    .widget header { align-items:flex-start }
+    .group { padding:12px }
+    .core-grid { grid-template-columns:repeat(4,minmax(0,1fr)) }
+    .core { padding:5px }
+    .battery-metrics { gap:6px }
+    .battery-metrics dd { font-size:11px }
+  }
+  @media(max-width:560px) { .principles { grid-template-columns:1fr; gap:12px } }
+
+  .widget { --strong:#c6cfea; --purple:#bb9af7; --mint:#73daca; --track:#343748 }
+  .widget.light { --bg:#eff1f7; --surface:#f8f9fc; --fg:#3d4662; --strong:#202c4b; --dim:#606a84; --line:#d3d8e5; --accent:#365eb1; --amber:#8e5b12; --purple:#8051a8; --mint:#23776f; --track:#d3d8e5; border-color:#a1abc1 }
+  .widget h2,.widget .value,.widget .charge strong { color:var(--strong) }
+  .widget .charge-track { background:var(--track) }
+  .widget .core { border-color:var(--line) }
+  .intro { max-width:90ch }
+  .review-nav { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:4px; margin:0 0 12px; }
+  .review-nav button { border:1px solid var(--border,#3b4050); background:transparent; border-radius:4px; padding:9px 4px; font-size:12px }
+  .review-nav button[aria-selected=true] { color:var(--foreground,#e3e8f5); background:var(--secondary,#303448); border-color:#8096c0 }
+  .resource-header { align-items:flex-start !important }
+  .identity { min-width:0 }
+  .identity h1 { font-size:16px; overflow-wrap:anywhere; margin-top:2px }
+  .eyebrow { color:var(--accent); font-size:10px; letter-spacing:.06em; text-transform:uppercase; margin-bottom:3px }
+  .header-controls { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; gap:8px; padding-top:3px }
+  .bar-control { display:flex; gap:7px; align-items:center; font-size:10px; color:var(--dim) }
+  .bar-control input { accent-color:var(--accent); margin:0 }
+  .device-picker { display:flex; gap:8px; align-items:center; margin-bottom:14px; color:var(--dim); font-size:10px; flex-wrap:wrap }
+  .widget select,.widget input[type=search] { background:var(--bg); color:var(--fg); border:1px solid var(--line); font:inherit; padding:5px 7px; border-radius:3px; min-width:0; max-width:100% }
+  .device-picker select { flex:1; font-size:11px }
+  .metric-pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:3px 0 12px }
+  .metric-pair>div { min-width:0 }
+  .metric-label { color:var(--dim); font-size:10px }
+  .big { color:var(--strong); font-weight:500; font-size:25px; line-height:1.4; white-space:nowrap }
+  .big small { font-size:12px; color:var(--dim) }
+  .metric-caption { color:var(--dim); font-size:10px }
+  .mini-metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; border-top:1px solid var(--line); padding-top:10px; margin-top:10px }
+  .mini-metrics strong { display:block; font-size:13px; font-weight:500; margin-top:2px; color:var(--strong) }
+  .stats { display:grid; gap:7px }
+  .stats .reading { font-size:11px }
+  .stats .value { white-space:normal; overflow-wrap:anywhere; text-align:right }
+  .group-title .title-side { color:var(--dim); font-size:10px; text-align:right }
+  .graph-top { display:flex; justify-content:space-between; align-items:center; gap:6px; margin:12px 0 7px }
+  .ranges { display:flex; border:1px solid var(--line); border-radius:3px; padding:1px; gap:1px }
+  .widget .ranges button { font-size:9px; padding:3px 6px; white-space:nowrap }
+  .widget .ranges button[aria-pressed=true] { background:color-mix(in srgb,var(--accent) 17%,transparent); color:var(--strong) }
+  .history { min-width:0 }
+  .history svg { display:block; width:100%; height:112px; overflow:visible }
+  .graph-axis { display:flex; justify-content:space-between; color:var(--dim); font-size:9px; margin-top:5px }
+  .graph-summary { font-size:10px; color:var(--dim); margin-top:7px !important }
+  .graph-legend { display:flex; flex-wrap:wrap; gap:5px 12px; font-size:10px; margin-top:10px }
+  .dot { display:inline-block; width:6px; height:6px; border-radius:1px; background:var(--accent); margin-right:5px }
+  .dot.purple { background:var(--purple) }
+  .dot.mint { background:var(--mint) }
+  .dot.free { background:var(--track) }
+  .class-row { display:flex; align-items:center; gap:8px; margin-top:8px }
+  .class-row>span:first-child { width:20px; font-size:10px; color:var(--dim) }
+  .blocks { display:flex; flex-wrap:wrap; gap:4px }
+  .blocks span { width:14px; height:14px; border:1px solid var(--line); background:color-mix(in srgb,var(--accent) 22%,var(--surface)); border-radius:2px }
+  .process-head { display:flex; align-items:center; justify-content:space-between; gap:6px; border-bottom:1px solid var(--line); padding-bottom:7px; margin-top:10px; font-size:10px; color:var(--dim) }
+  .widget .process-sort { padding:0; color:var(--fg); text-align:right }
+  .process-row { display:grid; grid-template-columns:20px minmax(0,1fr) auto; align-items:start; gap:8px; padding:9px 0 }
+  .process-row+.process-row { border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent) }
+  .app-icon { width:20px; height:20px; display:grid; place-items:center; font-size:9px; border:1px solid var(--line); border-radius:4px; color:var(--dim) }
+  .process-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px }
+  .process-meta { color:var(--dim); font-size:9px; margin-top:2px; overflow-wrap:anywhere }
+  .process-value { text-align:right; font-size:11px; max-width:125px }
+  .process-value .process-meta { font-size:9px }
+  .process-value .rate-line { display:block; font-size:10px; white-space:nowrap }
+  .widget .show-processes { color:var(--accent); padding:0; white-space:nowrap }
+  .process-search { display:flex; margin-top:9px }
+  .process-search input { width:100%; font-size:11px !important }
+  .empty { color:var(--dim); font-size:11px; padding:14px 0 }
+  .notice { font-size:10px; color:var(--dim); margin-top:9px !important; overflow-wrap:anywhere }
+  .notice.warn { color:var(--amber) }
+  .progress { height:6px; margin:8px 0 9px; background:var(--track); display:flex; overflow:hidden; border-radius:2px }
+  .progress span { background:var(--accent); display:block; height:100% }
+  .composition span:nth-child(2) { background:var(--purple) }
+  .composition span:nth-child(3) { background:var(--mint) }
+  .composition span:nth-child(4) { background:var(--track) }
+  .mount+.mount { border-top:1px solid var(--line); padding-top:12px; margin-top:12px }
+  .mount-head,.address-row { display:flex; justify-content:space-between; gap:10px; align-items:center }
+  .mount-name { color:var(--strong); font-size:12px; overflow-wrap:anywhere }
+  .widget .action { border:1px solid var(--line); color:var(--fg); padding:4px 9px; font-size:10px }
+  .widget .action:disabled { opacity:.5; cursor:default }
+  .address-row { align-items:flex-start; margin-top:10px; font-size:10px }
+  .address-row .address { min-width:0; overflow-wrap:anywhere }
+  .address-row .action { flex-shrink:0 }
+  .address-kind { display:block; font-size:9px; color:var(--dim); margin-bottom:3px }
+  .action-feedback { color:var(--accent); font-size:10px; margin-top:9px !important; overflow-wrap:anywhere }
+  .overview-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px }
+  .overview-strip .value { display:block; font-size:15px; margin-top:3px }
+  .warning-line { color:var(--amber); font-size:11px; margin:0 0 12px !important; padding:9px 10px; border:1px solid var(--line); border-left:2px solid var(--amber); border-radius:3px }
+  .matrix { width:100%; border-collapse:collapse; margin-top:14px; font-size:12px; color:var(--muted-foreground,#a3acc0) }
+  .matrix th,.matrix td { border-bottom:1px solid var(--border,#383d50); padding:8px 7px; text-align:left; vertical-align:top }
+  .matrix th { color:var(--foreground,#d1d8e9); font-weight:500 }
+  .matrix th:first-child { padding-left:0 }
+  @container(max-width:620px) { .groups { grid-template-columns:1fr } }
+  @container(max-width:360px) {
+    .resource-header { flex-direction:column; gap:10px }
+    .header-controls { flex-direction:row; justify-content:space-between; width:100%; align-items:center; flex-shrink:0; padding-top:0 }
+    .bar-control,#all-details { white-space:nowrap }
+    #all-details { margin-left:auto }
+    .identity h1 { font-size:15px }
+    .process-value { max-width:105px }
+    .graph-top { flex-wrap:wrap }
+    .big { font-size:23px }
+  }
+  @media(max-width:430px) { .review-nav { grid-template-columns:repeat(3,minmax(0,1fr)) } .toolbar { align-items:flex-start } }
+</style>
+</head>
+<body>
+<p class="intro"><strong>One design language across all six resources.</strong> Activity, devices and processes each get a clear home. Details expand in place, and important limitations stay beside the readings.</p>
+<div class="toolbar">
+  <span class="source" style="color:var(--muted-foreground,#a3acc0)">Interactive design review · select a resource below</span>
+  <div class="tools">
+    <label>Width <select id="width"><option value="wide">Wide</option><option value="narrow">Narrow</option></select></label>
+    <label>Theme <select id="theme"><option value="dark">Dark</option><option value="light">Light</option></select></label>
+    <label>Units <select id="units"><option value="c">°C</option><option value="f">°F</option></select></label>
+  </div>
+</div>
+<nav class="review-nav" role="tablist" aria-label="Resource designs" id="navigation"></nav>
+<main class="widget" id="widget">
+  <header class="resource-header">
+    <div class="identity"><div class="eyebrow" id="resource-label">CPU</div><h1 id="title"></h1><p id="subtitle"></p></div>
+    <div class="header-controls">
+      <label class="bar-control" id="bar-control"><input id="bar-toggle" type="checkbox"><span id="bar-label">Show CPU in bar</span></label>
+      <button id="all-details">Expand details</button>
+    </div>
+  </header>
+  <div id="panels"></div>
+  <footer class="footer"><span id="shortcuts"></span><span id="footer-note"></span></footer>
+</main>
+<p class="caption">Hardware uses your supplied screenshot. Other tabs use illustrative readings and mock history. Copy/Open demonstrate feedback only; they do not access the clipboard or launch apps. The GPU tab is shown here for review and remains conditional in the app.</p>
+<section class="principles">
+  <div><h3>Predictable groups</h3><p>The same section framing, spacing and detail controls, with content arranged around each resource’s purpose.</p></div>
+  <div><h3>Useful at a glance</h3><p>Headline readings live with their graphs or devices. Secondary metadata expands without burying processes or actions.</p></div>
+  <div><h3>Meaning stays intact</h3><p>Unknown values stay unknown. Estimated GPU load, RSS/PSS and unattributed traffic remain explicitly labelled.</p></div>
+</section>
+<details class="plan">
+  <summary>Panel mapping and implementation plan</summary>
+  <table class="matrix">
+    <thead><tr><th>Panel</th><th>Primary groups</th><th>Details on demand</th></tr></thead>
+    <tbody>
+      <tr><th>CPU</th><td>Processor activity · processes · integrated graphics · system</td><td>Core activity, topology, frequency limits, measurement scope</td></tr>
+      <tr><th>GPU</th><td>GPU activity · processes · memory · device</td><td>Engine readings and identity; byte-only memory and Intel estimates remain explicit</td></tr>
+      <tr><th>Memory</th><td>RAM usage · processes · composition · swap</td><td>Accounting, swap devices, hardware identity; PSI and RSS/PSS stay visible</td></tr>
+      <tr><th>Drives</th><td>Throughput · processes · volumes · device</td><td>IOPS, mount source and identity; usage bars and Open actions stay visible</td></tr>
+      <tr><th>Network</th><td>Traffic · processes · interface · transfer totals</td><td>Attribution explanation; Copy and Other traffic stay visible</td></tr>
+      <tr><th>Hardware</th><td>Processor · batteries · other temperatures · power &amp; cooling</td><td>Core readings and metadata; missing/critical core counts must survive collapsing</td></tr>
+    </tbody>
+  </table>
+  <ol>
+    <li>Introduce shared QML section framing and metric/row styles using the current theme and font. Keep the fitted 720-unit panel, fixed shell header and one scrolling body. Settings retains its current workflow.</li>
+    <li>Apply the grouping to all six resource tabs, retaining existing process lists and action controls. Keep GPU navigation conditional, device selections stable, and vendor-specific readings and warnings intact. Do not add new telemetry polling.</li>
+    <li>Preserve expanded details, process query/sort/selection and scroll position across samples and resizing. Keep D scoped to visible details, uppercase H for history, / for searchable rosters, and the shell’s Tab behaviour.</li>
+    <li>Validate larger fonts, narrow screens, both theme polarities, missing devices, permission errors, multiple owners sharing a driver, NVIDIA memory-only attribution, Intel estimates and byte-only GPU memory. Review native screenshots of every tab before a follow-up PR.</li>
+  </ol>
+</details>
+<template id="hardware-template"><div class="groups">
+      <div class="stack">
+        <section class="group" aria-labelledby="processor-title">
+          <div class="group-title"><h2 id="processor-title">Processor</h2><span class="source">coretemp</span></div>
+          <div class="reading package"><span class="label">Package id 0</span><span class="value temperature" data-c="66">66°C</span></div>
+          <details class="cores expandable">
+            <summary><span class="chevron">16 core readings</span><span id="core-range">38–48°C</span></summary>
+            <div class="core-grid" id="cores"></div>
+          </details>
+          <details class="details expandable">
+            <summary>Sensor details</summary>
+            <div class="info"><p><strong>Source:</strong> coretemp · 17 readings</p><p>The package reading and core readings measure different parts of the CPU. Core numbers are the reported sensor labels.</p></div>
+          </details>
+        </section>
+        <section class="group" aria-labelledby="other-title">
+          <div class="group-title"><h2 id="other-title">Other temperatures</h2></div>
+          <div class="device-row">
+            <div class="reading"><span>NVMe storage</span><span class="source">3 readings</span></div>
+            <table class="sensor-table" aria-label="NVMe temperatures">
+              <tbody>
+                <tr><th scope="row">Composite</th><td class="temperature" data-c="29">29°C</td></tr>
+                <tr><th scope="row">Sensor 1</th><td class="temperature" data-c="42">42°C</td></tr>
+                <tr><th scope="row">Sensor 2</th><td class="temperature" data-c="29">29°C</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="device-row">
+            <div class="reading"><span>Wireless</span><span class="value temperature" data-c="41">41°C</span></div>
+            <div class="source">iwlwifi_1 · temp1</div>
+          </div>
+          <div class="device-row">
+            <div class="reading"><span>ACPI thermal zone</span><span class="missing">--</span></div>
+            <div class="state-line"><span class="source">acpitz · temp1</span><span class="status warn">Invalid reading</span></div>
+          </div>
+          <details class="details expandable">
+            <summary>Sensor details</summary>
+            <div class="info"><p><strong>Storage source:</strong> nvme</p><p>Composite, Sensor 1 and Sensor 2 remain separate readings. An invalid thermal-zone reading is unavailable, not zero.</p></div>
+          </details>
+        </section>
+      </div>
+      <div class="stack">
+        <section class="group" aria-labelledby="battery-title">
+          <div class="group-title"><h2 id="battery-title">Batteries</h2><span class="source">2 devices</span></div>
+          <div class="battery-heading"><span class="name">Laptop battery</span><span class="source">BAT0</span></div>
+          <div class="charge"><strong>78<span>%</span></strong><span class="status">Not charging</span></div>
+          <div class="charge-track" aria-hidden="true"><span></span></div>
+          <div class="battery-metrics">
+            <dl><dt>Health / design</dt><dd>93.0%</dd></dl>
+            <dl><dt>Full capacity</dt><dd>78.1 Wh</dd></dl>
+            <dl><dt>Cycles</dt><dd>62</dd></dl>
+          </div>
+          <div class="mouse">
+            <span class="mouse-name" title="MX Vertical Advanced Ergonomic Mouse">MX Vertical Advanced Ergonomic Mouse</span>
+            <div class="reading"><span class="label">Charge</span><span class="missing">--</span></div>
+            <div class="state-line"><span class="status">Charge unavailable</span><span class="status">Discharging</span></div>
+          </div>
+          <details class="details expandable">
+            <summary>Battery details</summary>
+            <div class="info">
+              <p><strong>Laptop battery:</strong> L23N4PF1 · BAT0 · system battery</p>
+              <p><strong>Peripheral:</strong> MX Vertical Advanced Ergonomic Mouse · hidpp_battery_0</p>
+              <p>Charge and reported state belong to each device. Health compares full capacity with design capacity. Power profiles remain in the shell’s Power panel.</p>
+            </div>
+          </details>
+        </section>
+        <section class="group" aria-labelledby="power-title">
+          <div class="group-title"><h2 id="power-title">Power &amp; cooling</h2></div>
+          <div class="power-row">
+            <div class="reading"><span>Package 0 power</span><span class="missing">--</span></div>
+            <div class="state-line"><span class="source">intel-rapl:0</span><span class="status warn">Permission denied</span></div>
+          </div>
+          <div class="power-row">
+            <div class="reading"><span>Fan · fan1</span><span class="missing">--</span></div>
+            <div class="state-line"><span class="source">acpi_fan</span><span class="status">Unavailable</span></div>
+          </div>
+          <details class="details expandable">
+            <summary>Reading details</summary>
+            <div class="info">
+              <p>CPU package power can include integrated graphics. Core and uncore counters are not added to the package total.</p>
+              <p>Fan speed is unavailable. A measured stopped fan would show 0 RPM.</p>
+            </div>
+          </details>
+        </section>
+      </div>
+    </div>
+    </template>
+<script>
+'use strict';
+const $ = (s, root=document) => root.querySelector(s);
+const $$ = (s, root=document) => [...root.querySelectorAll(s)];
+const labels={cpu:'CPU',gpu:'GPU',mem:'Memory',disk:'Drives',net:'Network',hardware:'Hardware'};
+const metadata={
+  cpu:['Intel Core Ultra 9 185H','16 cores · 22 threads · 6P · 8E · 2LP'],
+  gpu:['AMD Radeon','Discrete graphics · card1 · amdgpu'],
+  mem:['31 GiB usable RAM','LPDDR5 · 7467 MT/s'],
+  disk:['NVMe SSD','nvme0n1 · SSD · 465.8 GiB'],
+  net:['eth0','Ethernet · default route · 1 Gbit/s link'],
+  hardware:['Hardware','23 sensors · 2 batteries']
+};
+const state={active:'cpu',range:'minute',bars:{cpu:true,gpu:false,mem:true,disk:false,net:true},gpu:'amd',disk:'nvme',net:'auto'};
+const rosters={
+  cpu:{heading:'CPU',scope:'CPU % of the whole machine',expandable:true,rows:[
+    ['quickshell','3 processes',2.1,'2.1%','',6529],['Hyprland','PID 1391',1.8,'1.8%','',1391],
+    ['T3 Code (Nightly)','2 processes',1.1,'1.1%','',2321],['python3','PID 1192',0.8,'0.8%','',1192],
+    ['kworker','8 processes',0.3,'0.3%','',301],['pipewire','PID 1448',0.2,'0.2%','',1448],['foot','PID 6002',0.1,'0.1%','',6002]]},
+  mem:{heading:'Size · RAM',scope:'2 unreadable or exited during collection',warn:true,expandable:true,rows:[
+    ['codex','3 processes',1434,'1.4 GiB','4.6% · PSS',4321],['T3 Code (Nightly)','7 processes',701,'701 MiB','2.2% · PSS',2321],
+    ['quickshell','PID 6529',475,'475 MiB','1.5% · PSS',6529],['python3','PID 1192',180,'180 MiB','0.6% · RSS',1192],
+    ['Voxtype Configuration','PID 1575',158,'158 MiB','0.5% · PSS',1575],['Hyprland','PID 1391',122,'122 MiB','0.4% · PSS',1391],
+    ['foot','PID 6002',62,'62 MiB','0.2% · PSS',6002]]},
+  gpu:{heading:'GPU',scope:'Processes with readable GPU attribution',expandable:false,rows:[
+    ['blender','PID 3912',29,'29%','3.2 GiB resident',3912],['firefox','PID 2041',6,'6%','420 MiB resident',2041],
+    ['Hyprland','PID 1391',3,'3%','168 MiB resident',1391]]},
+  disk:{heading:'Disk I/O',scope:'12 process I/O records inaccessible',warn:true,expandable:true,rows:[
+    ['firefox','PID 2041',8.8,'8.8 MiB/s','Read + write',2041],['syncthing','PID 2208',3.2,'3.2 MiB/s','Read + write',2208],
+    ['journald','PID 701',0.5,'512 KiB/s','Read + write',701],['T3 Code (Nightly)','2 processes',0.3,'307 KiB/s','Read + write',2321],
+    ['python3','PID 1192',0.2,'205 KiB/s','Read + write',1192],['foot','PID 6002',0.02,'20 KiB/s','Read + write',6002]]},
+  net:{heading:'Down / up',scope:'Visible TCP sockets only',expandable:false,rows:[
+    ['firefox','PID 2041',832,'800 KiB/s','32 KiB/s',2041],['syncthing','PID 2208',412,'400 KiB/s','12 KiB/s',2208],
+    ['Other traffic','Not attributed to a process',32,'28 KiB/s','4 KiB/s',0]]}
+};
+const processState=Object.fromEntries(Object.keys(rosters).map(k=>[k,{expanded:false,query:'',sort:'value'}]));
+const escapeText=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const temp=c=>`<span class="temperature" data-c="${c}">${c}°C</span>`;
+const row=(label,value)=>`<div class="reading"><span class="label">${label}</span><span class="value">${value}</span></div>`;
+const details=(title,body)=>`<details class="details expandable"><summary>${title}</summary><div class="info">${body}</div></details>`;
+const group=(title,body,aside='')=>`<section class="group"><div class="group-title"><h2>${title}</h2>${aside}</div>${body}</section>`;
+const columns=(left,right)=>`<div class="groups"><div class="stack">${left}</div><div class="stack">${right}</div></div>`;
+const big=(label,value,caption='')=>`<div><div class="metric-label">${label}</div><div class="big">${value}</div>${caption?`<div class="metric-caption">${caption}</div>`:''}</div>`;
+function graph(key,label,legend,max,unit) {
+  return `<div class="history" data-graph="${key}" data-max="${max}" data-unit="${unit}">
+    <div class="graph-top"><span class="source">${label}${unit==='%'?'':' · '+unit}</span><div class="ranges" aria-label="History window">
+      <button data-range="minute" aria-pressed="true">1 min</button><button data-range="hour" aria-pressed="false">1 hour</button></div></div>
+    <svg viewBox="0 0 320 112" role="img" aria-label="${label}: illustrative history"></svg>
+    <div class="graph-axis"><span class="range-start">−1 min</span><span>now</span></div>
+    <div class="graph-legend">${legend}</div></div>`;
+}
+const legend=(text,cls='')=>`<span><i class="dot ${cls}"></i>${text}</span>`;
+function processGroup(key) {
+  const model=rosters[key];
+  const more=model.expandable?`<button class="show-processes" data-roster="${key}" aria-expanded="false">Show all</button>`:'';
+  return group(key==='net'?'Traffic by process':'Top processes',`
+    <p class="notice ${model.warn?'warn':''}">${model.scope}</p>
+    <div class="process-search" hidden><input type="search" data-search="${key}" aria-label="Search ${labels[key]} processes" placeholder="Search name or PID…"></div>
+    <div class="process-head"><span class="process-count"></span><button class="process-sort" data-sort="${key}" aria-label="Change process sort"> ${model.heading} ↓</button></div>
+    <div class="process-rows"></div>
+    ${details('Measurement details',key==='net'
+      ?'<p>Other traffic includes bytes that cannot be assigned to a visible process. TCP attribution does not cover all interface traffic.</p>'
+      :key==='gpu'?'<p>Busy time is per card. Available process attribution depends on the GPU driver. NVIDIA exposes process memory, not per-process busy time.</p>'
+      :'<p>Compact rows show top candidates. Group counts cover collected candidates. Show all opens the searchable roster. PSS/RSS labels, where shown, describe the measurement used.</p>')}
+    `,more).replace('<section class="group">',`<section class="group process-group" data-process="${key}">`);
+}
+function cpuPanel() {
+  const activity=group('Processor activity',`
+    ${big('CPU load','7<small>%</small>','of the whole machine')}
+    ${graph('cpu','Load history',legend('user 4%')+legend('system 2%','purple')+legend('iowait 1%','mint'),100,'%')}
+    <p class="graph-summary" data-cpu-summary></p>
+    ${details('Core activity · 16 cores', ['P','E','LP'].map((c,i)=>`<div class="class-row"><span>${c}</span><div class="blocks">${Array.from({length:[6,8,2][i]},(_,j)=>`<span title="${c} core ${j+1} · illustrative activity"></span>`).join('')}</div></div>`).join(''))}`);
+  const graphics=group('Integrated graphics',`
+    <div class="source">Intel Arc Graphics · card1 · i915</div>
+    <div class="metric-pair" style="margin-top:9px">${big('Busy','25<small>%</small>')}${big('Shared memory','1.7 <small>GiB</small>')}</div>
+    <div class="stats">${row('Frequency','1933 / 2350 MHz')}</div>
+    ${details('GPU details','<p>Intel integrated graphics. Shared memory is resident usage; it is not a dedicated VRAM capacity. Frequency-based load is labelled as an estimate when busy telemetry is unavailable.</p>')}`);
+  const system=group('System',`<div class="overview-strip">
+    <div><span class="metric-label">Frequency</span><span class="value">1.1 GHz</span></div>
+    <div><span class="metric-label">Temperature</span><span class="value">${temp(66)}</span></div>
+    <div><span class="metric-label">Uptime</span><span class="value">42m</span></div>
+    </div><div class="stats">${row('Governor','powersave')}${row('Load average','0.86 · 0.64 · 0.31')}</div>
+    ${details('System details','<p>LENOVO 83D4 · 24 MB L3 · maximum frequency 5100 MHz</p><p>CPU pressure: 0.0% some · 0.0% full</p><p>458 processes · 1 running · 1000 threads</p>')}`);
+  return columns(activity+graphics,processGroup('cpu')+system);
+}
+function memoryPanel() {
+  const usage=group('Memory usage',`
+    ${big('Used','6.7 <small>GiB</small>','22% of 31 GiB usable')}
+    ${graph('mem','Used RAM',legend('used 21.6%'),25,'%')}
+    <div class="mini-metrics"><div><span class="metric-label">Available</span><strong>24.3 GiB</strong></div><div><span class="metric-label">Pressure · some</span><strong>0.0%</strong></div></div>
+    ${details('Memory accounting','<p>Used = total − available. Available includes reclaimable memory. Pressure is actual PSI stalled time; it has no gauge ceiling.</p><p>The physical composition is a separate breakdown; application usage is an estimate.</p>')}`);
+  const composition=group('RAM composition',`
+    <div class="progress composition" aria-label="Physical memory composition"><span style="width:11.29%"></span><span style="width:17.74%"></span><span style="width:.74%"></span><span style="width:70.23%"></span></div>
+    <div class="stats">${row(legend('Applications'),'3.5 GiB')}${row(legend('Cache','purple'),'5.5 GiB')}${row(legend('Kernel','mint'),'231 MiB')}${row(legend('Free','free'),'21.8 GiB')}</div>`);
+  const swap=group('Swap',`${big('Used','0 <small>B</small>','62 GiB total')}<div class="stats" style="margin-top:10px">${row('In / out','0 B/s / 0 B/s')}</div>
+    ${details('Swap devices','<p><strong>File:</strong> /swap/swapfile · 31 GiB</p><p><strong>zram0:</strong> zstd · 31 GiB</p>')}`);
+  return columns(usage+composition,processGroup('mem')+swap);
+}
+function gpuPanel() {
+  const intel=state.gpu==='intel', missing=state.gpu==='missing';
+  metadata.gpu=missing?['AMD Radeon','Discrete graphics · card1 · amdgpu · telemetry unavailable']:intel?['Intel Arc graphics','Discrete graphics · card2 · Intel']:['AMD Radeon','Discrete graphics · card1 · amdgpu'];
+  const picker=`<div class="device-picker"><label for="gpu-device">Card</label><select id="gpu-device">
+    <option value="amd">Radeon · measured busy + VRAM</option><option value="intel">Intel Arc · estimate + byte-only memory</option><option value="missing">Radeon · telemetry unavailable</option></select></div>`;
+  const activity=group('GPU activity',`
+    ${big(intel?'Frequency estimate':'GPU busy',missing?'--':intel?'~55<small>%</small>':'38<small>%</small>',intel?'Estimated from clock frequency':'per card')}
+    ${missing?'<p class="notice warn">No telemetry from the selected card.</p>':graph(intel?'gpuIntel':'gpu',intel?'Frequency estimate':'GPU history',legend(intel?'estimate ~55%':'busy 38%')+(intel?'':legend('VRAM 66%','purple')),100,'%')}
+    ${details('Activity details',intel?'<p>Frequency is a proxy for activity, not a measured busy percentage. The estimate marker stays visible.</p>':'<p>Per-card busy time and available process attribution come from the selected device.</p>')}`);
+  const memory=group(intel?'Resident memory':'Video memory',`
+    ${big(intel?'Resident bytes':'VRAM used',missing?'--':intel?'4.0 <small>GiB</small>':'10.6 <small>GiB</small>',missing?'Reading unavailable':intel?'Capacity unavailable':'of 16 GiB · 66%')}
+    ${!intel&&!missing?'<div class="progress" aria-label="VRAM 66 percent"><span style="width:66%"></span></div>':''}
+    ${intel?'<p class="notice">No percentage is shown without a reported capacity.</p>':''}`);
+  const device=group('Device',`<div class="metric-pair">${big('Temperature',missing?'--':temp(58))}${big(intel?'Frequency':'GPU power',missing?'--':intel?'1100 <small>MHz</small>':'87 <small>W</small>')}</div>
+    <div class="stats">${!intel?row('Core clock',missing?'--':'2140 MHz'):row('Maximum frequency','2000 MHz')}${!intel?row('Memory clock',missing?'--':'1000 MHz'):''}</div>
+    ${details('Device details',intel?'<p>card2 · Intel · frequency fallback</p><p>Memory capacity is not reported by this sample.</p>':'<p>card1 · AMD · amdgpu</p><p>Memory clock and core clock are separate readings.</p>')}`);
+  return picker+(missing?'<p class="warning-line">Selected card unavailable. Its saved selection is retained.</p>':'')+
+    columns(activity+memory,(missing||intel?group('Top processes','<p class="notice">Process attribution is unavailable in this example.</p>'):processGroup('gpu'))+device);
+}
+function mount(name,used,total,pct) {
+  return `<div class="mount"><div class="mount-head"><span class="mount-name">${name}</span><button class="action" data-demo="Open ${name}">Open</button></div>
+    <div class="progress" aria-label="${name}: ${pct}% used"><span style="width:${pct}%"></span></div>
+    <div class="state-line"><span class="source">${used} / ${total} GiB used</span><span class="source">${pct}%</span></div></div>`;
+}
+function diskPanel() {
+  const external=state.disk==='usb';
+  metadata.disk=external?['External SSD','sdb · USB · 931.5 GiB']:['NVMe SSD','nvme0n1 · SSD · 465.8 GiB'];
+  const picker=`<div class="device-picker"><label for="disk-device">Drive</label><select id="disk-device"><option value="nvme">NVMe SSD · nvme0n1</option><option value="usb">External SSD · unmounted</option></select></div>`;
+  const activity=group('Throughput',`<div class="metric-pair">${big('Read',external?'0 <small>B/s</small>':'12 <small>MiB/s</small>')}${big('Write',external?'0 <small>B/s</small>':'2 <small>MiB/s</small>')}</div>
+    ${graph(external?'idle':'disk','Read / write',legend('read')+legend('write','purple'),20,'MiB/s')}
+    <div class="mini-metrics"><div><span class="metric-label">Device busy</span><strong>${external?'0%':'8%'}</strong></div><div><span class="metric-label">Temperature</span><strong>${external?'--':temp(29)}</strong></div></div>
+    ${details('I/O details',`<p>Read / write IOPS: ${external?'0 / 0':'180 / 36'}</p><p>Process I/O is machine-wide and is not attributed to the selected drive.</p>`)}`);
+  const volumes=group('Volumes',external?`<p class="notice">No mounted volumes on this drive.</p><div class="mount-head" style="margin-top:10px"><span class="source">Not mounted</span><button class="action" disabled title="No mounted path to open">Open</button></div>`:
+    `${mount('/',32.4,100,32)}${mount('/home',179,365.8,49)}<p class="action-feedback" role="status"></p>${details('Mount details','<p>/ → /dev/nvme0n1p2</p><p>/home → /dev/nvme0n1p3</p>')}`);
+  const device=group('Device',`<div class="stats">${row('Capacity',external?'931.5 GiB':'465.8 GiB')}${row('Type',external?'USB SSD':'NVMe SSD')}</div>${details('Device details',`<p>Kernel device: ${external?'sdb':'nvme0n1'}</p><p>Multiple drives retain their saved device identities when the panel refreshes.</p>`)}`);
+  return picker+columns(activity+volumes,processGroup('disk')+device);
+}
+function networkPanel() {
+  const down=state.net==='down';
+  metadata.net=down?['wlan0','Wireless · pinned interface · link down']:['eth0','Ethernet · default route · 1 Gbit/s link'];
+  const picker=`<div class="device-picker"><label for="net-device">Interface</label><select id="net-device"><option value="auto">Auto · eth0</option><option value="down">wlan0 · disconnected</option></select></div>`;
+  const traffic=group('Traffic',`<div class="metric-pair">${big('Download',down?'0 <small>B/s</small>':'1.2 <small>MiB/s</small>')}${big('Upload',down?'0 <small>B/s</small>':'48 <small>KiB/s</small>')}</div>
+    ${graph(down?'idleNet':'net','Interface traffic',legend('download')+legend('upload','purple'),2,'MiB/s')}`);
+  const addresses=[['IPv4','192.0.2.4/24'],['IPv6','2001:db8:1234:5678:90ab:cdef:1234:5678/64'],['MAC','aa:bb:cc:dd:ee:ff']];
+  const iface=group('Interface',down?'<p class="notice">Link down. No active address reported.</p>':
+    `<div class="stats">${row('Link speed','1 Gbit/s')}</div>${addresses.map(([kind,address])=>`<div class="address-row"><div class="address"><span class="address-kind">${kind}</span>${address}</div><button class="action" data-demo="Copy ${address}" aria-label="Copy ${kind}">Copy</button></div>`).join('')}<p class="action-feedback" role="status"></p>`);
+  const totals=group('Transfer totals',`<div class="metric-pair">${big('Received',down?'0 <small>B</small>':'2.4 <small>GiB</small>')}${big('Sent',down?'0 <small>B</small>':'184 <small>MiB</small>')}</div>
+    ${details('Counter details','<p>Totals come from the interface counters. They are not the totals for the selected history window and can reset when the interface resets.</p>')}`);
+  return picker+(down?'<p class="warning-line">wlan0 is disconnected. The pinned interface is retained.</p>':'')+
+    columns(traffic+iface,(down?group('Traffic by process','<p class="notice">No traffic on the selected interface.</p>'):processGroup('net'))+totals);
+}
+const builders={cpu:cpuPanel,gpu:gpuPanel,mem:memoryPanel,disk:diskPanel,net:networkPanel,hardware:()=>$('#hardware-template').innerHTML};
+for(const [id,label] of Object.entries(labels)) {
+  const button=document.createElement('button');
+  button.id='tab-'+id;button.dataset.tab=id;button.role='tab';button.textContent=label;button.setAttribute('aria-controls','panel-'+id);
+  $('#navigation').append(button);
+  const panel=document.createElement('section');panel.id='panel-'+id;panel.dataset.panel=id;panel.role='tabpanel';panel.setAttribute('aria-labelledby',button.id);panel.hidden=true;
+  $('#panels').append(panel);panel.innerHTML=builders[id]();
+}
+const coreValues=[[0,38],[1,38],[2,38],[3,38],[4,38],[5,38],[6,38],[7,38],[8,40],[12,48],[16,39],[20,42],[24,40],[28,42],[32,45],[33,45]];
+$('#cores').innerHTML=coreValues.map(([id,value])=>`<div class="core"><small>Core ${id}</small>${temp(value)}</div>`).join('');
+function currentPanel(){return $('#panel-'+state.active)}
+function currentDetails(){return $$('.expandable',currentPanel()).filter(d=>!d.closest('[hidden]'))}
+function updateDetails() {
+  const ds=currentDetails(),open=ds.length>0&&ds.every(d=>d.open);
+  $('#all-details').textContent=open?'Collapse details':'Expand details';
+  $('#all-details').disabled=ds.length===0;
+}
+function toggleDetails() {const ds=currentDetails(),open=ds.some(d=>!d.open);ds.forEach(d=>d.open=open);updateDetails()}
+function updateHeading() {
+  $('#resource-label').textContent=labels[state.active];
+  $('#resource-label').hidden=metadata[state.active][0]===labels[state.active];
+  $('#title').textContent=metadata[state.active][0];$('#subtitle').textContent=metadata[state.active][1];
+  $('#bar-control').hidden=state.active==='hardware';$('#bar-label').textContent='Show '+labels[state.active]+' in bar';$('#bar-toggle').checked=!!state.bars[state.active];
+  $('#shortcuts').textContent=state.active==='hardware'?'D details · sensor pinning in settings':'D details · H history'+(rosters[state.active]?.expandable?' · / search':'');
+  $('#footer-note').textContent=state.active==='disk'?'Process I/O is machine-wide':state.active==='net'?'Unattributed bytes stay in Other traffic':'';
+}
+function switchPanel(id,focus=false) {
+  state.active=id;
+  $$('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==id);
+  $$('[data-tab]').forEach(b=>{const on=b.dataset.tab===id;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;if(on&&focus)b.focus()});
+  updateHeading();updateDetails();
+}
+function setUnits() {
+  const f=$('#units').value==='f',fmt=c=>Math.round(f?c*9/5+32:c),suffix=f?'°F':'°C';
+  $$('.temperature').forEach(n=>n.textContent=fmt(Number(n.dataset.c))+suffix);
+  $('#core-range').textContent=fmt(38)+'–'+fmt(48)+suffix;
+}
+function drawGraphs() {
+  const series={
+    cpu:[[3,4,3,5,4,6,4,5,9,14,7,4,5,4,8,6,5,7]],
+    mem:[[20,21,20.5,22,22.8,21.7,21.3,21.1,22,23,22.5,22,22.3,21.9,21.4,21.7,21.8,21.6]],
+    gpu:[[12,14,25,22,34,42,38,31,35,46,40,28,32,40,37,34,39,38],[61,61,62,62,63,64,64,64,65,65,66,66,66,66,66,66,66,66]],
+    gpuIntel:[[20,25,24,30,29,40,48,50,48,55,42,40,46,58,52,50,53,55]],
+    disk:[[2,4,3,8,7,12,16,11,6,4,5,7,10,14,8,9,11,12],[1,1,2,1,3,2,4,3,1,2,1,3,4,2,1,3,2,2]],
+    net:[[.2,.3,.2,.6,.8,.7,1.3,1.4,1.1,.8,.6,.9,1.3,1.5,1.1,1.2,1,1.2],[.03,.04,.03,.05,.06,.05,.07,.04,.03,.04,.03,.05,.06,.04,.03,.05,.04,.046875]],
+    idle:[Array(18).fill(0),Array(18).fill(0)],idleNet:[Array(18).fill(0),Array(18).fill(0)]
+  };
+  $$('.history').forEach(g=>{
+    const max=Number(g.dataset.max),data=series[g.dataset.graph]||series.cpu;
+    const primary=state.range==='hour'?data[0].map((v,j)=>Math.max(0,v*(.75+(j%4)*.06))):data[0];
+    if(g.dataset.graph==='cpu')$('[data-cpu-summary]').textContent='Average '+Math.round(primary.reduce((a,b)=>a+b,0)/primary.length)+'% · peak '+Math.round(Math.max(...primary))+'%';
+    const paths=data.map((points,i)=>{
+      const values=state.range==='hour'?points.map((v,j)=>Math.max(0,v*(.75+(j%4)*.06))):points;
+      const coords=values.map((v,j)=>[j/(values.length-1)*284,106-Math.min(v/max,1)*100]);
+      const d=coords.map(([x,y],j)=>(j?'L':'M')+x.toFixed(1)+','+y.toFixed(1)).join(' ');
+      return (i===0?`<path d="${d} L284,106 L0,106 Z" fill="var(--accent)" opacity=".08"/>`:'')+`<path d="${d}" fill="none" stroke="${i?'var(--purple)':'var(--accent)'}" stroke-width="1.7"/>`;
+    }).join('');
+    $('svg',g).innerHTML=`<path d="M0,6 H284 M0,56 H284 M0,106 H284" fill="none" stroke="var(--line)" stroke-width="1"/>
+      ${paths}<g fill="var(--dim)" font-size="8" font-family="monospace" text-anchor="end"><text x="320" y="10">${max}${g.dataset.unit==='%'?'%':''}</text><text x="320" y="60">${max/2}</text><text x="320" y="110">0</text></g>`;
+    $('.range-start',g).textContent=state.range==='hour'?'−1 hour':'−1 min';
+    $$('[data-range]',g).forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.range===state.range)));
+  });
+}
+function renderRoster(key) {
+  const root=$('[data-process="'+key+'"]');if(!root)return;
+  const model=rosters[key],s=processState[key],query=s.expanded?s.query.toLowerCase():'';
+  const source=s.expanded?model.rows:model.rows.slice(0,5);
+  const rows=source.filter(r=>(r[0]+' '+r[1]+' '+r[5]).toLowerCase().includes(query)).slice().sort((a,b)=>s.sort==='name'?a[0].localeCompare(b[0]):b[2]-a[2]);
+  $('.process-count',root).textContent=rows.length+(rows.length===1?' row':' rows');
+  $('.process-sort',root).textContent=s.sort==='name'?'Name ↑':model.heading+' ↓';
+  $('.process-rows',root).innerHTML=rows.length?rows.map(r=>`<div class="process-row">
+    <span class="app-icon" aria-hidden="true">${r[5]===0?'…':escapeText(r[0].slice(0,2))}</span>
+    <div><div class="process-name" title="${escapeText(r[0])}">${escapeText(r[0])}</div><div class="process-meta">${escapeText(r[1])}</div></div>
+    <div class="process-value">${key==='net'?`<span class="rate-line">↓ ${r[3]}</span><span class="rate-line">↑ ${r[4]}</span>`:escapeText(r[3])+(r[4]?`<div class="process-meta">${escapeText(r[4])}</div>`:'')}</div></div>`).join(''):'<p class="empty">No matching processes</p>';
+  if(model.expandable){$('.process-search',root).hidden=!s.expanded;$('[data-search]',root).value=s.query;$('.show-processes',root).textContent=s.expanded?'Show less':'Show all';$('.show-processes',root).setAttribute('aria-expanded',String(s.expanded));}
+}
+function rebuild(id) {
+  const panel=$('#panel-'+id),open=new Map($$('.expandable',panel).map(d=>[$('summary',d).textContent,d.open]));
+  panel.innerHTML=builders[id]();
+  $$('.expandable',panel).forEach(d=>d.open=open.get($('summary',d).textContent)||false);
+  if(id==='gpu')$('#gpu-device').value=state.gpu;
+  if(id==='disk')$('#disk-device').value=state.disk;
+  if(id==='net')$('#net-device').value=state.net;
+  if(rosters[id])renderRoster(id);setUnits();drawGraphs();updateHeading();updateDetails();
+}
+$('#navigation').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)switchPanel(b.dataset.tab)});
+$('#navigation').addEventListener('keydown',e=>{
+  const ids=Object.keys(labels),index=ids.indexOf(state.active);
+  if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();switchPanel(ids[(index+(e.key==='ArrowRight'?1:-1)+ids.length)%ids.length],true)}
+  if(e.key==='Home'||e.key==='End'){e.preventDefault();switchPanel(e.key==='Home'?ids[0]:ids.at(-1),true)}
+});
+$('#all-details').addEventListener('click',toggleDetails);
+$('#bar-toggle').addEventListener('change',e=>state.bars[state.active]=e.target.checked);
+$('#units').addEventListener('change',setUnits);
+$('#width').addEventListener('change',e=>$('#widget').classList.toggle('narrow',e.target.value==='narrow'));
+$('#theme').addEventListener('change',e=>$('#widget').classList.toggle('light',e.target.value==='light'));
+$('#widget').addEventListener('toggle',updateDetails,true);
+$('#widget').addEventListener('click',e=>{
+  const range=e.target.closest('[data-range]');if(range){state.range=range.dataset.range;drawGraphs()}
+  const more=e.target.closest('[data-roster]');if(more){const key=more.dataset.roster;processState[key].expanded=!processState[key].expanded;renderRoster(key)}
+  const sort=e.target.closest('[data-sort]');if(sort){const key=sort.dataset.sort;processState[key].sort=processState[key].sort==='value'?'name':'value';renderRoster(key)}
+  const action=e.target.closest('[data-demo]');if(action){const group=action.closest('.group'),feedback=$('.action-feedback',group);if(feedback)feedback.textContent='Preview: would '+action.dataset.demo[0].toLowerCase()+action.dataset.demo.slice(1);}
+});
+$('#widget').addEventListener('input',e=>{if(e.target.matches('[data-search]')){processState[e.target.dataset.search].query=e.target.value;renderRoster(e.target.dataset.search)}});
+$('#widget').addEventListener('change',e=>{
+  if(e.target.id==='gpu-device'){state.gpu=e.target.value;rebuild('gpu')}
+  if(e.target.id==='disk-device'){state.disk=e.target.value;rebuild('disk')}
+  if(e.target.id==='net-device'){state.net=e.target.value;rebuild('net')}
+});
+document.addEventListener('keydown',e=>{
+  if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)||e.ctrlKey||e.altKey||e.metaKey)return;
+  if(e.key.toLowerCase()==='d'){e.preventDefault();toggleDetails()}
+  if(e.key==='H'){e.preventDefault();state.range=state.range==='minute'?'hour':'minute';drawGraphs()}
+  if(e.key==='/'&&rosters[state.active]?.expandable){
+    e.preventDefault();processState[state.active].expanded=true;renderRoster(state.active);$('[data-search]',currentPanel()).focus();
+  }
+});
+Object.keys(rosters).forEach(renderRoster);setUnits();drawGraphs();switchPanel('cpu');
+</script>
+</body>
+</html>

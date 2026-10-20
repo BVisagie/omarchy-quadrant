@@ -101,6 +101,7 @@ Item {
 
     Components.Hero {
       width: parent.width
+      detailsTarget: root
       title: root.netTitle
       meta: root.netMeta
       detail: root.netDetail
@@ -131,39 +132,46 @@ Item {
       objectName: "resourceColumns"
       width: parent.width
       primary: [
-        Components.GraphBlock {
-          objectName: "networkHistory"
+        Components.SectionCard {
           width: parent.width
-          title: "TRAFFIC"
-          finePoints: root.model ? root.model.netHistory : []
-          longPoints: root.model ? root.model.netLong : []
-          longWindow: root.longWindow
-          sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
-          graphLayout: root.model && root.model.cfg ? root.model.cfg.networkGraphLayout : "overlay"
-          minimumMax: 1024
-          formatValue: function (v) { return root.rate(v) }
-          fields: [
-            { key: "rx", label: "down", color: root.pal.primary },
-            { key: "tx", label: "up", color: root.pal.secondary }
-          ]
-          legend: [
-            { label: "down", color: root.pal.primary, value: root.ifaceRates ? root.rate(root.ifaceRates.rxBps) : "--" },
-            { label: "up", color: root.pal.secondary, value: root.ifaceRates ? root.rate(root.ifaceRates.txBps) : "--" }
-          ]
-          onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
-        },
-        Column {
-          width: parent.width
-          spacing: Commons.Style.space(6)
+          title: "Traffic"
 
-          Components.SectionHeader { width: parent.width; text: "INTERFACE" }
-          Components.StatRow {
-            wrapValue: true
+          Components.MetricStrip {
             width: parent.width
-            visible: root.totals !== null
-            label: "Received / sent"
-            value: root.totals ? Model.formatBytes(root.totals.rx) + " / " + Model.formatBytes(root.totals.tx) : "--"
+            metrics: [
+              { label: "Download", value: root.ifaceRates ? root.rate(root.ifaceRates.rxBps) : "--", color: root.pal.primary },
+              { label: "Upload", value: root.ifaceRates ? root.rate(root.ifaceRates.txBps) : "--", color: root.pal.secondary }
+            ]
           }
+
+          Components.GraphBlock {
+            objectName: "networkHistory"
+            width: parent.width
+            title: "TRAFFIC"
+            finePoints: root.model ? root.model.netHistory : []
+            longPoints: root.model ? root.model.netLong : []
+            longWindow: root.longWindow
+            sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+            graphLayout: root.model && root.model.cfg ? root.model.cfg.networkGraphLayout : "overlay"
+            minimumMax: 1024
+            formatValue: function (v) { return root.rate(v) }
+            fields: [
+              { key: "rx", label: "down", color: root.pal.primary },
+              { key: "tx", label: "up", color: root.pal.secondary }
+            ]
+            legend: [
+              { label: "down", color: root.pal.primary, value: root.ifaceRates ? root.rate(root.ifaceRates.rxBps) : "--" },
+              { label: "up", color: root.pal.secondary, value: root.ifaceRates ? root.rate(root.ifaceRates.txBps) : "--" }
+            ]
+            onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
+          }
+        },
+        Components.SectionCard {
+          width: parent.width
+          title: "Interface"
+
+          Components.StatRow { width: parent.width; wrapValue: true; label: "Link state"; value: root.iface && root.iface.operstate ? root.iface.operstate : "--" }
+
           Components.PanelActions {
             id: addressControls
             objectName: "networkActions"
@@ -172,29 +180,91 @@ Item {
             context: root.ifname
             entries: Model.addressActions(root.iface)
           }
+
+          Text {
+            textFormat: Text.PlainText
+            width: parent.width
+            wrapMode: Text.Wrap
+            color: root.pal.dim
+            font.family: Commons.Style.font.family
+            font.pixelSize: Commons.Style.font.caption
+            text: "No address reported for this interface."
+            visible: addressControls.entries.length === 0
+          }
+
+          Components.Disclosure {
+            width: parent.width
+            title: "Interface details"
+            Text {
+              textFormat: Text.PlainText
+              width: parent.width
+              wrapMode: Text.Wrap
+              color: root.pal.dim
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
+              text: root.ifname || "No interface selected"
+            }
+            Text {
+              textFormat: Text.PlainText
+              width: parent.width
+              wrapMode: Text.Wrap
+              color: root.pal.dim
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
+              text: root.pinned ? "Pinned interface" : "Following the default route"
+            }
+          }
         }
       ]
       secondary: [
-        Components.ProcessList {
-          id: processRoster
-          panel: root.panel
-          active: root.active
-          scopeText: "Per-process TCP attribution from visible sockets; UDP and other users may be missing. Full-roster search is unavailable."
+        Components.SectionCard {
           width: parent.width
-          rows: root.rows
-          valueHeader: "TRAFFIC"
-          emptyText: root.active ? (root.interfaceValid ? "Sampling…" : "No interface to watch") : "Open this tab to sample processes"
-          errorText: root.errorText
+
+          Components.ProcessList {
+            id: processRoster
+            title: "Traffic by process"
+            panel: root.panel
+            active: root.active
+            scopeText: "Per-process TCP attribution from visible sockets; UDP and other users may be missing. Full-roster search is unavailable."
+            width: parent.width
+            rows: root.rows
+            valueHeader: "TRAFFIC"
+            emptyText: root.active ? (root.interfaceValid ? "Sampling…" : "No interface to watch") : "Open this tab to sample processes"
+            errorText: root.errorText
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            visible: root.attributionEmpty
+            text: "Traffic is moving, but no TCP socket of yours carried it this interval (UDP, or other users' sockets)."
+            color: root.pal.dim
+            font.family: Commons.Style.font.family
+            font.pixelSize: Commons.Style.font.caption
+            width: parent.width
+            wrapMode: Text.WordWrap
+          }
         },
-        Text {
-          textFormat: Text.PlainText
-          visible: root.attributionEmpty
-          text: "Traffic is moving, but no TCP socket of yours carried it this interval (UDP, or other users' sockets)."
-          color: root.pal.dim
-          font.family: Commons.Style.font.family
-          font.pixelSize: Commons.Style.font.caption
+        Components.SectionCard {
           width: parent.width
-          wrapMode: Text.WordWrap
+          title: "Transfer totals"
+
+          Components.MetricStrip {
+            width: parent.width
+            metrics: [
+              { label: "Received", value: root.totals ? Model.formatBytes(root.totals.rx) : "--" },
+              { label: "Sent", value: root.totals ? Model.formatBytes(root.totals.tx) : "--" }
+            ]
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            width: parent.width
+            wrapMode: Text.Wrap
+            color: root.pal.dim
+            font.family: Commons.Style.font.family
+            font.pixelSize: Commons.Style.font.caption
+            text: "Interface counters since reset; these are not lifetime or billing totals."
+          }
         }
       ]
     }

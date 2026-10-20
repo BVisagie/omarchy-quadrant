@@ -291,6 +291,12 @@ launcher actions. `QUADRANT_RENDER_FIT=1 QUADRANT_RENDER_HEADER=1` includes the
 panel header and fits the full content. These captures check presentation;
 they do not establish access to a physical removable volume.
 
+The panel UI check also runs `cards-ui.qml` in its own offscreen process.
+It checks all five activity/process layouts at 320 and 720 logical units,
+with 12 and 18 px base text, detail-button interaction, and state retention
+through resizing. The Hardware suite covers core summaries, missing/critical
+readings, live battery updates, and narrow layouts with large text.
+
 Set `QUADRANT_RENDER_WIDTH=752` for a 720 px content area at standard theme
 spacing, including the harness's 16 px margins. The production panel scales
 its preferred width with the theme and clamps to the monitor. Smaller render

@@ -50,6 +50,56 @@ test("sensor titles distinguish owners without counting kinds as extra devices",
   }
 });
 
+test("friendly sensor names preserve device identity and only classify recognized CPU drivers", () => {
+  const drivers = ["acpitz", "coretemp", "k10temp", "nvme", "nvme", "iwlwifi_1", "unknown_cpu"];
+  const groups = Model.hardwareSensorGroups(drivers.map((driver, i) => ({
+    id: String(i), driver, owner: `devices/owner${i}`, kind: "temperature", label: "temp1"
+  })));
+  assert.deepEqual(groups.filter(g => g.processor).map(g => g.driver), ["coretemp", "k10temp"]);
+  assert.deepEqual(groups.map(g => g.displayTitle), [
+    "ACPI thermal zone", "coretemp", "k10temp", "NVMe · owner3", "NVMe · owner4", "Wireless", "unknown_cpu"
+  ]);
+  assert.deepEqual(groups.map(g => g.sensors[0].id), drivers.map((_, i) => String(i)));
+});
+
+test("friendly sensor names distinguish different drivers in the same family", () => {
+  const sensors = [
+    { id: "one", driver: "iwlwifi_1", owner: "devices/first", kind: "temperature" },
+    { id: "two", driver: "iwlwifi_2", owner: "devices/second", kind: "temperature" },
+    { id: "three", driver: "iwlwifi_2", owner: "devices/third", kind: "temperature" },
+    { id: "fan", driver: "iwlwifi_2", owner: "devices/second", kind: "fan" }
+  ];
+  const before = structuredClone(sensors);
+  const groups = Model.hardwareSensorGroups(sensors);
+  assert.deepEqual(groups.map(g => g.displayTitle), [
+    "Wireless · iwlwifi_1", "Wireless · iwlwifi_2 · second",
+    "Wireless · iwlwifi_2 · third", "Wireless · iwlwifi_2 · second"
+  ]);
+  assert.deepEqual(groups.map(g => g.title), [
+    "iwlwifi_1", "iwlwifi_2 · second", "iwlwifi_2 · third", "iwlwifi_2 · second"
+  ]);
+  assert.deepEqual(groups.map(g => g.sensors[0].id), sensors.map(s => s.id));
+  assert.deepEqual(sensors, before);
+});
+
+test("collapsed core summaries preserve missing and critical readings without inventing thresholds", () => {
+  const sensors = ["zero", "cold", "critical", "no-threshold", "missing", "waiting"].map(id => ({ id }));
+  const readings = {
+    zero: { value: 0, criticalC: 100 }, cold: { value: -5, criticalC: 100 },
+    critical: { value: 100, criticalC: 100 }, "no-threshold": { value: 105, criticalC: null },
+    missing: { value: null, status: "Permission denied" }
+  };
+  assert.deepEqual(Model.coreTemperatureSummary(sensors, readings), {
+    count: 6, available: 4, missing: 2, critical: 1, min: -5, max: 105
+  });
+  assert.deepEqual(Model.coreTemperatureSummary(sensors, {}), {
+    count: 6, available: 0, missing: 6, critical: 0, min: null, max: null
+  });
+  assert.deepEqual(Model.coreTemperatureSummary([], {}), {
+    count: 0, available: 0, missing: 0, critical: 0, min: null, max: null
+  });
+});
+
 test("temperature conversion only changes display, including zero and negative values", () => {
   assert.equal(Model.formatTemp(0), "0°C");
   assert.equal(Model.formatTemp(0, "fahrenheit"), "32°F");

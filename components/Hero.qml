@@ -11,19 +11,26 @@ Item {
   property string title: ""
   property string meta: ""
   property string detail: ""
+  property var detailsTarget: null
   property color foreground: Commons.Color.foreground
   property string fontFamily: Commons.Style.font.family
   readonly property color dim: Model.dimColor(String(foreground), String(Commons.Color.background))
-  readonly property bool stackedDetail: detail !== "" && width < Commons.Style.space(200) + pill.implicitWidth + Commons.Style.space(10)
+  readonly property bool stackedDetail: detail !== "" && (detailsTarget !== null || width < Commons.Style.space(200) + pill.implicitWidth + Commons.Style.space(10))
+  readonly property bool stackedActions: width < Math.max(Commons.Style.space(460), Commons.Style.font.body * 36)
+  readonly property real baseHeight: stackedDetail ? labels.implicitHeight + Commons.Style.space(6) + pill.implicitHeight
+                                                 : Math.max(labels.implicitHeight, pill.implicitHeight)
 
   implicitWidth: 200
-  implicitHeight: stackedDetail ? labels.implicitHeight + Commons.Style.space(6) + pill.implicitHeight
-                               : Math.max(labels.implicitHeight, pill.implicitHeight)
+  implicitHeight: detailsTarget === null ? baseHeight
+    : stackedActions ? baseHeight + Commons.Style.space(6) + detailsButton.implicitHeight
+    : Math.max(baseHeight, detailsButton.implicitHeight)
 
   Column {
     id: labels
     objectName: "heroLabels"
-    width: root.detail !== "" && !root.stackedDetail ? Math.max(0, root.width - pill.width - Commons.Style.space(10)) : root.width
+    width: Math.max(0, root.width
+      - (root.detail !== "" && !root.stackedDetail ? pill.width + Commons.Style.space(10) : 0)
+      - (root.detailsTarget !== null && !root.stackedActions ? detailsButton.width + Commons.Style.space(10) : 0))
     spacing: Commons.Style.space(2)
 
     Text {
@@ -50,6 +57,25 @@ Item {
       maximumLineCount: 2
       elide: Text.ElideRight
     }
+  }
+
+  Button {
+    id: detailsButton
+    objectName: "expandDetails"
+    readonly property var disclosures: Model.visibleDetails(root.detailsTarget)
+    readonly property bool allExpanded: disclosures.length > 0 && disclosures.every(function (item) { return item.expanded })
+    visible: root.detailsTarget !== null
+    enabled: disclosures.length > 0
+    text: allExpanded ? "Collapse details" : "Expand details"
+    fontSize: Commons.Style.font.caption
+    width: Math.min(implicitWidth, root.width)
+    x: root.stackedActions ? 0 : root.width - width
+    y: root.stackedActions ? root.baseHeight + Commons.Style.space(6) : 0
+    tooltipText: "Expand or collapse this panel's details (D)"
+    Accessible.name: text
+    Accessible.role: Accessible.Button
+    Accessible.onPressAction: Model.toggleDetails(root.detailsTarget)
+    onClicked: Model.toggleDetails(root.detailsTarget)
   }
 
   BorderSurface {

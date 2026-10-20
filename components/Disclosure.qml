@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons as Commons
 import qs.Ui as Ui
+import "../lib/index.mjs" as Model
 
 Column {
   id: root
@@ -8,9 +9,14 @@ Column {
   property string title: "Details"
   property bool expanded: false
   readonly property bool detailsDisclosure: true
-  spacing: Commons.Style.space(4)
+  spacing: Commons.Style.space(6)
 
   data: [
+    Rectangle {
+      width: root.width
+      height: 1
+      color: Model.withAlpha(String(Commons.Color.foreground), 0.10)
+    },
     Ui.Button {
       objectName: "disclosureButton"
       width: Math.min(implicitWidth, root.width)

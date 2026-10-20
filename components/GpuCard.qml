@@ -3,8 +3,7 @@ import qs.Commons as Commons
 import "../lib/index.mjs" as Model
 import "." as Components
 
-// Compact graphics block for the CPU tab's integrated GPU: a busy ring
-// beside the card's identity, then a few stat rows. Live metrics come
+// Integrated GPU readings inside the CPU tab's graphics card. Metrics come
 // from the store's on-demand gpu-stats poll while the CPU tab is open.
 Item {
   id: root
@@ -66,16 +65,18 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Commons.Style.space(8)
+    spacing: Commons.Style.space(10)
 
-    Components.SectionHeader {
+    Text {
+      textFormat: Text.PlainText
+      text: root.gpuTitle
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Commons.Style.font.body
+      font.bold: true
       width: parent.width
-      text: "GRAPHICS"
-      note: root.busyIsEstimate && root.busyPct >= 0 ? "frequency estimate" : ""
-      foreground: root.foreground
-      fontFamily: root.fontFamily
+      wrapMode: Text.Wrap
     }
-
     Text {
       textFormat: Text.PlainText
       visible: root.errorText !== ""
@@ -84,81 +85,60 @@ Item {
       font.family: root.fontFamily
       font.pixelSize: Commons.Style.font.caption
       width: parent.width
-      wrapMode: Text.WordWrap
+      wrapMode: Text.Wrap
     }
-
-    Row {
+    Components.MetricReadout {
+      objectName: "cpuGpuOverview"
       width: parent.width
-      spacing: Commons.Style.space(14)
-
-      Components.RingGauge {
-        size: Commons.Style.space(72)
-        thickness: Commons.Style.space(7)
-        fraction: root.busyPct < 0 ? 0 : root.busyPct / 100
-        color: root.pal.primary
-        centerText: root.busyPct < 0 ? "--" : Model.formatPct(root.busyPct)
-        subText: root.busyIsEstimate ? "freq" : "busy"
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        anchors.verticalCenter: parent.verticalCenter
-      }
-
-      Column {
-        width: Math.max(0, parent.width - Commons.Style.space(72) - parent.spacing)
-        spacing: Commons.Style.space(4)
-        anchors.verticalCenter: parent.verticalCenter
-
-        Text {
-          textFormat: Text.PlainText
-          text: root.gpuTitle
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Commons.Style.font.subtitle
-          font.bold: true
-          width: parent.width
-          elide: Text.ElideRight
-        }
-        Text {
-          textFormat: Text.PlainText
-          text: root.gpuMeta
-          color: root.pal.dim
-          font.family: root.fontFamily
-          font.pixelSize: Commons.Style.font.caption
-          width: parent.width
-          elide: Text.ElideRight
-        }
-        Components.StatRow {
-          width: parent.width
-          label: root.intel ? "Frequency" : "Core clock"
-          value: root.freqText
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-        }
-        Components.StatRow {
-          width: parent.width
-          visible: root.live && root.live.tempC !== null && root.live.tempC !== undefined
-          label: "Temperature"
-          value: root.live ? Model.formatTemp(root.live.tempC, root.temperatureUnit) : "--"
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-        }
-        Components.StatRow {
-          width: parent.width
-          visible: root.vramText !== "--"
-          label: root.live && root.live.memKind === "shared" ? "Shared" : "VRAM"
-          value: root.vramText
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-        }
-      }
+      value: root.busyPct < 0 ? "--" : (root.busyIsEstimate ? "~" : "") + Model.formatPct(root.busyPct)
+      hint: root.busyIsEstimate ? "Frequency estimate · not measured busy time" : "Busy"
     }
     Components.StatRow {
       width: parent.width
+      wrapValue: true
+      label: root.intel ? "Frequency" : "Core clock"
+      value: root.freqText
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+    }
+    Components.StatRow {
+      width: parent.width
+      wrapValue: true
+      visible: root.live && root.live.tempC !== null && root.live.tempC !== undefined
+      label: "Temperature"
+      value: root.live ? Model.formatTemp(root.live.tempC, root.temperatureUnit) : "--"
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+    }
+    Components.StatRow {
+      width: parent.width
+      wrapValue: true
+      label: root.live && root.live.memKind === "shared" ? "Shared memory" : "VRAM"
+      value: root.vramText
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+    }
+    Components.StatRow {
+      width: parent.width
+      wrapValue: true
       visible: root.live && root.live.memoryClockSource !== undefined && root.live.memoryClockSource !== ""
       label: "Memory clock"
       value: Model.formatGpuClock(root.live ? root.live.memoryClockMhz : null)
       foreground: root.foreground
       fontFamily: root.fontFamily
+    }
+    Components.Disclosure {
+      width: parent.width
+      title: "Graphics details"
+      Text {
+        textFormat: Text.PlainText
+        text: root.gpuMeta
+        color: root.pal.dim
+        font.family: root.fontFamily
+        font.pixelSize: Commons.Style.font.caption
+        width: parent.width
+        wrapMode: Text.Wrap
+      }
     }
   }
 }

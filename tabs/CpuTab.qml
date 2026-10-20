@@ -79,102 +79,109 @@ Item {
 
     Components.Hero {
       width: parent.width
+      detailsTarget: root
       title: root.cpuTitle
       meta: root.cpuMeta
-    }
-
-    Text {
-      textFormat: Text.PlainText
-      visible: root.hostLine !== ""
-      text: root.hostLine
-      color: root.pal.dim
-      font.family: Commons.Style.font.family
-      font.pixelSize: Commons.Style.font.caption
-      width: parent.width
-      elide: Text.ElideRight
-    }
-
-    Components.MetricStrip {
-      width: parent.width
-      metrics: [
-        { label: "CPU load", value: root.cpuPct ? Model.formatPct(root.cpuPct.nonIdle) : "--", hint: "Whole machine" },
-        { label: "Frequency", value: root.cpuDetail || "--", hint: root.sysCpu && root.sysCpu.maxMhz ? Model.formatMhz(root.sysCpu.maxMhz) + " max" : "Current clock" },
-        { label: "Temperature", value: root.sample ? Model.formatTemp(root.sample.tempC, root.model && root.model.cfg ? root.model.cfg.temperatureUnit : "celsius") : "--", hint: "CPU package" },
-        { name: "cpuGpuOverview", label: root.hasIgpu ? "Integrated GPU" : "Uptime",
-          value: root.hasIgpu ? (integratedCard.busyPct < 0 ? "--" : (integratedCard.busyIsEstimate ? "~" : "") + Model.formatPct(integratedCard.busyPct)) : (root.sample ? Model.formatUptime(root.sample.uptimeS) : "--"),
-          hint: root.hasIgpu ? (integratedCard.busyIsEstimate ? "Frequency estimate" : "Busy") : "Since boot" }
-      ]
     }
 
     Components.AdaptiveColumns {
       objectName: "resourceColumns"
       width: parent.width
       primary: [
-        Components.GraphBlock {
+        Components.SectionCard {
           width: parent.width
-          title: "LOAD"
-          finePoints: root.model ? root.model.cpuHistory : []
-          longPoints: root.model ? root.model.cpuLong : []
-          longWindow: root.longWindow
-          sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
-          stacked: true
-          fixedMax: 100
-          fields: [
-            { key: "u", label: "user", color: root.pal.primary },
-            { key: "s", label: "system", color: root.pal.secondary },
-            { key: "io", label: "iowait", color: root.pal.tertiary },
-            { key: "st", label: "steal", color: root.pal.hot }
-          ]
-          legend: [
-            { label: "user", color: root.pal.primary, value: root.cpuPct ? Model.formatPct(root.cpuPct.user) : "--" },
-            { label: "system", color: root.pal.secondary, value: root.cpuPct ? Model.formatPct(root.cpuPct.system) : "--" },
-            { label: "iowait", color: root.pal.tertiary, value: root.cpuPct ? Model.formatPct(root.cpuPct.iowait) : "--" },
-            { label: "steal", color: root.pal.hot, value: root.cpuPct ? Model.formatPct(root.cpuPct.steal) : "--",
-              visible: root.cpuPct !== null && root.cpuPct.steal > 0 }
-          ]
-          onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
+          title: "Processor activity"
+
+          Components.MetricReadout {
+            width: parent.width
+            value: root.cpuPct ? Model.formatPct(root.cpuPct.nonIdle) : "--"
+            hint: "Total CPU · whole machine"
+          }
+
+          Components.GraphBlock {
+            width: parent.width
+            title: "LOAD"
+            finePoints: root.model ? root.model.cpuHistory : []
+            longPoints: root.model ? root.model.cpuLong : []
+            longWindow: root.longWindow
+            sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+            stacked: true
+            fixedMax: 100
+            fields: [
+              { key: "u", label: "user", color: root.pal.primary },
+              { key: "s", label: "system", color: root.pal.secondary },
+              { key: "io", label: "iowait", color: root.pal.tertiary },
+              { key: "st", label: "steal", color: root.pal.hot }
+            ]
+            legend: [
+              { label: "user", color: root.pal.primary, value: root.cpuPct ? Model.formatPct(root.cpuPct.user) : "--" },
+              { label: "system", color: root.pal.secondary, value: root.cpuPct ? Model.formatPct(root.cpuPct.system) : "--" },
+              { label: "iowait", color: root.pal.tertiary, value: root.cpuPct ? Model.formatPct(root.cpuPct.iowait) : "--" },
+              { label: "steal", color: root.pal.hot, value: root.cpuPct ? Model.formatPct(root.cpuPct.steal) : "--",
+                visible: root.cpuPct !== null && root.cpuPct.steal > 0 }
+            ]
+            onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
+          }
+
+          Components.Disclosure {
+            width: parent.width
+            title: "Core activity"
+            Components.CoreGrid {
+              width: parent.width
+              layout: Model.coreGridLayout(
+                root.sysCpu && root.sysCpu.topo ? root.sysCpu.topo : [],
+                root.model && root.model.coreUsage ? root.model.coreUsage : {}
+              )
+            }
+          }
         },
-        Components.CoreGrid {
+        Components.SectionCard {
           width: parent.width
-          layout: Model.coreGridLayout(
-            root.sysCpu && root.sysCpu.topo ? root.sysCpu.topo : [],
-            root.model && root.model.coreUsage ? root.model.coreUsage : {}
-          )
-        },
-        Components.GpuCard {
-          id: integratedCard
-          width: parent.width
-          gpu: root.model ? root.model.integratedGpu : null
-          gpuInfo: root.model ? root.model.integratedGpu : null
-          live: root.model ? root.model.integratedGpuLive : null
-          errorText: root.model ? String(root.model.integratedGpuError || "") : ""
-          temperatureUnit: root.model && root.model.cfg ? (root.model.cfg.temperatureUnit || "celsius") : "celsius"
+          title: "Integrated graphics"
+          visible: root.hasIgpu
+
+          Components.GpuCard {
+            id: integratedCard
+            width: parent.width
+            gpu: root.model ? root.model.integratedGpu : null
+            gpuInfo: root.model ? root.model.integratedGpu : null
+            live: root.model ? root.model.integratedGpuLive : null
+            errorText: root.model ? String(root.model.integratedGpuError || "") : ""
+            temperatureUnit: root.model && root.model.cfg ? (root.model.cfg.temperatureUnit || "celsius") : "celsius"
+          }
         }
       ]
       secondary: [
-        Components.ProcessList {
-          id: processRoster
-          panel: root.panel
-          active: root.active
-          expandable: true
-          expandedRows: root.expandedRows
-          expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
-          scopeText: Model.processScope(root.model ? root.model.procStats : null, "cpu", expanded)
+        Components.SectionCard {
           width: parent.width
-          rows: root.rows
-          valueHeader: "CPU"
-          emptyText: !root.active ? "Open this tab to sample processes"
-                     : !root.model || !root.model.procStats ? "Measuring CPU rates…"
-                     : root.model.procStats.rateState === "unavailable" ? "CPU rates unavailable without counter state"
-                     : !(root.model.procStats.dt > 0) || (root.model.procStats.procs > 0 && root.model.procStats.cpuReady === 0)
-                       ? "Measuring CPU rates…" : "No eligible CPU processes"
-          errorText: root.errorText
-        },
-        Column {
-          width: parent.width
-          spacing: Commons.Style.space(6)
 
-          Components.SectionHeader { width: parent.width; text: "SYSTEM" }
+          Components.ProcessList {
+            id: processRoster
+            panel: root.panel
+            active: root.active
+            expandable: true
+            expandedRows: root.expandedRows
+            expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
+            scopeText: Model.processScope(root.model ? root.model.procStats : null, "cpu", expanded)
+            width: parent.width
+            rows: root.rows
+            valueHeader: "CPU"
+            emptyText: !root.active ? "Open this tab to sample processes"
+                       : !root.model || !root.model.procStats ? "Measuring CPU rates…"
+                       : root.model.procStats.rateState === "unavailable" ? "CPU rates unavailable without counter state"
+                       : !(root.model.procStats.dt > 0) || (root.model.procStats.procs > 0 && root.model.procStats.cpuReady === 0)
+                         ? "Measuring CPU rates…" : "No eligible CPU processes"
+            errorText: root.errorText
+          }
+        },
+        Components.SectionCard {
+          width: parent.width
+          title: "System"
+
+          Components.StatRow { width: parent.width; wrapValue: true; label: "Frequency"; value: root.cpuDetail || "--" }
+
+          Components.StatRow { width: parent.width; wrapValue: true; label: "Temperature"; value: root.sample ? Model.formatTemp(root.sample.tempC, root.model && root.model.cfg ? root.model.cfg.temperatureUnit : "celsius") : "--" }
+
           Components.StatRow {
             wrapValue: true
             width: parent.width
@@ -203,13 +210,6 @@ Item {
           Components.StatRow {
             wrapValue: true
             width: parent.width
-            visible: root.pressureText !== ""
-            label: "Pressure"
-            value: root.pressureText
-          }
-          Components.StatRow {
-            wrapValue: true
-            width: parent.width
             label: "Load average"
             value: root.sample
                    ? Model.formatLoad(root.sample.load[0]) + "  " + Model.formatLoad(root.sample.load[1]) + "  " + Model.formatLoad(root.sample.load[2])
@@ -222,20 +222,43 @@ Item {
             label: "Uptime"
             value: root.sample ? Model.formatUptime(root.sample.uptimeS) : "--"
           }
+
+          Components.Disclosure {
+            width: parent.width
+            title: "System details"
+            Text {
+              textFormat: Text.PlainText
+              width: parent.width
+              wrapMode: Text.Wrap
+              color: root.pal.dim
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
+              text: root.hostLine
+              visible: text !== ""
+            }
+            Components.StatRow { width: parent.width; wrapValue: true; label: "Maximum frequency"; value: root.sysCpu ? Model.formatMhz(root.sysCpu.maxMhz) : "--" }
+            Components.StatRow {
+              wrapValue: true
+              width: parent.width
+              visible: root.pressureText !== ""
+              label: "Pressure"
+              value: root.pressureText
+            }
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
+              visible: root.procFooter !== ""
+              text: root.procFooter
+              color: root.pal.dim
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
+              font.features: ({ "tnum": 1 })
+            }
+          }
         }
       ]
     }
 
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      textFormat: Text.PlainText
-      visible: root.procFooter !== ""
-      text: root.procFooter
-      color: root.pal.dim
-      font.family: Commons.Style.font.family
-      font.pixelSize: Commons.Style.font.caption
-      font.features: ({ "tnum": 1 })
-    }
   }
 }

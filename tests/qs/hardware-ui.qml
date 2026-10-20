@@ -160,6 +160,86 @@ ShellRoot {
       fixture.raw = initialRaw; wait(20)
       equal(view.pinnedSensor.id, id)
     }
+    function test_battery_details_stay_open_during_live_readings() {
+      var id = initialRaw.batteries[0].id
+      var details = findChild(view, "hardwareBatteryDetails_" + id)
+      var charge = findChild(view, "hardwareBatteryCharge_" + id)
+      details.expanded = true
+      var changed = Object.assign({}, initialRaw.batteries[0], { chargePct: 79, status: "Charging" })
+      fixture.raw = Object.assign({}, initialRaw, { batteries: [changed].concat(initialRaw.batteries.slice(1)) })
+      wait(30)
+      equal(findChild(view, "hardwareBatteryDetails_" + id), details)
+      check(details.expanded)
+      equal(charge.value, "79%"); equal(charge.hint, "Charging")
+      win.width = 320; wait(20)
+      check(details.expanded)
+      details.expanded = false
+    }
+    function test_battery_missing_metadata_and_reading_states() {
+      var snapshot = Model.parseHardware(Object.assign({}, initialRaw, {
+        batteries: initialRaw.batteries.map(function (battery) { return Object.assign({}, battery, { model: "" }) })
+      }))
+      var batteryView = createTemporaryObject(hardwareComponent, win.contentItem, {
+        model: { hardwareInventory: Model.hardwareInventory(snapshot), hardwareReadings: null, detectedGpus: [] }
+      })
+      check(batteryView)
+      wait(20)
+      for (var battery of snapshot.batteries) {
+        var details = findChild(batteryView, "hardwareBatteryDetails_" + battery.id)
+        check(texts(details).indexOf(battery.name + (battery.scope === "Device" ? " · peripheral" : " · system battery")) >= 0,
+              "missing battery models do not leave a leading separator")
+      }
+      function checkStatus(expected, chargeText) {
+        for (var battery of snapshot.batteries) {
+          var charge = findChild(batteryView, "hardwareBatteryCharge_" + battery.id)
+          equal(charge.value, chargeText)
+          if (battery.scope === "Device") {
+            check(texts(charge.parent, true).indexOf(expected) >= 0, "peripheral status: " + expected)
+          } else equal(charge.hint, expected)
+        }
+      }
+      checkStatus("Waiting for a reading…", "--")
+      for (var state of [
+        { chargePct: null, status: "", expected: "Charge unavailable", charge: "--" },
+        { chargePct: null, status: "Discharging", expected: "Charge unavailable · Discharging", charge: "--" },
+        { chargePct: 0, status: "Discharging", expected: "Discharging", charge: "0%" }
+      ]) {
+        var readings = Object.assign({}, snapshot, {
+          batteries: snapshot.batteries.map(function (battery) {
+            return Object.assign({}, battery, { chargePct: state.chargePct, status: state.status })
+          })
+        })
+        batteryView.model = Object.assign({}, batteryView.model, { hardwareReadings: readings })
+        wait(20)
+        checkStatus(state.expected, state.charge)
+      }
+    }
+    function test_core_summary_single_equal_and_missing_readings_data() {
+      return [
+        { tag: "one core", values: [50], label: "1 core", range: "50°C", warning: "", unit: "celsius" },
+        { tag: "equal cores", values: [50, 50], label: "2 cores", range: "50°C", warning: "", unit: "celsius" },
+        { tag: "partially missing", values: [0, null], label: "2 cores", range: "32°F", warning: "1 unavailable", unit: "fahrenheit" },
+        { tag: "all missing", values: [null, null], label: "2 cores", range: "--", warning: "2 unavailable", unit: "celsius" },
+        { tag: "range", values: [-5, 50], label: "2 cores", range: "-5°C – 50°C", warning: "", unit: "celsius" },
+        { tag: "critical", values: [100, 100], label: "2 cores", range: "212°F", warning: "2 at or above critical temperature", unit: "fahrenheit" }
+      ]
+    }
+    function test_core_summary_single_equal_and_missing_readings(data) {
+      fixture.cfg = Model.readSettings({ temperatureUnit: data.unit })
+      fixture.raw = Object.assign({}, initialRaw, {
+        sensors: data.values.map(function (value, i) {
+          return Object.assign({}, initialRaw.sensors[0], {
+            id: "hwmon:" + "0".repeat(62) + (32 + i).toString(16), label: "Core " + (i * 4), value: value
+          })
+        })
+      })
+      wait(20)
+      var range = findChild(view, "coreTemperatureRange")
+      equal(range.label, data.label); equal(range.value, data.range)
+      var warning = findChild(view, "coreTemperatureWarnings")
+      equal(warning.visible, data.warning !== ""); equal(warning.text, data.warning)
+      check(!findChild(view, "coreTemperatureDetails").expanded)
+    }
     function test_grouped_core_grid_keeps_live_identity_and_error_states() {
       win.width = Commons.Style.space(720) + 32
       var cores = []
@@ -170,10 +250,16 @@ ShellRoot {
       wait(30)
       var columns = findChild(view, "resourceColumns")
       check(columns.wide)
+      var coreDetails = findChild(view, "coreTemperatureDetails")
+      check(!coreDetails.expanded, "core grid starts collapsed")
+      var warnings = findChild(view, "coreTemperatureWarnings")
+      check(!warnings.visible)
+      coreDetails.expanded = true
+      wait(20)
       var first = findChild(view, "hardwareSensorValue_" + cores[0].id)
       var next = findChild(view, "hardwareSensorValue_" + cores[1].id)
       check(first && next); check(next.x > first.x); equal(next.y, first.y)
-      var group = first.parent.parent
+      var group = coreDetails.parent
       var details = findChild(group, "sensorDeviceDetails")
       details.expanded = true
       var changed = Object.assign({}, cores[0], { value: null, status: "Permission denied" })
@@ -182,12 +268,22 @@ ShellRoot {
       equal(findChild(view, "hardwareSensorValue_" + cores[0].id), first)
       equal(first.value, "--")
       check(details.expanded)
+      coreDetails.expanded = false
+      wait(20)
+      check(warnings.visible)
+      equal(warnings.text, "1 unavailable", "collapsed grid keeps missing readings visible")
+      var critical = Object.assign({}, cores[1], { value: 101, criticalC: 100 })
+      fixture.raw = Object.assign({}, fixture.raw, { sensors: [initialRaw.sensors[0], changed, critical].concat(cores.slice(2), initialRaw.sensors.slice(1)) })
+      wait(20)
+      check(warnings.text.indexOf("1 at or above critical temperature") >= 0)
+      equal(String(warnings.color), String(Commons.Color.urgent))
       check(texts(first).indexOf("Permission denied") >= 0)
       check(texts(view).indexOf("Core 28") >= 0, "reported core IDs are not renumbered")
       win.width = 320; wait(30)
       check(!columns.wide)
       equal(findChild(view, "hardwareSensorValue_" + cores[0].id), first)
       check(details.expanded)
+      check(!coreDetails.expanded, "resizing does not expand the core grid")
     }
     function test_gpu_details_preserve_auto_with_keyboard_and_pointer() {
       equal(findChild(view.actionList, "actionButton_0").text, "Details")
@@ -252,7 +348,9 @@ ShellRoot {
       var shown = all.filter(function (item) { return item.visible })
       var hidden = all.filter(function (item) { return !item.visible })
       check(shown.length > 0)
-      equal(hidden.length, 3, "battery, package and GPU explanations still exist in hidden sections")
+      equal(hidden.filter(function (item) {
+        return ["About battery readings", "Power details", "About GPU selection"].indexOf(item.title) >= 0
+      }).length, 3, "battery, package and GPU explanations still exist in hidden sections")
       for (var detail of all) detail.expanded = detail.visible
       keys.forceActiveFocus()
       keyClick(Qt.Key_D)
@@ -261,6 +359,12 @@ ShellRoot {
       keyClick(Qt.Key_D)
       check(shown.every(function (item) { return item.expanded }), "the next press expands visible details")
       check(hidden.every(function (item) { return !item.expanded }))
+      var button = findChild(view, "expandDetails")
+      equal(button.text, "Collapse details")
+      mouseClick(button)
+      check(shown.every(function (item) { return !item.expanded }), "pointer action shares the keyboard's scope")
+      check(hidden.every(function (item) { return !item.expanded }))
+      equal(button.text, "Expand details")
       for (var item of all) item.expanded = false
     }
     function test_cpu_gpu_overview_uses_inventory_and_marks_estimates() {
@@ -270,21 +374,23 @@ ShellRoot {
       var cpu = createTemporaryObject(cpuComponent, win.contentItem, { model: store })
       check(cpu); wait(20)
       var overview = findChild(cpu, "cpuGpuOverview")
-      equal(overview.modelData.label, "Integrated GPU")
+      check(cpu.hasIgpu)
       equal(overview.value, "~50%")
-      equal(overview.modelData.hint, "Frequency estimate")
+      check(overview.hint.indexOf("Frequency estimate") === 0)
       cpu.visible = false; wait(20)
-      equal(overview.modelData.label, "Integrated GPU", "hiding an ancestor must not turn GPU data into uptime")
+      check(cpu.hasIgpu, "hiding an ancestor must not turn GPU data into uptime")
       equal(overview.value, "~50%")
       store.integratedGpuLive = { busy: 25, busySource: "drm", freqCurMhz: 500, freqMaxMhz: 1000 }
       wait(20); overview = findChild(cpu, "cpuGpuOverview")
-      equal(overview.value, "25%"); equal(overview.modelData.hint, "Busy")
+      equal(overview.value, "25%"); equal(overview.hint, "Busy")
       store.integratedGpuLive = null
       wait(20); overview = findChild(cpu, "cpuGpuOverview")
       equal(overview.value, "--", "unavailable estimates remain unknown")
       store.integratedGpu = null
       wait(20); overview = findChild(cpu, "cpuGpuOverview")
-      equal(overview.modelData.label, "Uptime")
+      cpu.visible = true; wait(20)
+      check(!cpu.hasIgpu); check(!overview.visible, "missing GPU hides its card")
+      check(texts(cpu, true).indexOf("Uptime") >= 0, "uptime remains in the System card")
     }
     function test_intel_frequency_appears_once_without_hiding_other_device_readings() {
       var store = realStore()
@@ -293,12 +399,12 @@ ShellRoot {
       var gpu = createTemporaryObject(gpuComponent, win.contentItem, { model: store })
       check(gpu); wait(20)
       function clockCount() { return texts(gpu, true).filter(function (text) { return text === gpu.clockText }).length }
-      equal(clockCount(), 1, "the overview already shows Intel frequency")
-      check(texts(gpu, true).indexOf("DEVICE") < 0, "no empty device section")
+      equal(clockCount(), 1, "the Device card shows Intel frequency once")
+      check(texts(gpu, true).indexOf("Device") >= 0)
       store.discreteGpuLive = { freqCurMhz: 500, freqMaxMhz: 1000, engines: [{ id: "Render", busy: 12 }] }
       wait(20); equal(clockCount(), 1)
       check(texts(gpu, true).indexOf("Render") >= 0, "engine readings remain visible")
-      check(texts(gpu, true).indexOf("DEVICE") >= 0)
+      check(texts(gpu, true).indexOf("Device") >= 0)
       store.discreteGpuLive = { freqCurMhz: 500, freqMaxMhz: 1000, memoryClockMhz: 800, memoryClockSource: "fixture" }
       wait(20); equal(clockCount(), 1)
       check(findChild(gpu, "gpuMemoryClock").visible, "a separate memory clock remains visible")
