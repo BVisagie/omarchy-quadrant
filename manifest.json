@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "dev.bvisagie.quadrant",
   "name": "Quadrant",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Bernard Visagie",
   "license": "MIT",
   "description": "Unified system monitor for the Quattro bar: CPU, GPU, memory, drives and network in one slot, with a tabbed panel that names your hardware, keeps an hour of history and shows the processes behind the numbers, plus sensor and battery diagnostics.",
