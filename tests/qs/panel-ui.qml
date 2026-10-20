@@ -29,6 +29,8 @@ ShellRoot {
     property int refreshes: 0
     property var store: null
     property var currentProcessList: searchTarget
+    property var detailItem: null
+    function activeTabItem() { return detailItem }
     readonly property bool searchFocused: editor.activeFocus
     readonly property var tabs: gpuAvailable ? ["cpu", "gpu", "mem", "disk", "net"] : ["cpu", "mem", "disk", "net"]
     readonly property var labels: ({ cpu: "CPU", gpu: "GPU", mem: "Memory", disk: "Drives", net: "Network" })
@@ -106,6 +108,7 @@ ShellRoot {
       fakePanel.settingsOpen = false; fakePanel.longWindow = false
       fakePanel.gpuAvailable = true; fakePanel.barAvailable = true; fakePanel.barEnabled = false
       fakePanel.currentTab = "cpu"
+      fakePanel.detailItem = null
       fakePanel.switches = 0; fakePanel.closes = 0; fakePanel.moves = 0; fakePanel.refreshes = 0
       testWindow.width = 440
       firstGraph.finePoints = []; firstGraph.longPoints = []; firstGraph.stacked = false
@@ -293,6 +296,63 @@ ShellRoot {
       compare(choices.value, "second")
       verify(second.selected)
     }
+    function test_wide_header_shares_a_row_and_reflows_without_overlap() {
+      var options = ["cpu", "gpu", "mem", "disk", "net", "hardware"].map(function (t) {
+        return { value: t, label: t === "hardware" ? "Hardware" : fakePanel.labels[t] }
+      })
+      var view = createTemporaryObject(headerComponent, keys, {
+        width: Commons.Style.space(720), options: options, barToggleVisible: true, resourceName: "Memory"
+      })
+      verify(view); wait(20)
+      verify(view.inlineActions)
+      var flow = findChild(view, "panelTabs"), toggle = findChild(view, "barVisibility"), gear = findChild(view, "panelSettings")
+      verify(flow.x + flow.width <= toggle.x)
+      verify(toggle.x + toggle.width < gear.x)
+      verify(toggle.y < flow.implicitHeight)
+      view.width = Commons.Style.space(320); wait(20)
+      verify(!view.inlineActions)
+      verify(toggle.y >= flow.implicitHeight)
+      verify(view.implicitHeight >= toggle.y + toggle.implicitHeight)
+    }
+    function test_responsive_columns_preserve_process_view_and_disclosure_state() {
+      var view = createTemporaryObject(memoryComponent, keys, { width: Commons.Style.space(720) })
+      verify(view); wait(20)
+      var columns = findChild(view, "resourceColumns")
+      var first = findChild(columns, "primaryColumn"), second = findChild(columns, "secondaryColumn")
+      var roster = view.processList
+      verify(columns.wide)
+      compare(second.y, 0)
+      verify(second.x >= first.width)
+      verify(second.x + second.width <= columns.width)
+      roster.expanded = true; roster.query = "123"; roster.sortMode = "name"
+      var accounting = findChild(view, "memoryAccounting").parent.parent
+      accounting.expanded = true; wait(20)
+      view.width = Commons.Style.space(320); wait(20)
+      verify(!columns.wide)
+      compare(second.x, 0)
+      verify(second.y >= first.implicitHeight)
+      compare(view.processList, roster, "resize keeps the same searchable list")
+      verify(roster.expanded); compare(roster.query, "123"); compare(roster.sortMode, "name")
+      verify(accounting.expanded, "resize keeps the disclosure open")
+      view.width = Commons.Style.space(720); wait(20)
+      verify(columns.wide); compare(second.y, 0)
+      verify(columns.implicitHeight >= second.implicitHeight)
+      verify(columns.implicitHeight >= first.implicitHeight)
+    }
+    function test_details_keyboard_shortcut_preserves_shell_tab_and_search_typing() {
+      var view = createTemporaryObject(memoryComponent, keys, { width: Commons.Style.space(720) })
+      verify(view); wait(20)
+      fakePanel.detailItem = view
+      var accounting = findChild(view, "memoryAccounting").parent.parent
+      verify(!accounting.expanded)
+      keys.forceActiveFocus()
+      keyClick(Qt.Key_D); verify(accounting.expanded)
+      keyClick(Qt.Key_D); verify(!accounting.expanded)
+      keyClick(Qt.Key_Tab); compare(fakePanel.switches, 1)
+      keyClick(Qt.Key_Slash); tryCompare(editor, "activeFocus", true)
+      keyClick(Qt.Key_D); compare(editor.text, "d")
+      verify(!accounting.expanded, "typing a search never expands hidden details")
+    }
     function test_hero_wraps_identity_and_bounds_detail() {
       var hero = createTemporaryObject(heroComponent, keys, {
         width: 288, title: "A long hardware model with useful identity", meta: "driver · topology · capacity", detail: "12.3 GiB used"
@@ -312,7 +372,7 @@ ShellRoot {
       wait(20)
       verify(detail.width <= hero.width)
     }
-    function test_pressure_scale_does_not_replace_actual_psi() {
+    function test_pressure_overview_reports_actual_psi_without_a_gauge_scale() {
       var view = createTemporaryObject(memoryComponent, keys, { width: 288, model: {
         sample: { psi: { ms10: 31.2 }, mem: { swtot: 0, swfre: 0 } },
         memComp: Model.memComposition({ tot: 1000, avl: 400, fre: 200, buf: 50, cac: 100, srec: 10, slab: 20 }),
@@ -321,9 +381,8 @@ ShellRoot {
       verify(view)
       wait(20)
       var pressure = findChild(view, "memoryPressure")
-      compare(pressure.centerText, "31.2%")
-      compare(pressure.fraction, 1)
-      verify(findChild(view, "memoryPressureScale").text.indexOf("0–25%") >= 0)
+      compare(pressure.value, "31.2%")
+      verify(!findChild(view, "memoryPressureScale"), "numeric pressure needs no gauge ceiling")
       verify(findChild(view, "memoryAccounting").text.indexOf("total − available") >= 0)
     }
     function test_minute_history_survives_slower_cadence() {

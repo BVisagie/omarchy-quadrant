@@ -4,7 +4,7 @@ import qs.Ui
 import "../lib/index.mjs" as Model
 import "../components" as Components
 
-// Memory tab: usable RAM and DIMM identity, used and pressure rings, a
+// Memory tab: usable RAM and DIMM identity, compact overview values, a
 // used-memory history framed on its own range, the composition bar, swap,
 // and the top-by-PSS roster.
 Item {
@@ -23,9 +23,6 @@ Item {
   readonly property var sysMem: model && model.sysInfo ? model.sysInfo.mem : null
   readonly property var psi: sample ? sample.psi : null
   readonly property var pal: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent), String(Commons.Color.foreground), String(Commons.Color.background))
-  // The pressure ring spans 0–25 %: PSI "some" above that is already a
-  // machine that stalls constantly, and a 0–100 ring never moved.
-  readonly property real pressureCeiling: 25
 
   implicitWidth: 200
   implicitHeight: column.implicitHeight
@@ -38,7 +35,6 @@ Item {
 
   readonly property string memTitle: comp ? Model.formatKiB(comp.totalK) + " usable" : "Memory"
   readonly property string memMeta: sysMem && sysMem.ram && sysMem.ram.label ? sysMem.ram.label : ""
-  readonly property string memDetail: comp ? Model.formatKiB(comp.usedK) + " used" : ""
 
   readonly property var compositionSegments: {
     var c = root.comp
@@ -87,181 +83,164 @@ Item {
   Column {
     id: column
     width: root.width
-    spacing: Commons.Style.space(10)
+    spacing: Commons.Style.space(12)
 
     Components.Hero {
       width: parent.width
       title: root.memTitle
       meta: root.memMeta
-      detail: root.memDetail
     }
 
-    Flow {
+    Components.MetricStrip {
       width: parent.width
-      spacing: Commons.Style.space(18)
+      metrics: [
+        { label: "Used", value: root.comp ? Model.formatKiB(root.comp.usedK) : "--", hint: root.comp ? Model.formatPct(root.comp.usedPct) + " of usable RAM" : "Waiting for data" },
+        { label: "Available", value: root.sample && root.sample.mem ? Model.formatKiB(root.sample.mem.avl) : "--", hint: "Includes reclaimable" },
+        { name: "memoryPressure", label: "Pressure", value: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined ? Model.formatPct(root.psi.ms10, 1) : "--", hint: "Some · stalled time" },
+        { label: "Swap used", value: root.swap ? Model.formatKiB(root.swap.usedK) : "--", hint: root.swap ? Model.formatKiB(root.swap.totalK) + " total" : "Waiting for data" }
+      ]
+    }
 
-      Components.RingGauge {
-        size: Commons.Style.space(96)
-        fraction: root.comp && root.comp.usedPct !== null && root.comp.usedPct !== undefined
-                  ? Model.clamp(root.comp.usedPct / 100, 0, 1) : 0
-        color: root.pal.primary
-        centerText: root.comp ? Model.formatPct(root.comp.usedPct) : "--"
-        subText: "used"
-      }
-
-      Column {
-        width: Commons.Style.space(96)
-        spacing: Commons.Style.space(2)
-        Components.RingGauge {
-          objectName: "memoryPressure"
-          size: Commons.Style.space(96)
-          fraction: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined
-                    ? Math.min(1, root.psi.ms10 / root.pressureCeiling) : 0
-          color: root.pal.hot
-          centerText: root.psi && root.psi.ms10 !== null && root.psi.ms10 !== undefined ? Model.formatPct(root.psi.ms10, 1) : "--"
-          subText: "pressure"
-        }
-        Text {
-          objectName: "memoryPressureScale"
-          textFormat: Text.PlainText
-          text: "0–25% scale"
-          color: root.pal.dim
-          font.family: Commons.Style.font.family
-          font.pixelSize: Commons.Style.font.caption
+    Components.AdaptiveColumns {
+      objectName: "resourceColumns"
+      width: parent.width
+      primary: [
+        Components.GraphBlock {
           width: parent.width
-          horizontalAlignment: Text.AlignHCenter
-          wrapMode: Text.WordWrap
-        }
-      }
-
-      Column {
-        width: parent.width < Commons.Style.space(360) ? parent.width : Math.max(0, parent.width - Commons.Style.space(96) * 2 - parent.spacing * 2)
-        spacing: Commons.Style.space(4)
-
-        Components.SectionHeader {
-          width: parent.width
-          text: "COMPOSITION"
-        }
-        Components.CompositionBar {
-          width: parent.width
-          segments: root.compositionSegments
-        }
-        Repeater {
-          model: [
-            { label: "Applications", color: root.pal.primary, value: root.comp ? Model.formatKiB(root.comp.appsK) : "--" },
-            { label: "Cache", color: root.pal.secondary, value: root.comp ? Model.formatKiB(root.comp.cacheK) : "--" },
-            { label: "Kernel", color: root.pal.tertiary, value: root.comp ? Model.formatKiB(root.comp.kernelK) : "--" },
-            { label: "Free", color: root.pal.track, value: root.comp ? Model.formatKiB(root.comp.freeK) : "--" }
+          title: "USED"
+          finePoints: root.model ? root.model.memHistory : []
+          longPoints: root.model ? root.model.memLong : []
+          longWindow: root.longWindow
+          sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
+          band: true
+          fixedMax: 100
+          formatValue: function (v) { return Model.formatPct(v, 1) }
+          fields: [{ key: "u", label: "used", color: root.pal.primary }]
+          legend: [
+            { label: "used", color: root.pal.primary, value: root.comp ? Model.formatPct(root.comp.usedPct, 1) : "--" },
+            { label: "pressure", color: root.pal.hot, value: root.psi && root.psi.ms10 !== null ? Model.formatPct(root.psi.ms10, 1) + " some" : "--" }
           ]
-          delegate: Item {
-            required property var modelData
+          onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
+        },
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(4)
+
+          Components.SectionHeader {
             width: parent.width
-            implicitHeight: legendLabel.implicitHeight
-            Rectangle {
-              id: swatch
-              width: Commons.Style.space(8)
-              height: Commons.Style.space(8)
-              radius: Commons.Style.space(2)
-              color: parent.modelData.color
-              anchors.verticalCenter: parent.verticalCenter
+            text: "COMPOSITION"
+          }
+          Components.CompositionBar {
+            width: parent.width
+            segments: root.compositionSegments
+          }
+          Repeater {
+            model: [
+              { label: "Applications", color: root.pal.primary, value: root.comp ? Model.formatKiB(root.comp.appsK) : "--" },
+              { label: "Cache", color: root.pal.secondary, value: root.comp ? Model.formatKiB(root.comp.cacheK) : "--" },
+              { label: "Kernel", color: root.pal.tertiary, value: root.comp ? Model.formatKiB(root.comp.kernelK) : "--" },
+              { label: "Free", color: root.pal.track, value: root.comp ? Model.formatKiB(root.comp.freeK) : "--" }
+            ]
+            delegate: Item {
+              required property var modelData
+              width: parent.width
+              implicitHeight: legendLabel.implicitHeight
+              Rectangle {
+                id: swatch
+                width: Commons.Style.space(8)
+                height: Commons.Style.space(8)
+                radius: Commons.Style.space(2)
+                color: parent.modelData.color
+                anchors.verticalCenter: parent.verticalCenter
+              }
+              Text {
+                id: legendLabel
+                textFormat: Text.PlainText
+                text: parent.modelData.label
+                color: root.pal.dim
+                font.family: Commons.Style.font.family
+                font.pixelSize: Commons.Style.font.caption
+                anchors.left: swatch.right
+                anchors.leftMargin: Commons.Style.space(5)
+                anchors.verticalCenter: parent.verticalCenter
+              }
+              Text {
+                textFormat: Text.PlainText
+                text: parent.modelData.value
+                color: Commons.Color.foreground
+                font.family: Commons.Style.font.family
+                font.pixelSize: Commons.Style.font.caption
+                font.features: ({ "tnum": 1 })
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+              }
             }
+          }
+          Components.Disclosure {
+            width: parent.width
+            title: "Memory accounting"
             Text {
-              id: legendLabel
+              objectName: "memoryAccounting"
               textFormat: Text.PlainText
-              text: parent.modelData.label
+              text: "Used = total − available. Composition separates free RAM, cache, kernel (unreclaimable slab) and the remaining application estimate."
               color: root.pal.dim
               font.family: Commons.Style.font.family
               font.pixelSize: Commons.Style.font.caption
-              anchors.left: swatch.right
-              anchors.leftMargin: Commons.Style.space(5)
-              anchors.verticalCenter: parent.verticalCenter
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: parent.modelData.value
-              color: Commons.Color.foreground
-              font.family: Commons.Style.font.family
-              font.pixelSize: Commons.Style.font.caption
-              font.features: ({ "tnum": 1 })
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width
+              wrapMode: Text.WordWrap
             }
           }
         }
-      }
-    }
-
-    Text {
-      objectName: "memoryAccounting"
-      textFormat: Text.PlainText
-      text: "Used = total − available. Composition separates free RAM, cache, kernel (unreclaimable slab) and the remaining application estimate."
-      color: root.pal.dim
-      font.family: Commons.Style.font.family
-      font.pixelSize: Commons.Style.font.caption
-      width: parent.width
-      wrapMode: Text.WordWrap
-    }
-
-    Components.GraphBlock {
-      width: parent.width
-      title: "USED"
-      finePoints: root.model ? root.model.memHistory : []
-      longPoints: root.model ? root.model.memLong : []
-      longWindow: root.longWindow
-      sampleSeconds: root.model ? root.model.barIntervalMs / 1000 : 1
-      band: true
-      fixedMax: 100
-      formatValue: function (v) { return Model.formatPct(v, 1) }
-      fields: [{ key: "u", label: "used", color: root.pal.primary }]
-      legend: [
-        { label: "used", color: root.pal.primary, value: root.comp ? Model.formatPct(root.comp.usedPct, 1) : "--" },
-        { label: "pressure", color: root.pal.hot, value: root.psi && root.psi.ms10 !== null ? Model.formatPct(root.psi.ms10, 1) + " some" : "--" }
       ]
-      onToggleWindow: if (root.panel) root.panel.longWindow = !root.panel.longWindow
-    }
+      secondary: [
+        Components.ProcessList {
+          id: processRoster
+          panel: root.panel
+          active: root.active
+          expandable: true
+          expandedRows: root.expandedRows
+          expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
+          scopeText: Model.processScope(root.model ? root.model.procStats : null, "mem", expanded)
+          width: parent.width
+          rows: root.rows
+          valueHeader: "SIZE · % RAM"
+          emptyText: root.active ? "Measuring memory…" : "Open this tab to sample processes"
+          errorText: root.errorText
+        },
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(6)
 
-    Column {
-      width: parent.width
-      spacing: Commons.Style.space(6)
-
-      Components.SectionHeader { width: parent.width; text: "SWAP" }
-      Components.StatRow {
-        width: parent.width
-        label: "Used"
-        value: root.swap ? Model.formatKiB(root.swap.usedK) + " of " + Model.formatKiB(root.swap.totalK) : "--"
-      }
-      Components.StatRow {
-        width: parent.width
-        visible: root.swap && root.swap.totalK > 0
-        label: "Swap in/out"
-        value: root.swapRate ? Model.formatRate(root.swapRate.inKBs * 1024) + " / " + Model.formatRate(root.swapRate.outKBs * 1024) : "--"
-      }
-      Repeater {
-        model: root.swapDeviceRows
-        delegate: Components.StatRow {
-          required property var modelData
-          width: column.width
-          label: modelData.label
-          value: modelData.value
+          Components.SectionHeader { width: parent.width; text: "SWAP" }
+          Components.StatRow {
+            wrapValue: true
+            width: parent.width
+            label: "Used"
+            value: root.swap ? Model.formatKiB(root.swap.usedK) + " of " + Model.formatKiB(root.swap.totalK) : "--"
+          }
+          Components.StatRow {
+            wrapValue: true
+            width: parent.width
+            visible: root.swap && root.swap.totalK > 0
+            label: "Swap in/out"
+            value: root.swapRate ? Model.formatRate(root.swapRate.inKBs * 1024) + " / " + Model.formatRate(root.swapRate.outKBs * 1024) : "--"
+          }
+          Components.Disclosure {
+            width: parent.width
+            title: "Swap devices"
+            Repeater {
+              model: root.swapDeviceRows
+              delegate: Components.StatRow {
+   wrapValue: true
+                required property var modelData
+                width: parent.width
+                label: modelData.label
+                value: modelData.value
+              }
+            }
+          }
         }
-      }
-    }
-
-    PanelSeparator { }
-
-    Components.ProcessList {
-      id: processRoster
-      panel: root.panel
-      active: root.active
-      expandable: true
-      expandedRows: root.expandedRows
-      expandedReady: root.model && root.model.procStats ? root.model.procStats.mode === "expanded" : false
-      scopeText: Model.processScope(root.model ? root.model.procStats : null, "mem", expanded)
-      width: parent.width
-      rows: root.rows
-      valueHeader: "SIZE · % RAM"
-      emptyText: root.active ? "Measuring memory…" : "Open this tab to sample processes"
-      errorText: root.errorText
+      ]
     }
   }
 }

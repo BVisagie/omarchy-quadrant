@@ -28,11 +28,18 @@
   name their series, and missing readings remain excluded.
 - Equal tab slots wrap on narrow panels, device choices keep full names in
   tooltips, and the bar switch names its resource. Hardware details adapt to
-  narrow widths; memory explains used/composition accounting and labels the
-  pressure ring's 0–25% visual scale beside its actual PSI value.
+  narrow widths; memory explains used/composition accounting.
 
 ### Changed
 
+- Prefer a wider, theme-scaled 720-unit panel with graphs and details beside
+  processes. Header controls share a row when they fit; narrow screens stack
+  the same content without resetting search, selection or disclosures.
+- CPU, GPU and Memory show compact overview values; Memory pressure is numeric
+  without an empty gauge. Hardware groups sensors by device, uses a core
+  temperature grid and keeps battery/power/fan details alongside it. Repeated
+  device paths and measurement explanations expand on demand; `D` toggles
+  the current tab's details without taking over the shell's Tab key.
 - Network addresses appear as individual Copy rows in the Interface section,
   replacing the first two addresses previously shown in the hero summary.
 - Bar styles reserve fixed slots through 100%, estimated GPU prefixes, and

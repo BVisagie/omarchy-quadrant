@@ -158,6 +158,35 @@ ShellRoot {
       fixture.raw = initialRaw; wait(20)
       equal(view.pinnedSensor.id, id)
     }
+    function test_grouped_core_grid_keeps_live_identity_and_error_states() {
+      win.width = Commons.Style.space(720) + 32
+      var cores = []
+      for (var i = 0; i < 8; i++) cores.push(Object.assign({}, initialRaw.sensors[0], {
+        id: "hwmon:" + "0".repeat(62) + (32 + i).toString(16), label: "Core " + (i * 4), value: 40 + i
+      }))
+      fixture.raw = Object.assign({}, initialRaw, { sensors: [initialRaw.sensors[0]].concat(cores, initialRaw.sensors.slice(1)) })
+      wait(30)
+      var columns = findChild(view, "resourceColumns")
+      check(columns.wide)
+      var first = findChild(view, "hardwareSensorValue_" + cores[0].id)
+      var next = findChild(view, "hardwareSensorValue_" + cores[1].id)
+      check(first && next); check(next.x > first.x); equal(next.y, first.y)
+      var group = first.parent.parent
+      var details = findChild(group, "sensorDeviceDetails")
+      details.expanded = true
+      var changed = Object.assign({}, cores[0], { value: null, status: "Permission denied" })
+      fixture.raw = Object.assign({}, fixture.raw, { sensors: [initialRaw.sensors[0], changed].concat(cores.slice(1), initialRaw.sensors.slice(1)) })
+      wait(30)
+      equal(findChild(view, "hardwareSensorValue_" + cores[0].id), first)
+      equal(first.value, "--")
+      check(details.expanded)
+      check(texts(first).indexOf("Permission denied") >= 0)
+      check(texts(view).indexOf("Core 28") >= 0, "reported core IDs are not renumbered")
+      win.width = 320; wait(30)
+      check(!columns.wide)
+      equal(findChild(view, "hardwareSensorValue_" + cores[0].id), first)
+      check(details.expanded)
+    }
     function test_gpu_details_preserve_auto_with_keyboard_and_pointer() {
       equal(findChild(view.actionList, "actionButton_0").text, "Details")
       equal(findChild(view.actionList, "actionButton_1").text, "Details")
@@ -301,7 +330,7 @@ ShellRoot {
       check(gpu); wait(20)
       var memory = findChild(gpu, "gpuMemoryClock")
       check(memory.visible); equal(memory.value, "1000 MHz")
-      check(texts(gpu).indexOf("GPU power") >= 0); check(texts(gpu).indexOf("140°F") >= 0)
+      check(texts(gpu).some(function (text) { return text.toLowerCase() === "gpu power" })); check(texts(gpu).indexOf("140°F") >= 0)
       store.discreteGpuLive = Object.assign({}, store.discreteGpuLive, { memoryClockMhz: null })
       wait(20); equal(memory.value, "--")
       store.discreteGpuLive = Object.assign({}, store.discreteGpuLive, { memoryClockSource: "" })

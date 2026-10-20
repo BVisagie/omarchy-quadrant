@@ -9,13 +9,22 @@ QtObject {
   readonly property bool discreteGpuAvailable: discreteGpus.some(function (g) { return g.telemetryAvailable !== false })
   property var sample: null
   property var diskInfo: null
+  property bool includeCores: false
+  function coreSensors() {
+    var ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 28, 32, 33]
+    return ids.map(function (id, i) {
+      return { id: "hwmon:" + "0".repeat(62) + (32 + i).toString(16), kind: "temperature",
+        driver: "coretemp", owner: "devices/platform/coretemp.0", channel: "temp" + (i + 2),
+        label: "Core " + id, value: 40 + i % 10, criticalC: 100, status: "" }
+    })
+  }
   property var raw: ({ ok: true, mode: "sample", monotonicS: 12, truncated: false,
     sensors: [
       { id: "hwmon:" + "a".repeat(64), kind: "temperature", driver: "coretemp", owner: "devices/platform/coretemp.0", channel: "temp1", label: "Package id 0", value: 52, criticalC: 100, status: "" },
       { id: "hwmon:" + "b".repeat(64), kind: "temperature", driver: "nvme", owner: "devices/pci0000:00/0000:01:00.0/nvme/controller", channel: "temp1", label: "Composite", value: 41, criticalC: 85, status: "" },
       { id: "hwmon:" + "c".repeat(64), kind: "fan", driver: "board", owner: "devices/platform/board.0", channel: "fan1", label: "Chassis fan", value: 0, status: "" },
       { id: "hwmon:" + "d".repeat(64), kind: "temperature", driver: "amdgpu", owner: "devices/pci0000:00/0000:03:00.0", channel: "temp1", label: "GPU edge", gpu: true, value: null, status: "Read on the GPU detail tab" }
-    ],
+    ].concat(includeCores ? coreSensors() : []),
     packages: [{ id: "package-0", label: "Package 0", source: "intel-rapl:0", readable: true, energyUj: 1080000000, maxEnergyUj: 100000000000, monotonicS: 12, status: "" }],
     batteries: [
       { id: "battery:" + "e".repeat(64), name: "BAT0", model: "Laptop battery", scope: "System", chargePct: 78, healthPct: 93,

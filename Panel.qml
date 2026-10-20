@@ -168,7 +168,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Commons.Style.space(440))
+    contentWidth: panel.fittedContentWidth(Commons.Style.space(720))
     contentHeight: {
       var sp = Commons.Style.space(10)
       var natural = header.implicitHeight + headerSep.implicitHeight + bodyColumn.implicitHeight + sp * 2 + Commons.Style.space(6)

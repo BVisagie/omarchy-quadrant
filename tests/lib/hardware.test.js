@@ -10,6 +10,33 @@ function sample(time, energy, extra = {}) {
       maxEnergyUj: 100000000000, monotonicS: time, readable: true, status: "", ...extra }] };
 }
 
+test("sensor groups keep device identities, kinds, order and sparse core labels", () => {
+  const sensors = [
+    { id: "package", kind: "temperature", driver: "coretemp", owner: "devices/cpu0", label: "Package id 0" },
+    { id: "core20", kind: "temperature", driver: "coretemp", owner: "devices/cpu0", label: "Core 20" },
+    { id: "other", kind: "temperature", driver: "coretemp", owner: "devices/cpu1", label: "Package id 0" },
+    { id: "fan", kind: "fan", driver: "coretemp", owner: "devices/cpu0", label: "fan1" },
+    { id: "unusual", kind: "temperature", driver: "__proto__", owner: "devices/board", label: "<b>temp1</b>" }
+  ];
+  const before = structuredClone(sensors);
+  const groups = Model.hardwareSensorGroups(sensors);
+  assert.equal(groups.length, 4);
+  assert.deepEqual(groups[0].sensors.map(s => s.id), ["package", "core20"]);
+  assert.equal(groups[0].sensors[1].label, "Core 20");
+  assert.notEqual(groups[0].key, groups[1].key);
+  assert.notEqual(groups[0].key, groups[2].key);
+  assert.equal(groups[0].title, "coretemp · cpu0");
+  assert.equal(groups[1].title, "coretemp · cpu1");
+  assert.equal(groups[3].sensors[0].label, "<b>temp1</b>");
+  assert.deepEqual(sensors, before);
+  assert.deepEqual(Model.hardwareSensorGroups(null), []);
+  const drives = Model.hardwareSensorGroups(["0000:01:00.0", "0000:02:00.0"].map((slot, i) => ({
+    id: String(i), kind: "temperature", driver: "nvme", owner: `devices/pci/${slot}/nvme/controller`, label: "Composite"
+  })));
+  assert.equal(drives[0].title, "nvme · 0000:01:00.0/nvme/controller");
+  assert.equal(drives[1].title, "nvme · 0000:02:00.0/nvme/controller");
+});
+
 test("temperature conversion only changes display, including zero and negative values", () => {
   assert.equal(Model.formatTemp(0), "0°C");
   assert.equal(Model.formatTemp(0, "fahrenheit"), "32°F");

@@ -11,7 +11,11 @@ collection error keeps it reachable for diagnosis.
 
 ## Sensors and units
 
-Each sensor row shows its driver, channel label, and owning device path.
+Sensors are grouped by driver and owning device. Reported core temperatures
+use a grid with their original core IDs; package, drive and fan readings use
+compact rows. **Device details** reveals the owning path once per group.
+Unavailable, invalid and permission-denied readings remain visible beside
+their sensor; grouping does not replace missing values with zero.
 Duplicate labels from two chips remain separate. **Settings → Appearance →
 Pinned sensor** highlights one discovered channel at the top of Hardware.
 Its saved ID hashes the owning device, driver, and channel, with an NVMe serial
@@ -147,7 +151,7 @@ user. Readable RAPL rates and AMD/NVIDIA memory clocks still need physical
 hardware validation; fixtures are not evidence of runtime power behavior.
 
 <p align="center">
-  <a href="screenshots/hardware.png"><img src="screenshots/hardware.png" alt="Hardware diagnostics with synthetic sensor owners, a stopped fan, individual package watts, GPU Details actions, and separate laptop and peripheral batteries" width="440"></a>
+  <a href="screenshots/hardware.png"><img src="screenshots/hardware.png" alt="Wider Hardware diagnostics with grouped core temperatures beside synthetic batteries, package watts, a stopped fan and GPU Details actions" width="720"></a>
 </p>
 
 The documentation capture uses synthetic hardware and contains no machine

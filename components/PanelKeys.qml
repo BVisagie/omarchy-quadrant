@@ -8,6 +8,20 @@ Ui.PanelKeyCatcher {
   property var panel: null
   blocked: !panel || panel.settingsOpen || panel.searchFocused
 
+  // Tab belongs to the shell, so disclosures also need a direct keyboard
+  // path. Traverse the active tab only, retaining each existing control.
+  function toggleDetails(item) {
+    if (!item) return
+    var details = []
+    function collect(parent) {
+      if ("detailsDisclosure" in parent && parent.detailsDisclosure) details.push(parent)
+      for (var child of parent.children) collect(child)
+    }
+    collect(item)
+    var expand = details.some(function (detail) { return !detail.expanded })
+    for (var detail of details) detail.expanded = expand
+  }
+
   onCloseRequested: {
     if (!panel) return
     if (panel.currentActions && panel.currentActions.keyboardActive) panel.currentActions.leaveFocus()
@@ -30,6 +44,7 @@ Ui.PanelKeyCatcher {
       panel.currentProcessList.focusSearch(); return
     }
     if ((t === "a" || t === "A") && panel.currentActions) { panel.currentActions.toggleFocus(); return }
+    if ((t === "d" || t === "D") && panel.activeTabItem) { root.toggleDetails(panel.activeTabItem()); return }
     if (t === "r" || t === "R") {
       if (panel.store) {
         panel.store.refreshHardware()
