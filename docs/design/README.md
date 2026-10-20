@@ -1,5 +1,10 @@
 # Panel layout studies
 
+These are archived design proposals and their original review evidence.
+For the implemented UI, use the [current native screenshots](../USAGE.md#screenshots).
+The supplied `hardware-current.png` is the historical **before** image for
+the comparison, rather than a current product capture.
+
 ## Consistent resource panels
 
 [All-panel review](panels-review.html) extends the approved Hardware concept
@@ -38,7 +43,7 @@ scale and monitor-fitting rules.
 
 After A merged, [Hardware hierarchy review](hardware-review.html) explores
 four clearly bounded groups: processor, other temperatures, batteries, and
-power/cooling. It uses the supplied [current screenshot](hardware-current.png)
+power/cooling. It uses the supplied [before screenshot](hardware-current.png)
 for a before/after comparison. The prototype supports expandable details,
 the `D` shortcut, Celsius/Fahrenheit and a narrow layout.
 
@@ -78,9 +83,9 @@ History ranges, process sorting, process expansion, information disclosures
 and the bar switch are interactive demonstrations. Arrow keys switch the
 three mocked resources; H changes the history range.
 
-## Recommendation
+## Original recommendation
 
-Start with **A, the 720-unit wider popover**. It preserves the existing tab
+The recommendation was **A, the 720-unit wider popover**. It preserves the existing tab
 model and uses two columns to make usage and processes visible together.
 The default CPU and Memory views are approximately 710 units tall in the
 preview, and Hardware approximately 780. These are browser mockup dimensions,

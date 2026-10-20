@@ -2,10 +2,10 @@
 
 [← Hardware diagnostics](HARDWARE.md) · [Development](DEVELOPMENT.md)
 
-**Status: deferred to a future PR.** The hardware-diagnostics change does not
-implement the collection policy described here. Sensor inventory, temperature
-units, package watts, memory clocks, and battery/GPU diagnostics can be reviewed
-and merged independently of this follow-up.
+**Status: deferred to a future PR.** The merged hardware diagnostics and panel
+layouts do not implement the collection policy described here. Sensor inventory,
+temperature units, package watts, memory clocks, and battery/GPU diagnostics
+are available independently of this follow-up.
 
 The intended outcome is that a supported idle GPU can still runtime-suspend
 while Quadrant is enabled, and held readings show their actual age. Development

@@ -32,17 +32,18 @@ for baseline, wrap, reset, and source rules.
 
 ## Memory
 
-The ring and bar show `(MemTotal − MemAvailable) / MemTotal`. The
+The **Memory usage** card and bar use `(MemTotal − MemAvailable) / MemTotal`.
+The card also shows the corresponding used and available byte counts. The
 composition bar separates Applications, Kernel unreclaimable slab,
 Cache (page cache + Buffers + SReclaimable), and Free. These slices use a
-different calculation from the used-memory ring and need not match it.
+different calculation from used memory and need not match that percentage.
 
-The pressure ring displays PSI memory some avg10 on a 0–25 % scale; its
-numeric value remains the actual percentage. The used-memory graph
+Pressure displays PSI memory some avg10 as a numeric percentage, without a
+gauge or artificial ceiling. The used-memory graph
 follows its own range when usage varies; a flat series uses the full scale.
-The ring labels that visual scale explicitly. Composition's Applications
-slice is an estimate of the remaining physical RAM, not a sum of process
-PSS or RSS. Swap and compressed-swap details are shown separately.
+Composition's Applications slice is an estimate of the remaining physical
+RAM, not a sum of process PSS or RSS. Swap and compressed-swap details are
+shown in a separate card.
 
 Compact process memory uses proportional set size (PSS) from `smaps_rollup` where
 readable, apportioning shared pages across the processes that map them;

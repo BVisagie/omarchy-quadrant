@@ -1,5 +1,7 @@
 # Process exploration contract and validation
 
+[← Usage](USAGE.md#graphs-and-processes) · [Measurements](METRICS.md)
+
 CPU, Memory, and Drives support a compact top-consumer view and an expanded,
 searchable roster. Network and GPU retain their own attribution limits.
 
@@ -59,13 +61,16 @@ scrollbar position across repeated samples with no cursor, a visible cursor,
 an offscreen cursor, and changing value order. Nearby rank changes retain the
 visible group and offset; jumps of a viewport or more in either direction
 hold the scroll position while explicit navigation still reveals the cursor.
+The card suite also refreshes the compact roster 100 times and scrolls an
+expanded roster while checking that neither operation rescans detail controls.
+The details button still expands and collapses the tab's visible disclosures.
 
-All seven offscreen render targets ran on Qt 6.12 / Quickshell 0.3.2.
-Additional views covered expanded CPU/Memory/Drives, dark/light/monochrome,
-320 px width, horizontal/vertical bars, and 1×/1.25×/2× device scaling. The
-narrow memory view wraps its composition legend below the gauges. These
-checks exercise rendering and focus delivery within a test window; they do
-not measure physical compositor focus across monitors or idle power states.
+The current screenshot set renders all six resource tabs, settings, expanded
+Memory processes, and bar/graph comparisons with synthetic readings. Native
+layout checks cover 320/720-unit content widths, larger text, and disclosure
+state across resizing. Memory uses numeric readings and a separate composition
+card. These checks exercise rendering and focus delivery within a test window;
+they do not measure physical compositor focus across monitors or idle power.
 
 ## Performance observations
 
@@ -114,7 +119,8 @@ operation, with less than 32 MiB extra Store RSS for this expanded roster.
 These observations fit those limits. Expanded memory retains a full roster
 and short histories; RSS is expected to exceed compact mode. UI tests
 separately confirmed fewer than 25 delegates for a 256-row displayed model.
-Graph-bar performance belongs to its later implementation phase.
+Separate [bar rendering observations](BAR_TRENDS.md#rendering-observations)
+cover text and graph styles.
 
 To repeat, use isolated runtime/state directories, the same `/proc` workload,
 `processCount=5`, `barIntervalMs=1000`, and `panelIntervalMs=2000`. Compare a

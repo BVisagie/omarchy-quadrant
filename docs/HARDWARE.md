@@ -15,8 +15,12 @@ The **Processor** card comes first for recognized CPU drivers. **Other
 temperatures**, **Batteries**, and **Power & cooling** keep related readings
 together. Sensors remain grouped by driver and owning device; known drivers
 gain readable labels, while unknown drivers retain their names.
+If different drivers share a friendly name, the raw driver distinguishes
+them; multiple devices using one driver retain an owning-path suffix.
 
 Reported core temperatures start with a count and temperature range.
+One available temperature, or equal minimum and maximum readings, displays
+a single value.
 **Core temperatures** expands a grid with the original core IDs. Unavailable
 and critical core counts remain visible when collapsed; critical status uses
 each sensor's reported threshold. Package, drive and fan readings use compact
@@ -43,9 +47,11 @@ board sensor does not replace either reading.
 
 Fan zero is shown as **0 RPM · stopped**. Missing, disabled, faulted, and
 invalid readings show **--** with a reason where reported. A thermistor type
-does not suppress a driver's converted temperature. Inputs use the driver's
-millidegree readings; Quadrant does not apply board-specific libsensors
-conversion tables or infer calibration requirements from `temp*_type`.
+does not suppress a driver's converted temperature. Quadrant interprets
+temperature inputs as millidegrees. The hwmon ABI also allows some external
+thermistor channels to report raw millivolts; these need userspace conversion
+and are not calibrated by Quadrant. It does not apply board-specific
+libsensors tables or infer calibration requirements from `temp*_type`.
 GPU-owned channels are identified but their input, fault, enable, type, and
 critical files are left to the existing selected-GPU collectors. Hardware
 shows **Read on the GPU detail tab** for those channels.
@@ -116,6 +122,10 @@ voltage × current is labelled **estimated**. A real zero stays zero, while
 missing health, cycles, or power stays **--**. Peripheral drivers often expose
 charge alone. See the [power-supply ABI](https://docs.kernel.org/power/power_supply_class.html).
 
+Before a battery sample arrives, its status says **Waiting for a reading…**.
+A sampled battery without charge reports **Charge unavailable**, followed by
+its status when present. A reported 0% remains a real charge reading.
+
 The existing GPU selectors already choose a live card. **Graphics inventory**
 adds role and PCI identity across cards, including known-vendor devices that
 the existing telemetry gate excludes. **Details** opens the existing CPU iGPU
@@ -151,17 +161,16 @@ tools, and never writes permissions, limits, fan controls, or runtime power
 controls. Counter baselines live only in memory. Hardware diagnostics and memory
 clocks add no history writes or streaming tick work.
 
-The remaining selected hardware scope is implemented. AMD runtime
-power-management work remains deferred to a future PR; see the
+AMD runtime power-management work remains deferred to a future PR; see the
 [detailed follow-up scope, design considerations, and hardware test procedure](AMD_RUNTIME_POWER.md).
-This change preserves its existing GPU collection paths. Fixture tests establish
+The current implementation retains the existing GPU collection paths. Fixture tests establish
 parsing, units, visibility, counter failures, and UI behavior. The development machine confirms Intel
 sensors and system/peripheral discovery, with package counters denied to the
 user. Readable RAPL rates and AMD/NVIDIA memory clocks still need physical
 hardware validation; fixtures are not evidence of runtime power behavior.
 
 <p align="center">
-  <a href="screenshots/hardware.png"><img src="screenshots/hardware.png" alt="Wider Hardware diagnostics with grouped core temperatures beside synthetic batteries, package watts, a stopped fan and GPU Details actions" width="720"></a>
+  <a href="screenshots/hardware.png"><img src="screenshots/hardware.png" alt="Hardware cards with a collapsed core summary, device temperatures, individual batteries, package power, a stopped fan and GPU Details actions" width="720"></a>
 </p>
 
 The documentation capture uses synthetic hardware and contains no machine
