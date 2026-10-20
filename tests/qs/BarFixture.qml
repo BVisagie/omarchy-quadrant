@@ -29,6 +29,8 @@ QtObject {
   property var memComp: ({ usedPct: 62, usedK: 20000000 })
   property var gpuDisplay: ({ pct: 38, estimated: false })
   property var gpu: ({ vendor: "intel" })
+  property string amdCollectionState: "fresh"
+  property string gpuCollectionText: ""
   property var diskRates: ({ utilPct: 18, readBps: 10000, writeBps: 2000 })
   property var ifaceRates: ({ rxBps: 2000000, txBps: 100000 })
   property var cpuHistory: []

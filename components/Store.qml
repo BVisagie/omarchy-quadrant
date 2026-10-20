@@ -216,6 +216,207 @@ Item {
     expandedProcessViewers = expanded
   }
 
+  // Private, leased control is the common demand decision for all AMD readers.
+  readonly property string gpuControlDirectory: Quickshell.env("XDG_RUNTIME_DIR")
+    + "/quadrant-control." + Quickshell.processId + "." + Date.now().toString(36) + Math.random().toString(36).slice(2)
+  readonly property string gpuControlPath: gpuControlDirectory + "/control"
+  property bool gpuControlReady: false
+  property bool gpuStoreReady: false
+  readonly property bool gpuControlNeeded: !!((gpu && (gpu.vendor === "amd" || gpu.vendor === "intel"))
+    || (integratedGpu && integratedGpu.vendor === "amd"))
+  readonly property bool integratedControlWanted: !!(integratedGpu && integratedGpu.vendor === "amd"
+    && !sameAmdDevice && cpuTabViewers > 0)
+  onGpuControlNeededChanged: if (gpuStoreReady) ensureGpuControlDirectory()
+  onCpuTabViewersChanged: if (cpuTabViewers === 0) igpuProc.stop()
+  property int gpuControlGeneration: 1
+  property string gpuControlLastSignature: ""
+  property double gpuPolicyNowMs: 0
+  property string gpuControlError: ""
+  readonly property bool amdDemand: gpuSegmentViewers > 0 || gpuTabViewers > 0
+  readonly property bool sameAmdDevice: !!(gpu && integratedGpu && gpu.vendor === "amd"
+    && integratedGpu.vendor === "amd" && gpu.deviceId === integratedGpu.deviceId && gpu.path === integratedGpu.path)
+  readonly property string gpuControlSignature: Model.gpuControlSignature(gpu,
+    integratedGpu && integratedGpu.vendor === "amd" && !sameAmdDevice ? integratedGpu : null,
+    amdDemand || (sameAmdDevice && cpuTabViewers > 0), integratedControlWanted)
+  onGpuControlSignatureChanged: updateGpuControl()
+
+  function updateGpuControl() {
+    if (gpuControlSignature !== gpuControlLastSignature) {
+      var previous = Model.safeJson(gpuControlLastSignature)
+      var wasWanted = previous && previous[6] === true
+      gpuControlLastSignature = gpuControlSignature
+      gpuControlGeneration++
+      discreteDrmPrev = null
+      igpuDrmPrev = null
+      gpuProcessRows = []
+      if (gpu && gpu.vendor === "amd") {
+        clearAmdHelper()
+        amdCollectionState = amdDemand || (sameAmdDevice && cpuTabViewers > 0) ? "waiting" : "held"
+      }
+      if (!amdDemand) { discreteGpuProc.stop(); if (wasWanted) markGpuGap(Date.now() / 1000) }
+      if (cpuTabViewers === 0) igpuProc.stop()
+    }
+    ensureGpuControlDirectory()
+    if (!gpuControlReady) return
+    if (!gpuControlNeeded) {
+      // Revoke the last device immediately when switching to NVIDIA/none;
+      // its control file then needs no periodic writes.
+      gpuControlFile.setText("")
+      return
+    }
+    if (!(gpuPolicyNowMs > 0)) return
+    try {
+      gpuControlFile.setText(Model.gpuControlText(gpuControlGeneration, gpuPolicyNowMs + 3000,
+        gpu, integratedGpu && integratedGpu.vendor === "amd" && !sameAmdDevice ? integratedGpu : null,
+        amdDemand || (sameAmdDevice && cpuTabViewers > 0), integratedControlWanted))
+      gpuControlError = ""
+    } catch (e) { gpuControlError = "GPU collection control is unavailable" }
+  }
+
+  function ensureGpuControlDirectory() {
+    if (gpuStoreReady && gpuControlNeeded && !gpuControlReady && !gpuControlDirProc.running && !gpuControlRetry.running)
+      gpuControlDirProc.running = true
+  }
+  Process {
+    id: gpuControlDirProc
+    command: ["mkdir", "-m", "700", "--", store.gpuControlDirectory]
+    onExited: function (code) {
+      if (code === 0) {
+        store.gpuControlReady = true
+        policyUptime.reload()
+      } else {
+        store.gpuControlError = "GPU collection control is unavailable"
+        gpuControlRetry.restart()
+      }
+    }
+  }
+  Timer {
+    id: gpuControlRetry
+    interval: 2000
+    onTriggered: {
+      if (store.gpuControlNeeded && !store.gpuControlReady && !gpuControlDirProc.running)
+        gpuControlDirProc.running = true
+    }
+  }
+  ElapsedTimer { id: gpuPolicyElapsed }
+  function currentGpuTimeMs() {
+    return gpuPolicyNowMs > 0 ? gpuPolicyNowMs + gpuPolicyElapsed.elapsedMs() : 0
+  }
+  FileView {
+    id: gpuControlFile
+    path: store.gpuControlPath
+    atomicWrites: true
+    printErrors: false
+    onSaveFailed: store.gpuControlError = "GPU collection control is unavailable"
+  }
+  FileView {
+    id: policyUptime
+    path: store.gpuControlNeeded ? "/proc/uptime" : ""
+    printErrors: false
+    onLoaded: {
+      var value = Number(text().split(" ")[0]) * 1000
+      if (isFinite(value) && value > 0) {
+        gpuPolicyElapsed.restartMs()
+        store.gpuPolicyNowMs = value
+        store.updateGpuControl()
+      }
+    }
+  }
+  Timer {
+    interval: 1000
+    running: store.gpuControlReady && store.gpuControlNeeded
+    repeat: true
+    onTriggered: policyUptime.reload()
+  }
+
+  property var amdStreamReading: null
+  property var amdHeldReading: null
+  property double gpuGapMs: 0
+  property double gpuGapAt: 0
+  function clearAmdHelper() {
+    if (discreteGpuLive && (!amdHeldReading || discreteGpuLive.acquiredMs > amdHeldReading.acquiredMs))
+      amdHeldReading = discreteGpuLive
+    discreteGpuLive = null
+  }
+  onAmdCollectionStateChanged: {
+    if (amdCollectionState !== "fresh") { clearAmdHelper(); discreteGpuProc.stop() }
+  }
+  property string amdCollectionState: "waiting"
+  property string amdPowerState: "unknown"
+  property string amdHelperError: ""
+  property string integratedGpuCollectionState: "waiting"
+  property string integratedGpuPowerState: "unavailable"
+  property double integratedGpuAcquiredMs: 0
+  property var gpuSourceSequences: ({})
+  property double lastGpuHistoryMs: 0
+  readonly property string gpuCollectionText: gpu && gpu.vendor === "amd"
+    ? Model.gpuReadingLabel(amdCollectionState, amdPowerState,
+        gpuLive ? gpuLive.acquiredMs : 0, gpuPolicyNowMs, Math.max(6000, (gpuTabViewers > 0 && discreteGpuLive ? panelIntervalMs : barIntervalMs) * 3))
+        + (gpuControlError ? " · " + gpuControlError : "")
+        + (amdHelperError ? " · " + amdHelperError : "") : ""
+  readonly property string integratedGpuCollectionText: integratedGpu && integratedGpu.vendor === "amd"
+    ? Model.gpuReadingLabel(integratedGpuCollectionState, integratedGpuPowerState,
+        integratedGpuAcquiredMs, gpuPolicyNowMs, Math.max(6000, panelIntervalMs * 3)) : ""
+
+  function markGpuGap(ts, observedMs) {
+    if (!gpu || gpu.vendor !== "amd") return
+    var mono = observedMs > 0 ? observedMs : currentGpuTimeMs()
+    var minuteAt = ts, hourAt = ts
+    // A newer helper may be handled before this queued stream observation.
+    // Clamp that gap without hiding a real wall-clock rollback observed at
+    // advancing boot time. Equal boot times can share /proc/uptime's tick.
+    if (mono > 0 && mono <= lastGpuHistoryMs) {
+      if (gpuHistory.length) minuteAt = Math.max(ts, gpuHistory[gpuHistory.length - 1].t)
+      if (gpuLong.length) hourAt = Math.max(ts, gpuLong[gpuLong.length - 1].t)
+    }
+    var gapAt = Math.max(minuteAt, hourAt)
+    if (mono > gpuGapMs) gpuGapAt = gapAt
+    else if (mono === gpuGapMs) gpuGapAt = Math.max(gpuGapAt, gapAt)
+    gpuGapMs = Math.max(gpuGapMs, mono)
+    lastGpuHistoryMs = Math.max(lastGpuHistoryMs, mono)
+    gpuHistory = Model.pushHistoryGap(gpuHistory, minuteAt, 60, historyLimit * 3)
+    gpuLong = Model.pushBucketGap(gpuLong, hourAt, longBucketS, longWindowS)
+  }
+
+  function acceptAmdStream(reading, observedAt, observedMs) {
+    if (!gpu || gpu.vendor !== "amd") return
+    if (!reading || reading.generation !== gpuControlGeneration || reading.path !== gpu.path) {
+      amdCollectionState = amdDemand ? "waiting" : "held"
+      if (amdDemand) markGpuGap(observedAt || Date.now() / 1000, observedMs)
+      return
+    }
+    if (reading.state === "fresh" && !Model.gpuReadingAfterGap(reading, gpuGapMs, gpuGapAt)) return
+    amdCollectionState = reading.state
+    amdPowerState = reading.pm
+    if (sameAmdDevice && cpuTabViewers > 0) {
+      integratedGpuCollectionState = reading.state
+      integratedGpuPowerState = reading.pm
+    }
+    if (reading.state === "fresh" && reading.acquiredAt > 0 && reading.acquiredMs > 0) {
+      amdStreamReading = reading
+      if (sameAmdDevice && cpuTabViewers > 0) { integratedGpuLive = reading; integratedGpuAcquiredMs = reading.acquiredMs }
+      if (reading.busy !== null && reading.busy !== undefined) recordAmdHistory(reading, reading.sequence)
+    } else {
+      discreteDrmPrev = null
+      gpuProcessRows = []
+      markGpuGap(observedAt || Date.now() / 1000, observedMs)
+    }
+  }
+
+  function recordAmdHistory(reading, sequence) {
+    if (!sequence || !Model.gpuReadingAfterGap(reading, gpuGapMs, gpuGapAt)) return
+    var source = sequence.indexOf("helper:") === 0 ? "helper" : "stream"
+    if (gpuSourceSequences[source] === sequence || reading.acquiredMs < lastGpuHistoryMs) return
+    var sequences = Object.assign({}, gpuSourceSequences)
+    sequences[source] = sequence
+    gpuSourceSequences = sequences
+    lastGpuHistoryMs = reading.acquiredMs
+    var point = { b: reading.busy, v: Model.gpuVramPct(reading) }
+    gpuHistory = Model.pushTimedWindow(gpuHistory, point, reading.acquiredAt, 60, historyLimit * 3)
+    gpuLong = Model.pushBucket(adoptLoaded("gpu", gpuSeriesIdentity, gpu.card), point,
+      reading.acquiredAt, longBucketS, longWindowS)
+  }
+
   // ---- derived bar lists -----------------------------------------------
   readonly property var effectiveBarSegments: Model.effectiveSegments(
     segmentsSetting, gpuTopologyReady, discreteGpuAvailable, diskFallbackWithoutGpu, gpuListFailed !== true, barOrder)
@@ -225,6 +426,7 @@ Item {
   property var sample: null
   property var prevSample: null
   property bool streamLive: false
+  readonly property int streamProcessId: Number(streamProc.processId || 0)
   property double lastSampleAtMs: 0
   property double streamStartedAtMs: 0
   property string streamError: ""
@@ -300,9 +502,6 @@ Item {
   property var integratedGpuLive: null
   property string integratedGpuError: ""
 
-  readonly property string streamGpuPath: Model.gpuStreamPath(gpu)
-  readonly property string streamGpuVendor: Model.gpuStreamVendor(gpu)
-  readonly property string streamGpuSignature: Model.gpuStreamSignature(gpu)
   readonly property bool discreteGpuAvailable: gpuTopologyReady && gpu !== null && gpuListFailed !== true
   readonly property bool nvidiaSelected: gpu !== null && gpu.vendor === "nvidia"
   // nvidia-smi -i indexes NVIDIA devices, not /sys cards.
@@ -329,14 +528,15 @@ Item {
     if (!gpu || !gpu.path) return false
     if (gpu.vendor === "intel") return true
     if (gpu.vendor === "amd") {
-      var g = sample && sample.gpu
-      return !g || g.busy === null || g.busy === undefined
+      if (amdCollectionState !== "fresh") return false
+      return !!amdStreamReading && (amdStreamReading.busy === null || amdStreamReading.busy === undefined)
     }
     return false
   }
   readonly property bool discretePollWanted: {
     if (!gpu || !gpu.path) return false
     if (gpu.vendor !== "amd" && gpu.vendor !== "intel") return false
+    if (gpu.vendor === "amd" && amdCollectionState !== "fresh") return false
     if (gpuTabViewers > 0) return true
     return drmSampleable && gpuSegmentViewers > 0
   }
@@ -349,7 +549,7 @@ Item {
       if (nvidiaGpu && nvidiaGpu.utilPct !== null) return ({ pct: nvidiaGpu.utilPct, estimated: false })
       return null
     }
-    var g = sample ? sample.gpu : null
+    var g = gpu.vendor === "amd" ? gpuLive : sample ? sample.gpu : null
     if (g && g.busy !== null && g.busy !== undefined) return ({ pct: g.busy, estimated: false })
     var extra = discreteGpuLive
     if (extra && extra.busy !== null && extra.busy !== undefined)
@@ -364,9 +564,19 @@ Item {
   readonly property var gpuLive: {
     if (!gpu) return null
     if (gpu.vendor === "nvidia") return nvidiaGpu
+    if (gpu.vendor === "amd") {
+      var reading = amdStreamReading
+      if (discreteGpuLive && (!reading || discreteGpuLive.acquiredMs > reading.acquiredMs)) reading = discreteGpuLive
+      if (amdHeldReading && (!reading || amdHeldReading.acquiredMs > reading.acquiredMs)) reading = amdHeldReading
+      return reading
+    }
     if (discreteGpuLive) return discreteGpuLive
     return sample ? sample.gpu : null
   }
+
+  readonly property var gpuDetailLive: gpu && gpu.vendor === "amd" ? discreteGpuLive : gpuLive
+  readonly property string gpuDetailAge: gpu && gpu.vendor === "amd" && discreteGpuLive && discreteGpuLive.acquiredMs > 0
+    ? "last read " + Math.floor(Math.max(0, gpuPolicyNowMs - discreteGpuLive.acquiredMs) / 1000) + "s ago" : ""
 
   // ---- disk / interface selection --------------------------------------
   // Resolve name and identity together. Independent bindings can briefly
@@ -433,6 +643,10 @@ Item {
   function handleSample(line) {
     var s = Model.parseStreamLine(line)
     if (!s) return
+    handleParsedSample(s)
+  }
+
+  function handleParsedSample(s) {
     var dt = prevSample ? s.ts - prevSample.ts : 0
     var pct = Model.cpuDelta(prevSample ? prevSample.cpu : null, s.cpu)
     cpuPct = pct
@@ -489,7 +703,8 @@ Item {
     streamLive = true
     lastSampleAtMs = Date.now()
     streamError = ""
-    recordGpuHistory(s.ts)
+    if (gpu && gpu.vendor === "amd") acceptAmdStream(s.gpu, s.ts, s.uptimeS * 1000)
+    else recordGpuHistory(s.ts)
     historyDirty = true
   }
 
@@ -525,32 +740,25 @@ Item {
   }
 
   onBarIntervalMsChanged: restartStream()
-  onStreamGpuSignatureChanged: restartStream()
+
 
   Process {
     id: streamProc
     property bool intentionalStop: false
-    property string activeGpuKey: ""
     command: {
-      var args = [store.streamScript, String(store.barIntervalMs)]
-      if (store.streamGpuPath !== "" && store.streamGpuVendor !== "")
-        args.push(store.streamGpuPath, store.streamGpuVendor)
-      return args
+      return [store.streamScript, String(store.barIntervalMs), "--control", store.gpuControlPath]
     }
     running: true
     stdout: SplitParser {
       onRead: function (line) {
-        if (streamProc.activeGpuKey !== Model.gpuRuntimeKey(store.gpu)) {
-          var data = Model.safeJson(line)
-          if (!data) return
+        var data = Model.parseStreamLine(line)
+        if (!data) return
+        if (data.gpu && (!store.gpu || data.gpu.generation !== store.gpuControlGeneration || data.gpu.path !== store.gpu.path))
           data.gpu = null
-          line = JSON.stringify(data)
-        }
-        store.handleSample(line)
+        store.handleParsedSample(data)
       }
     }
     onRunningChanged: if (running) {
-      activeGpuKey = Model.gpuRuntimeKey(store.gpu)
       intentionalStop = false
       streamKillTimer.stop()
       store.streamStartedAtMs = Date.now()
@@ -660,7 +868,16 @@ Item {
       clean.gpu = null
       sample = clean
     }
-    restartStream()
+    amdStreamReading = null
+    amdHeldReading = null
+    gpuGapMs = 0
+    gpuGapAt = 0
+    amdCollectionState = "waiting"
+    amdPowerState = "unknown"
+    amdHelperError = ""
+    gpuSourceSequences = ({})
+    lastGpuHistoryMs = 0
+    updateGpuControl()
   }
 
   function setIntegratedGpu(next) {
@@ -669,6 +886,9 @@ Item {
     integratedGpuLive = null
     integratedGpuError = ""
     igpuDrmPrev = null
+    integratedGpuAcquiredMs = 0
+    integratedGpuCollectionState = "waiting"
+    updateGpuControl()
     if (igpuSampleable && cpuTabViewers > 0) pollIgpu()
   }
 
@@ -1026,6 +1246,17 @@ Item {
       integratedGpuError = (data && data.error) ? String(data.error) : "gpu-stats returned bad output"
       return
     }
+    if (data.vendor === "amd" && data.state) {
+      integratedGpuCollectionState = data.state
+      integratedGpuPowerState = data.pm || "unavailable"
+      if (data.state !== "fresh") { igpuDrmPrev = null; return }
+      if (data.generation !== gpuControlGeneration) return
+      if (!(data.ts > 0) || !(data.monoMs > 0) || !isFinite(data.ts) || !isFinite(data.monoMs)) {
+        integratedGpuError = "GPU acquisition time is unavailable"
+        return
+      }
+      integratedGpuAcquiredMs = data.monoMs
+    }
     var live = null
     if (data.vendor === "intel") live = Model.normalizeIntelGpu(Model.parseKeyValues(data.payload))
     else if (data.vendor === "amd") live = Model.normalizeAmdGpu(Model.parseKeyValues(data.payload))
@@ -1039,6 +1270,14 @@ Item {
 
   function pollIgpu() {
     if (!igpuSampleable || cpuTabViewers === 0) return
+    if (integratedGpu.vendor === "amd" && !gpuControlReady) return
+    if (sameAmdDevice) {
+      integratedGpuLive = gpuLive
+      integratedGpuAcquiredMs = gpuLive ? gpuLive.acquiredMs : 0
+      integratedGpuCollectionState = amdCollectionState
+      integratedGpuPowerState = amdPowerState
+      return
+    }
     igpuProc.run()
   }
 
@@ -1053,16 +1292,16 @@ Item {
 
   Components.Sampler {
     id: igpuProc
-    context: Model.gpuRuntimeKey(store.integratedGpu)
+    context: Model.gpuRuntimeKey(store.integratedGpu) + (store.integratedGpu && store.integratedGpu.vendor === "amd" ? ":" + store.gpuControlGeneration : "")
     command: {
       if (!store.igpuSampleable) return [store.gpuStatsScript, "sample", "intel", "/sys/class/drm"]
-      return [store.gpuStatsScript, "sample", store.integratedGpu.vendor, store.integratedGpu.path]
+      return [store.gpuStatsScript, "sample", store.integratedGpu.vendor, store.integratedGpu.path].concat(store.integratedGpu.vendor === "amd" ? [store.gpuControlPath, String(store.gpuControlGeneration)] : [])
     }
     onResult: function (text) {
-      if (activeContext === Model.gpuRuntimeKey(store.integratedGpu)) store.applyIgpu(text)
+      if (activeContext === context && store.cpuTabViewers > 0) store.applyIgpu(text)
     }
     onFailed: function (message) {
-      if (activeContext !== Model.gpuRuntimeKey(store.integratedGpu)) return
+      if (activeContext !== context) return
       if (store.integratedGpuError === "") store.integratedGpuError = "gpu-stats " + message
     }
   }
@@ -1070,19 +1309,47 @@ Item {
   function applyDiscreteGpu(text) {
     var data = Model.safeJson(text)
     if (!data || data.ok !== true) {
-      discreteGpuLive = null
+      if (gpu && gpu.vendor === "amd") {
+        amdHelperError = "GPU sample failed"
+        amdCollectionState = "failed"
+        discreteDrmPrev = null
+        markGpuGap(Date.now() / 1000)
+      } else discreteGpuLive = null
       return
+    }
+    if (data.vendor === "amd" && data.state) {
+      if (data.generation !== undefined && data.generation !== gpuControlGeneration) return
+      if (data.state === "fresh" && !Model.gpuReadingAfterGap({ acquiredMs: data.monoMs, acquiredAt: data.ts }, gpuGapMs, gpuGapAt)) return
+      amdCollectionState = data.state
+      amdPowerState = data.pm || "unavailable"
+      if (data.state !== "fresh") { clearAmdHelper(); discreteDrmPrev = null; gpuProcessRows = []; markGpuGap(Date.now() / 1000); return }
+      if (!(data.ts > 0) || !(data.monoMs > 0) || !isFinite(data.ts) || !isFinite(data.monoMs)) {
+        amdHelperError = "GPU acquisition time is unavailable"
+        amdCollectionState = "failed"
+        return
+      }
+      amdHelperError = ""
     }
     var live = null
     if (data.vendor === "intel") live = Model.normalizeIntelGpu(Model.parseKeyValues(data.payload))
     else if (data.vendor === "amd") live = Model.normalizeAmdGpu(Model.parseKeyValues(data.payload))
     if (!live) live = { kind: data.vendor || "" }
-    discreteGpuLive = applyDrmOverlay(data, "discrete", live)
+    live = applyDrmOverlay(data, "discrete", live)
+    if (data.vendor === "amd" && data.state === "fresh") {
+      live.acquiredAt = data.ts
+      live.acquiredMs = data.monoMs
+      discreteGpuLive = live
+      // Native busy is the primary history feed. Otherwise the DRM helper
+      // supplies genuinely acquired points at its own cadence, once each.
+      if (!amdStreamReading || amdStreamReading.busy === null || amdStreamReading.busy === undefined)
+        recordAmdHistory(live, "helper:" + (data.sequence || data.ts))
+    } else discreteGpuLive = live
     gpuSampleAtMs = Date.now()
   }
 
   function pollDiscreteGpu() {
     if (!discretePollWanted) return
+    if (gpu.vendor === "amd" && !gpuControlReady) return
     discreteGpuProc.run()
   }
 
@@ -1097,13 +1364,20 @@ Item {
 
   Components.Sampler {
     id: discreteGpuProc
-    context: Model.gpuRuntimeKey(store.gpu)
+    context: Model.gpuRuntimeKey(store.gpu) + (store.gpu && store.gpu.vendor === "amd" ? ":" + store.gpuControlGeneration : "")
     command: {
       if (!store.discretePollWanted) return [store.gpuStatsScript, "sample", "intel", "/sys/class/drm"]
-      return [store.gpuStatsScript, "sample", store.gpu.vendor, store.gpu.path]
+      return [store.gpuStatsScript, "sample", store.gpu.vendor, store.gpu.path].concat(store.gpu.vendor === "amd" ? [store.gpuControlPath, String(store.gpuControlGeneration)] : [])
     }
     onResult: function (text) {
-      if (activeContext === Model.gpuRuntimeKey(store.gpu)) store.applyDiscreteGpu(text)
+      if (activeContext === context && store.discretePollWanted) store.applyDiscreteGpu(text)
+    }
+    onFailed: function (message) {
+      if (activeContext !== context || !store.gpu || store.gpu.vendor !== "amd") return
+      store.amdCollectionState = "failed"
+      store.amdHelperError = "GPU helper " + message
+      store.discreteDrmPrev = null
+      store.markGpuGap(Date.now() / 1000)
     }
   }
 
@@ -1466,11 +1740,16 @@ Item {
   // Identity runs once at startup (and again on R); the stream and the
   // on-demand pollers start themselves.
   Component.onCompleted: {
+    gpuStoreReady = true
+    ensureGpuControlDirectory()
     gpuListProc.run()
     sysInfoProc.run()
     diskInfoProc.run()
     refreshHardwareDetails()
   }
 
-  Component.onDestruction: saveHistory()
+  Component.onDestruction: {
+    saveHistory()
+    if (gpuControlReady) Quickshell.execDetached(["rm", "-rf", gpuControlDirectory])
+  }
 }

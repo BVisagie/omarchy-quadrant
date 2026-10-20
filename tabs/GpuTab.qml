@@ -20,6 +20,9 @@ Item {
   readonly property var gpu: model ? model.gpu : null
   readonly property string vendor: gpu ? gpu.vendor : ""
   readonly property var live: model ? model.gpuLive : null
+  readonly property var details: model && model.gpuDetailLive !== undefined ? model.gpuDetailLive : live
+  readonly property string detailAge: model ? String(model.gpuDetailAge || "") : ""
+  readonly property bool held: vendor === "amd" && model && model.amdCollectionState !== undefined && model.amdCollectionState !== "fresh"
   readonly property var display: model ? model.gpuDisplay : null
   readonly property string nvidiaError: model ? model.nvidiaError : ""
   readonly property var gpuInfo: gpu
@@ -94,7 +97,8 @@ Item {
     if (!live || live.tempC === null || live.tempC === undefined) return "--"
     var unit = model && model.cfg ? model.cfg.temperatureUnit : "celsius"
     var t = Model.formatTemp(live.tempC, unit)
-    if (live.tempJunctionC !== null && live.tempJunctionC !== undefined) t += " · " + Model.formatTemp(live.tempJunctionC, unit) + " junction"
+    if (details && details.tempJunctionC !== null && details.tempJunctionC !== undefined)
+      t += " · " + Model.formatTemp(details.tempJunctionC, unit) + " junction" + (detailAge ? " (" + detailAge + ")" : "")
     return t
   }
   readonly property string clockText: {
@@ -159,8 +163,9 @@ Item {
 
           Components.MetricReadout {
             width: parent.width
-            value: root.display ? (root.display.estimated ? "~" : "") + Model.formatPct(root.display.pct, 1) : "--"
-            hint: root.display && root.display.estimated ? "Frequency estimate · not measured busy time" : "Busy · per card"
+            objectName: "gpuActivityReading"
+            value: root.display ? (root.held ? "Last " : "") + (root.display.estimated ? "~" : "") + Model.formatPct(root.display.pct, 1) : "--"
+            hint: Model.gpuActivityHint(root.display, root.model ? String(root.model.gpuCollectionText || "") : "")
           }
 
           Components.GraphBlock {
@@ -234,7 +239,7 @@ Item {
           width: parent.width
           title: "Device"
           id: deviceDetails
-          readonly property bool hasMemoryClock: !!(root.live && root.live.memoryClockSource !== undefined && root.live.memoryClockSource !== "")
+          readonly property bool hasMemoryClock: !!(root.details && root.details.memoryClockSource !== undefined && root.details.memoryClockSource !== "")
 
           Components.StatRow { width: parent.width; wrapValue: true; label: "Temperature"; value: root.tempText }
 
@@ -252,7 +257,7 @@ Item {
             width: parent.width
             visible: deviceDetails.hasMemoryClock
             label: "Memory clock"
-            value: Model.formatGpuClock(root.live ? root.live.memoryClockMhz : null)
+            value: Model.formatGpuClock(root.details ? root.details.memoryClockMhz : null) + (root.detailAge ? " · " + root.detailAge : "")
           }
           Components.StatRow {
             wrapValue: true

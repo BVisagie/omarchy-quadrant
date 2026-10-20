@@ -165,6 +165,10 @@ BarWidget {
   readonly property string cpuValueText: cpuPct ? Model.formatPct(cpuPct.nonIdle) : "--"
   readonly property string memValueText: memComp ? Model.formatPct(memComp.usedPct) : "--"
   readonly property string gpuValueText: {
+    if (store && store.gpu && store.gpu.vendor === "amd" && store.gpuCollectionText !== undefined) {
+      if (store.amdCollectionState === "sleeping") return "zz"
+      if (store.amdCollectionState !== "fresh") return "--"
+    }
     if (!gpuDisplay) return "--"
     return (gpuDisplay.estimated ? "~" : "") + Model.formatPct(gpuDisplay.pct)
   }
@@ -176,7 +180,8 @@ BarWidget {
   function readingTooltipFor(metric) {
     if (!streamLive) return "Quadrant: sampler offline"
     if (metric === "cpu") return Model.cpuBarTooltip(cpuPct)
-    if (metric === "gpu") return gpuDisplay ? "GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (frequency estimate)" : "") : "GPU --"
+    if (metric === "gpu") return (gpuDisplay ? "GPU " + Model.formatPct(gpuDisplay.pct) + (gpuDisplay.estimated ? " (frequency estimate)" : "") : "GPU --")
+      + (store && store.gpuCollectionText ? " · " + store.gpuCollectionText : "")
     if (metric === "mem") return memComp ? "Memory " + Model.formatPct(memComp.usedPct) + " used · " + Model.formatKiB(memComp.usedK) : "Memory --"
     if (metric === "disk") return diskRates
       ? "Drives " + Model.formatPct(diskRates.utilPct) + " busy · R " + Model.formatRate(diskRates.readBps) + " · W " + Model.formatRate(diskRates.writeBps)

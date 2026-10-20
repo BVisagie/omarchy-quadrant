@@ -231,9 +231,15 @@ Graphs leave breaks between samples beyond a cadence-dependent gap
 threshold; shorter interruptions may still be joined. The hour view's
 bucket averages cannot preserve every brief spike's size or exact timing.
 
-GPU history that relies on on-demand polling stops collecting once its
-last poll becomes stale. It does not fill hidden periods with a cached
-value. AMD direct sysfs busy can continue through the stream.
+AMD GPU telemetry stops when its relevant views are hidden, or runtime PM
+reports sleep/a transition. Native busy feeds history from actual stream
+acquisitions; the DRM helper supplies genuinely acquired points when native
+busy is unavailable. Cached readings are not reinserted on CPU ticks. Held
+values retain acquisition age, while zero-count gap markers advance the
+plot clock and break even short suppression intervals without entering means.
+See the [AMD collection policy and hardware limits](AMD_RUNTIME_POWER.md).
+Other GPU history that relies on on-demand polling stops collecting once its
+last poll becomes stale.
 
 ## Temperature and missing values
 

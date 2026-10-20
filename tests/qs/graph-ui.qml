@@ -237,6 +237,24 @@ ShellRoot {
       compare(graph.implicitHeight, blockHeight)
       compare(readout.text, graph.aligned ? graph.seriesNote(graph.fields[0]) : graph.note)
     }
+    function test_gpu_estimate_freshness_and_separate_detail_age() {
+      var model = { gpu: { card: "card0", vendor: "amd" }, gpuLive: { busy: 20, tempC: 40 },
+        gpuDetailLive: { memoryClockMhz: 19, memoryClockSource: "pp_dpm_mclk", tempJunctionC: 45 },
+        gpuDetailAge: "last read 3s ago", gpuDisplay: { pct: 20, estimated: true }, gpuRows: [],
+        discreteGpus: [], nvidiaError: "", barIntervalMs: 1000, cfg: { gpuGraphLayout: "overlay" }, gpuHistory: [], gpuLong: [],
+        amdCollectionState: "fresh", gpuCollectionText: "Live · last read 0s ago" }
+      var view = createTemporaryObject(gpuComponent, win.contentItem, { width: 408, model: model })
+      verify(view)
+      var reading = findChild(view, "gpuActivityReading")
+      verify(reading.hint.indexOf("Frequency estimate · not measured busy time") === 0)
+      verify(reading.hint.indexOf("Live · last read 0s ago") > 0)
+      verify(findChild(view, "gpuMemoryClock").value.indexOf("last read 3s ago") > 0)
+      verify(view.tempText.indexOf("junction (last read 3s ago)") > 0)
+      view.model = Object.assign({}, model, { amdCollectionState: "sleeping", gpuDetailLive: null,
+        gpuCollectionText: "Sleeping · last read 10s ago" })
+      verify(reading.value.indexOf("Last ") === 0)
+      verify(!findChild(view, "gpuMemoryClock").visible)
+    }
     function test_gpu_without_percentage_and_temporary_poll_failure() {
       var model = { gpu: { card: "card1", vendor: "intel" }, gpuLive: { vramUsed: 4096, vramTotal: null },
         gpuDisplay: { pct: 30, estimated: false }, gpuRows: [], discreteGpus: [], nvidiaError: "", barIntervalMs: 1000,

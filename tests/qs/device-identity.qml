@@ -60,6 +60,14 @@ ShellRoot {
       ]
     }))
   }
+  function freshGpuStream() {
+    // This fixture stubs the stream. Supply the active observation that now
+    // permits helper polling; sleeping/waiting stores must not launch it.
+    var at = Date.now() / 1000, mono = store.currentGpuTimeMs()
+    store.acceptAmdStream({ state: "fresh", pm: "active", generation: store.gpuControlGeneration,
+      path: store.gpu.path, busy: 55, acquiredAt: at, acquiredMs: mono,
+      sequence: "identity:" + ticks }, at, mono)
+  }
   function stage(name, next) {
     stageFile.setText(name + "\n")
     waitUntil = ticks + 2
@@ -200,6 +208,7 @@ ShellRoot {
         harness.check(store.adoptLoaded("gpu", store.gpuSeriesIdentity, "card1")[0].b === 77, "same-boot GPU history rejected")
         harness.check(store.adoptLoaded("disk", store.diskIdentity, "sdb")[0].r === 66, "same-boot disk history rejected")
         store.setViewer("test", { gpuTab: true, open: true })
+        harness.freshGpuStream()
         // The old poll takes 0.5 s. Replace hardware in its slot before it
         // finishes; its result must never become the new card's baseline.
         harness.waitUntil = harness.ticks + 1
@@ -216,6 +225,7 @@ ShellRoot {
       } else if (harness.phase === 9) {
         if (harness.ticks < harness.waitUntil) return
         harness.check(store.discreteGpuLive === null && store.gpuSampleAtMs === 0, "in-flight result crossed device identities")
+        harness.freshGpuStream()
         store.pollDiscreteGpu()
         harness.waitUntil = harness.ticks + 6
         harness.phase = 10

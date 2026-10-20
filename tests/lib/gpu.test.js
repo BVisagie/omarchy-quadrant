@@ -187,7 +187,7 @@ test("gpuIdentityEqual ignores object identity and extra fields", () => {
   assert.equal(Model.gpuIdentityEqual(a, rebuilt), true);
 });
 
-test("gpuStreamSignature is stable across same-card topology rebuilds", () => {
+test("GPU control stays stable across same-card topology rebuilds", () => {
   const raw = { card: "card1", vendor: "amd", path: "/sys/class/drm/card1/device", boot: true };
   const first = Model.pickGpu(
     Model.reconcileGpuTopology([raw], null, "auto").discreteGpus, "auto");
@@ -198,25 +198,17 @@ test("gpuStreamSignature is stable across same-card topology rebuilds", () => {
   assert.ok(first);
   assert.ok(rebuilt);
   assert.notEqual(first, rebuilt);
-  assert.equal(Model.gpuStreamSignature(first), "amd:/sys/class/drm/card1/device");
-  assert.equal(Model.gpuStreamSignature(rebuilt), Model.gpuStreamSignature(first));
-  assert.equal(Model.gpuStreamPath(rebuilt), Model.gpuStreamPath(first));
-  assert.equal(Model.gpuStreamVendor(rebuilt), "amd");
+  assert.equal(Model.gpuControlSignature(first, null, true, false), Model.gpuControlSignature(rebuilt, null, true, false));
 });
 
-test("gpuStreamSignature changes when path or vendor changes", () => {
-  const amd = { vendor: "amd", path: "/sys/a" };
-  const amdOther = { vendor: "amd", path: "/sys/b" };
-  const intel = { vendor: "intel", path: "/sys/a" };
-  const nvidia = { vendor: "nvidia", path: "/sys/a" };
-  assert.equal(Model.gpuStreamSignature(amd), "amd:/sys/a");
-  assert.notEqual(Model.gpuStreamSignature(amd), Model.gpuStreamSignature(amdOther));
-  assert.notEqual(Model.gpuStreamSignature(amd), Model.gpuStreamSignature(intel));
-  assert.equal(Model.gpuStreamSignature(nvidia), "");
-  assert.equal(Model.gpuStreamSignature(null), "");
-  assert.equal(Model.gpuStreamSignature({ vendor: "amd", path: "" }), "");
-  assert.equal(Model.gpuStreamPath(nvidia), "");
-  assert.equal(Model.gpuStreamVendor(intel), "intel");
+test("GPU control changes for new paths and vendors and excludes NVIDIA telemetry", () => {
+  const amd = { vendor: "amd", path: "/sys/class/drm/card0/device" };
+  assert.notEqual(Model.gpuControlSignature(amd, null, true, false),
+    Model.gpuControlSignature({ ...amd, path: "/sys/class/drm/card1/device" }, null, true, false));
+  assert.notEqual(Model.gpuControlSignature(amd, null, true, false),
+    Model.gpuControlSignature({ ...amd, vendor: "intel" }, null, true, false));
+  assert.equal(Model.gpuControlText(1, 100, { ...amd, vendor: "nvidia" }, null, true, false),
+    "1\t1\t100\t0\t-\t-\t0\t-\t-\n");
 });
 
 test("normalizeGpuList keeps slot and pci identity", () => {
