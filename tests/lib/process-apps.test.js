@@ -140,6 +140,18 @@ test("generic runtimes and arbitrary command arguments are not application ident
   assert.equal(processDesktopEntry(processAppIndex([brave, { id: "chrome", name: "Chrome", command: ["chrome"] }]), wrapped), brave)
 })
 
+test("xdg-open does not inherit the identity of the desktop app it launches", () => {
+  for (const command of [["xdg-open", "http://localhost:631/"], ["/usr/bin/xdg-open", "http://localhost:631/"],
+    ["env", "APP_MODE=1", "xdg-open", "http://localhost:631/"]]) {
+    const cups = { id: "cups", name: "Manage Printing", icon: "cups", command }
+    const index = processAppIndex([cups])
+    const raw = { pid: 1, start: 1, comm: "xdg-open", exe: "/usr/bin/xdg-open", value: 1 }
+    for (const row of [raw, { comm: "xdg-open" }, nameAndCollapse([raw], 1)[0]])
+      assert.equal(processDesktopEntry(index, row), null)
+    assert.equal(processDesktopEntry(index, { comm: "cups" }), cups)
+  }
+})
+
 test("compact and expanded groups retain bounded executable evidence without changing totals or identity", () => {
   const rows = [
     { pid: 1, start: 1, comm: "worker", exe: "actual-app", cpu: 3, memory: 20, read: 1, write: 2, value: 3 },
