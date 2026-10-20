@@ -39,6 +39,11 @@ ShellRoot {
     Commons.Color.foreground = palette === "light" ? "#3d3b50" : palette === "mono" ? "#eeeeee" : "#c8d8de"
     Commons.Color.accent = palette === "light" ? "#5850a0" : palette === "mono" ? "#cccccc" : "#70b7be"
     Commons.Color.urgent = palette === "mono" ? "#ffffff" : "#b34b4b"
+    if (harness.documentation) {
+      // The shell's control tokens are separate from Color.shellValues.
+      // Fix them too, so a host theme cannot inject its selected colours.
+      Commons.Style.styleOverrides = ({ "selected-color": "accent", "normal-color": "foreground" })
+    }
   }
 
   DocumentationFixture {
@@ -206,6 +211,14 @@ ShellRoot {
     onTriggered: {
       harness.applyPalette()
       win.color = Commons.Color.background
+      captureTimer.start()
+    }
+  }
+  Timer {
+    id: captureTimer
+    interval: 200
+    onTriggered: {
+      // Theme-driven control fills animate; let the fixed palette settle.
       win.contentItem.grabToImage(function (r) {
         r.saveToFile(harness.outPath)
         console.log("RENDER saved " + harness.outPath)

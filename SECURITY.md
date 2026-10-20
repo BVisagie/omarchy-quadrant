@@ -102,8 +102,15 @@ data. Attribution limits are documented in [Measurements](docs/METRICS.md).
   `jq --arg`; process and socket payloads stream through a bounded Python
   JSON encoder with a 1 MiB envelope limit. The stream uses its own
   JSON escaping with Bash builtins. Strings are not executed as commands.
-- Desktop-entry matching for process icons and names uses exact normalized
-  matches and a bounded cache. Wrapper labels use a fixed application map.
+- Desktop-entry matching uses bounded executable/script/name hints and parsed
+  launcher commands, followed by unambiguous aliases from a fixed application
+  map. Generic runtimes and arbitrary arguments do not establish app identity.
+  Inventory collisions fall through to stronger desktop identity matches;
+  conflicting evidence within a process row remains unresolved. Hidden
+  desktop handlers are excluded from this lookup.
+  The shared icon helper checks filesystem metadata for at most 512 requested
+  names in app/device icon directories and pixmaps. It writes no state; image
+  loading stays with Qt, and icon URLs are not retained as cached misses.
 - The `ss` parser anchors process ownership on the trailing `pid=` field
   rather than accepting a PID-looking token inside a process name.
 - Settings are normalized on read. Device names and helper arguments are

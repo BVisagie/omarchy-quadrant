@@ -213,7 +213,7 @@ same-name grouping. These tabs do not offer full-roster search.
 See [measurement limits](METRICS.md) for what each process value represents.
 
 <p align="center">
-  <a href="screenshots/process-exploration.png"><img src="screenshots/process-exploration.png" alt="Expanded memory process list with search, grouped counts, resident sizes and percentages in a light theme" width="420"></a>
+  <a href="screenshots/process-exploration.png"><img src="screenshots/process-exploration.png" alt="Expanded memory process list with Brave Origin and T3 Code icons, search, grouped counts, resident sizes and percentages in a light theme" width="420"></a>
 </p>
 
 ## IPC
@@ -239,8 +239,9 @@ methods. See [Settings](SETTINGS.md) for typed values and validation.
 ## Screenshots
 
 These native QML captures show the current panel across dark, light, and
-monochrome palette fixtures. Every reading, process, address and device
-identity is synthetic. The captures use 720 logical units of content plus
+monochrome palette fixtures. Readings, process instances, addresses and device
+identities are synthetic; application names and icons illustrate desktop
+matching. The captures use 720 logical units of content plus
 the renderer's margins; the installed panel adapts to your monitor and theme.
 Click a screenshot to view it at full size. See
 [reproduction instructions](DEVELOPMENT.md#documentation-screenshots).
@@ -252,7 +253,7 @@ Click a screenshot to view it at full size. See
       <a href="screenshots/cpu.png"><img src="screenshots/cpu.png" alt="CPU cards for processor activity, integrated graphics, top processes and system readings" width="420"></a>
     </td>
     <td width="50%" valign="top">
-      <p><strong>GPU</strong><br>Dedicated GPU activity and VRAM.</p>
+      <p><strong>GPU</strong><br>Dedicated GPU activity, VRAM and acquisition age.</p>
       <a href="screenshots/gpu.png"><img src="screenshots/gpu.png" alt="GPU activity, video memory, processes and device readings in a light theme" width="420"></a>
     </td>
   </tr>
@@ -267,6 +268,14 @@ Click a screenshot to view it at full size. See
     </td>
   </tr>
 </table>
+
+An AMD card that is sleeping retains the last measured activity with its age.
+The gap at the end of the graph marks time without samples; process attribution
+and active device-detail reads are suppressed until collection resumes.
+
+<p align="center">
+  <a href="screenshots/gpu-sleeping.png"><img src="screenshots/gpu-sleeping.png" alt="Sleeping AMD GPU showing Last 38.0%, a last-read age of 20 seconds, and a gap in its activity history" width="540"></a>
+</p>
 
 **Network** — interface selection, copyable MAC/IP values, download/upload
 history, and TCP process attribution.

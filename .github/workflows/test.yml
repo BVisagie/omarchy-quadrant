@@ -37,8 +37,8 @@ jobs:
         run: python3 -m pip install --quiet ruff
       - name: Lint python helpers
         run: |
-          ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/amd-runtime-power.py tests/py tests/bench-bar.py tests/qs/*.py
-          python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/amd-runtime-power.py tests/bench-bar.py tests/qs/*.py
+          ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/amd-runtime-power.py scripts/process-icons.py tests/py tests/bench-bar.py tests/qs/*.py
+          python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/amd-runtime-power.py scripts/process-icons.py tests/bench-bar.py tests/qs/*.py
       - name: Python helper tests
         run: python3 -m unittest discover -s tests/py -t . -v
 
@@ -119,6 +119,8 @@ jobs:
         run: bash tests/qs-process-lifecycle.sh
       - name: Process UI and keyboard (skips without quickshell and shell imports)
         run: bash tests/qs-process-ui.sh
+      - name: Process identities and live icon refresh (skips without quickshell and shell imports)
+        run: bash tests/qs-process-icons.sh
       - name: Panel controls and history (skips without quickshell and shell imports)
         run: bash tests/qs-panel-ui.sh
       - name: Graph layouts, hover and settings (skips without quickshell and shell imports)

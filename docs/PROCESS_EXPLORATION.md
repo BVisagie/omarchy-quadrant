@@ -18,7 +18,7 @@ searchable roster. Network and GPU retain their own attribution limits.
 | Identity | PID plus kernel start time. A group retains history, position, or cursor selection only while a member identity survives. A name alone cannot transfer identity. |
 | Search | Local normalized group name, desktop display name, and all member PIDs. A PID match identifies the matching members without replacing the group's totals. Search does not sample. |
 | Bounds | At most 1 MiB of encoded envelope JSON; an oversized sample is omitted in full and reported as unavailable coverage. Search runs before the 256-group display cap. Counts and a refinement message expose that cap. |
-| Rendering | Value/name order in expanded mode, sticky/value/name in compact mode. Samples retain the first visible group and pixel offset when it moves less than one viewport; larger rank changes keep the scroll position. Selection is reconciled without scrolling to it. Filter changes and explicit cursor movement reveal the target. A ListView creates only visible delegates. Installed desktop entries are indexed on inventory changes; icon paths use a 256-name cache. |
+| Rendering | Value/name order in expanded mode, sticky/value/name in compact mode. Samples retain the first visible group and pixel offset when it moves less than one viewport; larger rank changes keep the scroll position. Selection is reconciled without scrolling to it. Filter changes and explicit cursor movement reveal the target. A ListView creates only visible delegates. One Store-owned resolver indexes desktop identities and icon files; icon URLs remain live bindings so an initial miss can recover. |
 | Unknown data | Missing/reset/new CPU and I/O intervals stay null. Restricted I/O stays unavailable. Partial group totals show a lower-bound prefix and measured-member count. Sparkline gaps stay gaps. |
 
 Name grouping describes matching process names; it does not establish
@@ -34,6 +34,47 @@ are preserved.
 Keyboard and pointer behavior is described in [Usage](USAGE.md). Expansion
 and queries last for the panel session; closing resets them. Settings and
 other tabs suspend requests without changing process settings on disk.
+
+## Application names and icons
+
+CPU, Memory and Drives groups retain up to eight distinct executable, script
+and raw process-name hints from the existing sample, separately from their
+friendly label. For each retained hint, matching prefers unambiguous parsed
+launcher executables, then desktop IDs, startup classes, display/icon names,
+and known application aliases. Shared launcher/icon keys supply no evidence,
+allowing the app's own desktop ID to resolve even when a server launcher, game
+shortcut or PWA uses the same binary. Conflicting matches from the row's own
+hints still stop the lookup, including matches across different metadata
+fields. The friendly
+label is only a fallback when the retained hints do not resolve an app.
+This also handles `brave-origin` launching a process named
+`brave`. Generic runtimes and arbitrary command-line arguments do not identify
+an app. Conflicting or truncated evidence uses the generic icon. Group totals,
+PID/start identities and selection behavior are unchanged. GPU and Network
+continue to use the names available from their attribution helpers.
+
+Matching uses Quickshell's visible application inventory. `NoDisplay` entries
+are excluded, so hidden-only utilities retain the generic fallback. This also
+prevents hidden URL handlers from claiming the process of the app they launch.
+Restoring hidden-only matches would require a separate inventory source.
+
+The resolver refreshes when a process view opens, its desktop inventory
+changes, or R is pressed. Overlapping requests are coalesced. Process samples
+and visible delegates do not launch scans. The optional shell icon API is used
+when available; current Omarchy exposes it only to menu plugins, so Quadrant
+keeps its existing manifest kinds and provides its own file index using the
+same apps/devices lookup approach. Compatibility Stores and standalone process
+lists retain local resolver fallbacks.
+
+`process-icons.py` checks filesystem metadata for at most 512 requested icon
+names under user/XDG icon directories and pixmaps. It returns only matching
+app/device files, preferring SVG, PNG, then XPM, and creates no persistent state.
+Publishing the completed index updates existing images, even when rows and
+desktop entries have not changed. This allows a newly installed T3 Code icon
+to appear despite a miss in the running Qt theme cache. It does not promise
+to reload changed image contents at an unchanged URL after a successful load.
+Failed images do retry on refresh, including a file that appears later at the
+same absolute path.
 
 ## Validation performed
 
@@ -64,6 +105,11 @@ hold the scroll position while explicit navigation still reveals the cursor.
 The card suite also refreshes the compact roster 100 times and scrolls an
 expanded roster while checking that neither operation rescans detail controls.
 The details button still expands and collapses the tab's visible disclosures.
+Icon regressions use the actual T3/Brave identity mismatch, ambiguous aliases,
+runtime wrappers, and bounded hint propagation. A private late icon install
+updates an existing delegate without replacing its row or desktop inventory;
+the same test checks optional shell-callback bindings and absence of scans on
+process updates. All five resource tabs use the Store's shared resolver.
 
 The current screenshot set renders all six resource tabs, settings, expanded
 Memory processes, and bar/graph comparisons with synthetic readings. Native

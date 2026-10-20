@@ -47,6 +47,7 @@ self-held FIFO provides timing. Setup and cleanup use external tools.
 | `hardware-info.py list` | Startup and `R`; sensor/package/battery metadata, without telemetry inputs |
 | `hardware-info.py power/sample` | Hardware tab open, or CPU with all package counters/ranges readable; one serialized helper shared across monitors; CPU alone reads package counters only |
 | `panel-action.py` | Explicit Copy/Open activation only; clipboard stdin or a validated mount URI passed to the desktop tool |
+| `process-icons.py` | Process view opens, desktop inventory changes, or R; one lazy Store-owned file index, with coalesced requests and no per-sample scans |
 
 `panelIntervalMs` controls poll timers, including GPU polls needed by a
 visible bar segment. `barIntervalMs` controls the stream and graph ticks.
@@ -86,8 +87,8 @@ checks need the runtime tools, ShellCheck, Ruff, mawk, and gawk.
 ```sh
 node --test tests/lib/*.test.js
 python3 -m unittest discover -s tests/py -t . -v
-ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/amd-runtime-power.py tests/py tests/bench-bar.py tests/qs/*.py
-python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/amd-runtime-power.py tests/bench-bar.py tests/qs/*.py
+ruff check --no-cache scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/amd-runtime-power.py scripts/process-icons.py tests/py tests/bench-bar.py tests/qs/*.py
+python3 -m py_compile scripts/gpu-drm scripts/qproc.py scripts/helper-envelope.py scripts/panel-action.py scripts/hardware-info.py scripts/amd-runtime-power.py scripts/process-icons.py tests/bench-bar.py tests/qs/*.py
 bash tests/intel-freq-paths.sh
 bash tests/stream-forks.sh
 shellcheck -x scripts/quadrant-stream scripts/system-info scripts/disk-info scripts/gpu-stats scripts/gpu-intel-paths.sh scripts/gpu-policy.sh scripts/process-sample scripts/process-net tests/*.sh
@@ -110,6 +111,7 @@ bash tests/qs-gpu-power.sh
 bash tests/qs-gpu-review.sh
 bash tests/qs-process-lifecycle.sh
 bash tests/qs-process-ui.sh
+bash tests/qs-process-icons.sh
 bash tests/qs-panel-ui.sh
 bash tests/qs-graph-ui.sh
 bash tests/qs-bar-ui.sh
@@ -156,6 +158,12 @@ scroll retention across sample/reorder updates, keyboard handoff into
 filtered results, and cursor scrolling at a narrow width, with and without
 the load-patch pragma. It requires QtTest and shell imports;
 the lifecycle test needs only Quickshell. Both use isolated temporary state.
+`qs-process-icons.sh` installs an icon into a private XDG directory after the
+initial miss and checks that the same delegate updates without restarting.
+It also checks desktop-name search, shared resolution, optional native icon
+callbacks, and that process updates do not start filesystem scans. Node and
+Python fixtures cover matching ambiguity, launcher parsing, hint bounds,
+filesystem context/format precedence and safe path handling.
 
 `qs-panel-ui.sh` exercises the real panel shortcut dispatcher, duration
 buttons, synchronized graphs, summary click and wheel, search focus,
@@ -286,15 +294,22 @@ bash tests/render-docs.sh /tmp/quadrant-docs
 This runs the actual QML tabs, settings, bar widget, and graph components
 against deterministic synthetic data. The tab renderer's documentation mode
 uses `tests/qs/DocumentationFixture.qml` and does not instantiate the live
-sampling Store. Invented process names, device identifiers, mount paths, and
-documentation-range IP addresses keep the captures independent of the host.
+sampling Store. Synthetic process instances, device identifiers, mount paths,
+and documentation-range IP addresses keep captures independent of the host.
+The shared process resolver uses a fixed desktop inventory and bundled T3 Code
+and Brave Origin icons; unknown utilities use an original generic icon. See
+`tests/qs/icons/README.md` for asset sources and licenses. No desktop inventory
+or icon-directory scan is needed for these captures.
 Fixtures establish presentation, not driver support, hardware accuracy, or
 power-management behavior.
 
-The script refreshes all 17 files in `docs/screenshots/`: six resource panels,
-settings, expanded process exploration, the bare README bar, five bar
-comparisons, and three graph comparisons. It resets inherited
+The script refreshes all 18 files in `docs/screenshots/`: six resource panels,
+an additional sleeping AMD GPU example, settings, expanded process exploration,
+the bare README bar, five bar comparisons, and three graph comparisons. It resets inherited
 `QUADRANT_RENDER_*` options and fixes the timezone, scale, and font DPI.
+Panel captures also fix the shell's control-state colors and wait for their
+animations to settle. The AMD examples include acquisition age; sleeping
+retains the last measured activity and leaves history gaps during suppression.
 The bare README bar is captured at 2× (516 × 116 px) and displayed at its
 258 px logical width; the remaining captures use 1×.
 Panel captures have 720 px of content plus 16 px margins, use the dark,

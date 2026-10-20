@@ -214,6 +214,7 @@ Item {
           Components.ProcessList {
             id: processRoster
             panel: root.panel
+            apps: root.model && root.model.processApps ? root.model.processApps : null
             active: root.active
             scopeText: "Top processes with readable GPU attribution; full-roster search is unavailable."
             width: parent.width
