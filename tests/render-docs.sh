@@ -24,7 +24,7 @@ QUADRANT_RENDER_PALETTE=light QUADRANT_RENDER_EXPANDED=1 \
 
 unset QUADRANT_RENDER_DOCUMENTATION QUADRANT_RENDER_WIDTH QUADRANT_RENDER_FIT QUADRANT_RENDER_HEADER
 export QUADRANT_RENDER_ORDER=cpu,gpu,memory,disk,network
-QUADRANT_RENDER_BARE=1 QUADRANT_RENDER_BAR_STYLE=text QUADRANT_RENDER_SEGMENTS=cpu,gpu,memory,network \
+QT_SCALE_FACTOR=2 QUADRANT_RENDER_BARE=1 QUADRANT_RENDER_BAR_STYLE=text QUADRANT_RENDER_SEGMENTS=cpu,gpu,memory,network \
   bash tests/render-bar.sh "$out/bar.png"
 QUADRANT_RENDER_BAR_STYLE=text bash tests/render-bar.sh "$out/bar-text.png"
 bash tests/render-bar.sh "$out/bar-trends.png"

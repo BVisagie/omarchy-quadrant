@@ -39,8 +39,10 @@ if ! QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME="$theme" WAYLAND_DISPLAY="$d
   cat "$work/render.log" >&2
   exit 1
 fi
+if [[ ! -s $work/render.png ]] || grep -qE 'TypeError|ReferenceError|Binding loop|Failed to load|Unable to assign' "$work/render.log"; then
+  cat "$work/render.log" >&2
+  exit 1
+fi
 grep -E "rror|RENDER|BAR |TOOLTIP|loop" "$work/render.log" | grep -vE "qt\.qpa|qmlscanner" || true
-[[ -s $work/render.png ]] || { cat "$work/render.log" >&2; exit 1; }
-if grep -E 'TypeError|ReferenceError|Binding loop|Failed to load|Unable to assign' "$work/render.log"; then exit 1; fi
 cp "$work/render.png" "$out"
 echo "render: $out"

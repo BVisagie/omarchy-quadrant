@@ -27,7 +27,7 @@ lists the processes behind the numbers.
   package watts, individual batteries/peripherals, and a conditional GPU inventory.
 
 <p align="center">
-  <img src="docs/screenshots/bar.png" alt="Quadrant's default text bar with CPU, GPU, memory, and network segments" width="420">
+  <img src="docs/screenshots/bar.png" alt="Quadrant's default text bar with CPU, GPU, memory, and network segments" width="258">
 </p>
 
 The images use the real QML interface with synthetic readings. See the

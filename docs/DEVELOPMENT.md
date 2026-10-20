@@ -284,10 +284,13 @@ The script refreshes all 17 files in `docs/screenshots/`: six resource panels,
 settings, expanded process exploration, the bare README bar, five bar
 comparisons, and three graph comparisons. It resets inherited
 `QUADRANT_RENDER_*` options and fixes the timezone, scale, and font DPI.
+The bare README bar is captured at 2× (516 × 116 px) and displayed at its
+258 px logical width; the remaining captures use 1×.
 Panel captures have 720 px of content plus 16 px margins, use the dark,
 light, or monochrome palette fixtures, and fit their full content. The live
-popup may scroll on a smaller monitor. The shell font and Qt/icon versions
-can still affect raster output; inspect the refreshed images before committing.
+popup may scroll on a smaller monitor. Fonts, Qt/icon versions, and the
+rendering environment can still affect antialiasing and raster output;
+inspect the refreshed images before committing.
 The archived proposals and original before-image under `docs/design/` are
 historical evidence and are not refreshed.
 
@@ -320,6 +323,10 @@ process view; `QUADRANT_RENDER_QUERY`, `QUADRANT_RENDER_WIDTH`, and
 `QT_SCALE_FACTOR=1.25` or `2` exercises device scaling. These do not change the installed theme.
 The renderer uses isolated state and runtime directories, requires a fresh
 capture, and rejects QML runtime errors before replacing the output file.
+`python3 -m unittest tests.py.test_render -v` checks output preservation and
+runtime isolation, and renders the real `bar` target in live and documentation
+modes. The native bar case skips when Quickshell or Omarchy imports are absent;
+the environment and error-handling cases run without either dependency.
 When a session Wayland socket is
 available, it links only that socket into the temporary runtime and retains
 the desktop platform theme so process icons match the live panel. Without a

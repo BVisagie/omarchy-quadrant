@@ -100,6 +100,7 @@ ShellRoot {
     property color background: Commons.Color.background
     property color urgent: Commons.Color.urgent
     property bool vertical: Quickshell.env("QUADRANT_RENDER_VERTICAL") === "1"
+    property bool foregroundAnimationEnabled: false
     property int barSize: 26
     property string position: "top"
     property var shell: null
