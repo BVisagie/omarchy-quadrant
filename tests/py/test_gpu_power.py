@@ -119,6 +119,21 @@ class GpuPower(unittest.TestCase):
         status.write_text("suspended\n")
         self.assertEqual(self.helper()["state"], "sleeping")
 
+    def test_integrated_demand_does_not_authorize_another_physical_gpu(self):
+        other = self.dev.parent.parent / "card1/device"
+        other.mkdir(parents=True)
+        (other / "gpu_busy_percent").write_text("64\n")
+        self.trap()
+        expiry = time.clock_gettime_ns(time.CLOCK_BOOTTIME) // 1_000_000 + 2900
+        self.control.write_text(f"1\t2\t{expiry}\t0\t{self.dev}\tamd\t1\t{other}\tamd\n")
+        self.assertEqual(self.helper(True)["state"], "held")
+        row = json.loads(self.stream("--control", str(self.control)).stdout)["gpu"]
+        self.assertEqual(row["state"], "held")
+        result = subprocess.run([str(Path(SCRIPTS) / "gpu-stats"), "sample", "amd", str(other),
+                                 str(self.control), "2"], env=self.env, capture_output=True, text=True, timeout=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("gpu_busy_percent=64", json.loads(result.stdout)["payload"])
+
     def test_same_stream_toggles_and_switches_devices_without_losing_ticks(self):
         self.policy()
         proc = subprocess.Popen([str(Path(SCRIPTS) / "quadrant-stream"), "250", "--control", str(self.control)],

@@ -1,26 +1,85 @@
-# Deferred AMD GPU runtime power management
+# AMD GPU runtime telemetry policy
 
 [← Hardware diagnostics](HARDWARE.md) · [Development](DEVELOPMENT.md)
 
-**Status: deferred to a future PR.** The merged hardware diagnostics and panel
-layouts do not implement the collection policy described here. Sensor inventory,
-temperature units, package watts, memory clocks, and battery/GPU diagnostics
-are available independently of this follow-up.
+**Status: visibility and runtime-PM gating implemented; physical suspend
+preservation remains unverified.** The RX 7900 XTX desktop baseline did not
+runtime-suspend with Quadrant disabled. The implementation is therefore tested
+as a collection contract, with no claim of measured power savings or verified
+suspend preservation. See the [hardware report](AMD_RUNTIME_POWER_RESULTS.md)
+and [initial assessment and implementation plan](AMD_RUNTIME_POWER_PLAN.md).
 
-The intended outcome is that a supported idle GPU can still runtime-suspend
-while Quadrant is enabled, and held readings show their actual age. Development
-and automated testing can proceed without an AMD card. Real suspend/resume
-behavior must then be checked on the maintainer's AMD hardware before the
-behavior is considered verified. The current development machine cannot
-establish that result.
+The intended outcome remains that a supported idle GPU can runtime-suspend
+while Quadrant is enabled, and held readings show their actual age. Access
+to AMD hardware alone is insufficient: the disabled-Quadrant baseline must
+first demonstrate suspend under matching conditions.
 
-## Current behavior and remaining problem
+## Implemented behavior
 
-The selected dedicated AMD GPU is passed to `quadrant-stream` at startup. The
-stream reads GPU attributes on every tick, including when no GPU segment or tab
-is visible. Changing its GPU arguments currently restarts the stream, briefly
-interrupting unrelated metrics. Vendor helpers add their own on-demand reads;
-the CPU tab can also poll integrated graphics.
+The shared Store publishes an atomic, private runtime control file. It contains
+one generation and the demand/device for dedicated and integrated roles, with
+a three-second lease based on `/proc/uptime` (boot time, unaffected by wall-clock
+adjustment). A one-second metadata heartbeat renews the lease. Missing, expired,
+invalid, or superseded control suppresses controlled AMD reads. Control state
+is removed on Store destruction; a later stream start sweeps directories owned
+by dead controller processes.
+
+The stream re-reads control each tick. Device/visibility changes do not restart
+it, and CPU, memory, disk and network continue at their configured cadence.
+All hidden AMD telemetry stops; no background GPU history is collected. AMD
+helpers check the same device demand and generation before reading sysfs or
+launching `gpu-drm`. CPU/iGPU demand for the selected physical AMD device is
+combined with GPU bar/detail demand rather than launching a duplicate helper.
+Hardware's GPU-owned sensor exclusion remains in place.
+
+Before AMD telemetry, `gpu-policy.sh` checks runtime status. Suspended and
+transitioning devices are skipped, including when a detail tab or R refresh
+requests collection. Missing/unsupported PM status permits visible-only
+collection and is labelled unavailable; `power/control=on` and negative
+known autosuspend delays are labelled disabled. Present but unreadable or
+invalid PM metadata suppresses telemetry and reports failure. Retries are
+bounded by the existing stream/helper cadences and helper watchdog.
+
+Status checks do not lock the kernel against a transition during subsequent
+reads. No additional active-state cooldown is imposed: this machine supplies
+no suspending baseline with which to establish a useful quiet period. If a
+supported baseline shows that active-state polling postpones suspend, readers
+will need a measured shared collection/quiet window before that hardware can
+be reported as verified. Visibility/PM gating alone is not proof of that result.
+
+Readings carry their device/generation, acquisition wall/boot times and sample
+sequence. Stream and helper acquisitions retain separate ages. The GPU detail
+view uses the complete helper snapshot while it is open, so helper-only fields
+such as memory clock do not inherit a newer stream timestamp. Held values stay
+visible in detail with an age; the bar shows `zz` for sleep and `--` while held,
+waiting or failed. Tooltips explain the state and last reading. Real zero
+remains a measurement. CPU/iGPU status is displayed independently of errors.
+
+AMD history accepts each new acquisition once, using its acquisition time.
+Explicit zero-count gap markers break minute, hour and bar trends even for
+short suppression periods, survive v2 history reload, and do not enter means.
+Old history expires during suppression. DRM/rate baselines reset across demand
+and device generations and observed sleep/transition intervals.
+
+Activity becomes visible within one configured stream interval plus one helper
+interval and its six-second watchdog where helper data is needed (normally
+1 + 2 + 6 seconds as a conservative bound). Actual helper completion is usually
+much quicker. This is a scheduling bound under responsive reads, not a promise
+about driver wake timing. Stuck stream reads remain covered by the existing
+watchdog. CPU-only iGPU helpers use their panel interval plus watchdog.
+
+Sharing covers one successfully resolved shell service. Embedded compatibility
+Stores each enforce their own demand and PM checks; there is no cross-process
+batching guarantee between independent Stores. Identity discovery (`lspci`,
+GPU/sysfs metadata) remains a startup/explicit-refresh operation and has not
+been established as physically wake-neutral on a suspending device.
+
+## Previous behavior and hardware questions
+
+Before this change, the selected dedicated AMD GPU was passed to the stream
+at startup and read on every tick, even when hidden. Changing its GPU
+arguments restarted the stream. Vendor helpers added their own on-demand
+reads, and the CPU tab could also poll integrated graphics.
 
 Reading telemetry may interact with runtime PM on the target driver. The
 specific attributes, their effect on idle timing, and the useful collection
@@ -29,9 +88,8 @@ that the GPU is left idle if another reader continues polling.
 
 The Hardware collector already avoids GPU-owned telemetry inputs. Its FIFO
 fixtures establish that exclusion, not whether existing stream, helper, DRM,
-or metadata reads permit a physical GPU to suspend. The current GPU history
-freshness checks also need revisiting when samples can deliberately be held
-across several stream ticks.
+or metadata reads permit a physical GPU to suspend. Acquisition-aware GPU history is now covered by deterministic tests;
+physical wake/suspend behavior remains a separate hardware question.
 
 Runtime suspend here means a device's runtime PM state, not whole-system
 suspend, hibernation, a clock-frequency reduction, or a zero-utilization
@@ -57,7 +115,7 @@ External readers such as another hardware monitor are outside Quadrant's
 coordination. Record them in hardware results so a baseline failure is not
 automatically attributed to this plugin.
 
-## Proposed implementation boundaries
+## Acceptance contract
 
 1. **Start with visibility control.** Add a runtime control channel through
    which the stream can skip GPU reads without exiting. A small atomic control
@@ -108,7 +166,7 @@ or performance profiles. Keep power-policy configuration with the system.
 Avoid unrelated NVIDIA/Intel collection changes while preserving their current
 behavior under shared contract changes.
 
-## What can be built and verified without AMD hardware
+## Fixture validation targets
 
 Use private sysfs/proc fixtures, deterministic clocks, and delayed/failing
 helpers to test:
@@ -129,13 +187,25 @@ helpers to test:
 
 Fixture tests can prove those software contracts. They cannot prove that a
 real driver permits suspend, avoids wakeups, or saves a particular amount of
-power. Preserve that distinction in the future PR and test report.
+power. Preserve that distinction in the PR and test report.
 
 ## AMD hardware validation procedure
 
-The future PR should include a small read-only diagnostic script and a results
-template. They are follow-up deliverables; this documentation change does not
-add that script or change collection behavior.
+Use the [read-only observer](../scripts/amd-runtime-power.py),
+[results template](AMD_RUNTIME_POWER_RESULTS_TEMPLATE.md), and
+[recorded desktop results](AMD_RUNTIME_POWER_RESULTS.md). For example:
+
+```sh
+python3 scripts/amd-runtime-power.py --pci 0000:03:00.0 --duration 60 \
+  --context "Quadrant disabled; idle desktop" > /tmp/amd-baseline.jsonl
+```
+
+The observer writes JSONL only to stdout. Every file read and error is included;
+its periodic loop reads PM status/timing attributes, not GPU telemetry. It does
+not toggle Quadrant or modify any system policy. Record external readers and
+view/workload conditions separately. When temporarily disabling the widget,
+preserve its complete entry and position: Omarchy disable/enable can remove
+inline settings and reinsert it at its default location.
 
 1. **Identify the target and conditions.** Record GPU model and PCI identity,
    driver/kernel versions, relevant module parameters, display connections,
@@ -188,7 +258,7 @@ Unsupported/disabled-state and removal cases can be covered with fixtures when
 the physical machine cannot reproduce them without configuration changes.
 Keep any untested hardware cases explicitly marked as such.
 
-## Completion criteria for the future PR
+## Hardware completion criteria
 
 - A GPU shown to suspend with Quadrant disabled can still suspend under the
   corresponding tested idle conditions with the patched monitor enabled.

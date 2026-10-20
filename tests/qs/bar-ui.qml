@@ -34,6 +34,7 @@ ShellRoot {
       shared.gpuTopologyReady = true; shared.gpuListFailed = false
       shared.discreteGpuAvailable = true; shared.diskAvailable = true
       shared.gpu = { vendor: "intel" }; shared.streamLive = true
+      shared.amdCollectionState = "fresh"; shared.gpuCollectionText = ""
       shared.applySettings({ segments: Model.BAR_SEGMENTS })
       shared.cpuPct = { nonIdle: 42 }; shared.memComp = { usedPct: 62 }
       shared.gpuDisplay = { pct: 38, estimated: false }; shared.diskRates = { utilPct: 18 }
@@ -74,6 +75,21 @@ ShellRoot {
       shared.persistSettings({ barStyle: "text" })
       wait(20)
       verify(!trend(first, "cpu") && !trend(second, "cpu"))
+    }
+    function test_amd_sleep_held_and_zero_are_distinct() {
+      shared.gpu = { vendor: "amd" }
+      shared.gpuDisplay = { pct: 38, estimated: false }
+      shared.amdCollectionState = "sleeping"
+      shared.gpuCollectionText = "Sleeping · last read 12s ago"
+      compare(first.gpuValueText, "zz")
+      verify(first.readingTooltipFor("gpu").indexOf("GPU 38% · Sleeping · last read 12s ago") === 0)
+      shared.amdCollectionState = "held"
+      compare(first.gpuValueText, "--")
+      shared.amdCollectionState = "fresh"
+      shared.gpuDisplay = { pct: 0, estimated: false }
+      shared.gpuCollectionText = "Live · last read 0s ago"
+      compare(first.gpuValueText, "0%")
+      assertFits(findChild(cell(first, "gpu"), "barValue"))
     }
     function test_order_fallback_and_click_registration() {
       var order = ["network", "disk", "gpu", "cpu", "memory"]

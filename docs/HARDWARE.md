@@ -161,10 +161,10 @@ tools, and never writes permissions, limits, fan controls, or runtime power
 controls. Counter baselines live only in memory. Hardware diagnostics and memory
 clocks add no history writes or streaming tick work.
 
-AMD runtime power-management work remains deferred to a future PR; see the
-[detailed follow-up scope, design considerations, and hardware test procedure](AMD_RUNTIME_POWER.md).
-The current implementation retains the existing GPU collection paths. Fixture tests establish
-parsing, units, visibility, counter failures, and UI behavior. The development machine confirms Intel
+AMD collection now follows the [visibility and runtime PM policy](AMD_RUNTIME_POWER.md).
+The [AMD desktop results](AMD_RUNTIME_POWER_RESULTS.md) establish active-state
+collection behavior; preserved runtime suspend remains unverified. Fixture tests establish
+parsing, units, visibility, counter failures, and UI behavior. Initial Hardware validation confirmed Intel
 sensors and system/peripheral discovery, with package counters denied to the
 user. Readable RAPL rates and AMD/NVIDIA memory clocks still need physical
 hardware validation; fixtures are not evidence of runtime power behavior.
