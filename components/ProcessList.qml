@@ -7,7 +7,7 @@ import "../lib/index.mjs" as Model
 
 // Complete groups are searched before the 256-row presentation cap. ListView
 // creates only visible delegates; compact lists keep the store's sticky order.
-// Desktop matches are exact and indexed once per inventory change. No clipboard
+// Desktop identities are indexed once per inventory change. No clipboard
 // data is requested here; TextField paste requires the user's normal shortcut.
 Column {
   id: root
@@ -15,6 +15,8 @@ Column {
   readonly property bool detailsLeaf: true
 
   property var panel: null
+  property var apps: null
+  readonly property var appResolver: apps || localApps.item
   property bool active: true
   property var rows: []
   property var expandedRows: []
@@ -49,7 +51,7 @@ Column {
   readonly property color dim: Model.dimColor(String(foreground), String(Commons.Color.background))
   readonly property var sourceRows: expanded ? (expandedReady ? expandedRows : []) : rows
   readonly property string effectiveSort: expanded && sortMode === "sticky" ? "value" : sortMode
-  readonly property var results: Model.filterProcessGroups(sourceRows, expanded ? query : "", desktopNames, displayLimit, effectiveSort)
+  readonly property var results: Model.filterProcessGroups(sourceRows, expanded ? query : "", nameForRow, displayLimit, effectiveSort)
   readonly property var displayRows: results.rows
 
   spacing: Commons.Style.spacing.xxs
@@ -156,52 +158,16 @@ Column {
   onActiveChanged: if (!active) { suspendSearch(); clearCursor() }
   onExpandedChanged: if (!expanded) { query = ""; leaveSearch() }
 
-  // Build a finite index of installed entries, not a scan for each process
-  // on every sample. Only visible delegates resolve icons, with a 256-name
-  // FIFO cache; search uses names without loading icon paths.
-  readonly property var desktopValues: DesktopEntries.applications.values
-  property var desktopIndex: ({})
-  property var desktopNames: ({})
-  property var iconCache: ({})
-  property var iconOrder: []
-  function normalizeKey(value) {
-    var s = String(value || "").toLowerCase()
-    s = s.slice(s.lastIndexOf("/") + 1)
-    return s.slice(-8) === ".desktop" ? s.slice(0, -8) : s
+  // The real Store shares its resolver across tabs and monitors. Standalone
+  // views retain a lazy local fallback without a shell capability.
+  Loader {
+    id: localApps
+    active: !root.apps && root.active
+    sourceComponent: ProcessApps { active: root.active }
   }
-  function rebuildDesktopIndex() {
-    var index = {}, names = {}
-    var values = desktopValues || []
-    for (var i = 0; i < values.length; i++) {
-      var e = values[i]
-      if (!e) continue
-      var keys = [e.id, e.name, e.icon, e.startupClass]
-      for (var j = 0; j < keys.length; j++) {
-        var key = normalizeKey(keys[j])
-        if (key && !index["n" + key]) { index["n" + key] = e; names["n" + key] = String(e.name || "") }
-      }
-    }
-    desktopIndex = index
-    desktopNames = names
-    iconCache = ({})
-    iconOrder = []
-  }
-  onDesktopValuesChanged: rebuildDesktopIndex()
-  Component.onCompleted: rebuildDesktopIndex()
-  function entryForComm(comm) { return desktopIndex["n" + normalizeKey(comm)] || null }
-  function iconForComm(comm) {
-    var key = "n" + normalizeKey(comm)
-    if (iconCache[key] !== undefined) return iconCache[key]
-    var entry = entryForComm(comm)
-    var icon = entry ? String(entry.icon || "") : ""
-    var source = icon.charAt(0) === "/" ? Commons.Util.fileUrl(icon) : icon ? Quickshell.iconPath(icon, true) : ""
-    if (!source) source = Quickshell.iconPath("application-x-executable", true)
-    // Mutate only the lookup cache, not a binding dependency of delegates.
-    if (iconOrder.length >= 256) delete iconCache[iconOrder.shift()]
-    iconCache[key] = source
-    iconOrder.push(key)
-    return source
-  }
+  function entryForRow(row) { return appResolver ? appResolver.entryForRow(row) : null }
+  function nameForRow(row) { return appResolver ? appResolver.nameForRow(row) : "" }
+  function iconForRow(row) { return appResolver ? appResolver.iconForRow(row) : "" }
 
   Item {
     width: root.width
@@ -346,7 +312,7 @@ Column {
       required property var modelData
       required property int index
       readonly property bool isOther: modelData && modelData.pid === 0
-      readonly property var entry: isOther ? null : root.entryForComm(modelData ? modelData.comm : "")
+      readonly property var entry: isOther ? null : root.entryForRow(modelData)
       readonly property string displayName: isOther ? "Other traffic" : entry && entry.name ? String(entry.name) : String(modelData.comm || "")
       readonly property string memberText: {
         var r = modelData
@@ -364,7 +330,17 @@ Column {
 
       Image {
         id: appIcon
-        source: delegateRoot.isOther ? Quickshell.iconPath("network-transmit-receive", true) : root.iconForComm(delegateRoot.modelData.comm)
+        objectName: "processIcon_" + delegateRoot.index
+        readonly property string primarySource: delegateRoot.isOther ? Quickshell.iconPath("network-transmit-receive", true) : root.iconForRow(delegateRoot.modelData)
+        readonly property int iconRevision: root.appResolver ? (root.appResolver.iconRevision || 0) : 0
+        property bool loadFailed: false
+        property bool retryUncached: false
+        onPrimarySourceChanged: { loadFailed = false; retryUncached = false }
+        onIconRevisionChanged: if (loadFailed) { retryUncached = true; loadFailed = false }
+        cache: !retryUncached
+        source: loadFailed ? Quickshell.iconPath("application-x-executable", true) : primarySource
+        function showFallback() { if (status === Image.Error) loadFailed = true }
+        onStatusChanged: if (status === Image.Error) Qt.callLater(showFallback)
         width: Commons.Style.space(16)
         height: width
         sourceSize.width: width

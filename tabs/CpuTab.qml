@@ -158,6 +158,7 @@ Item {
           Components.ProcessList {
             id: processRoster
             panel: root.panel
+            apps: root.model && root.model.processApps ? root.model.processApps : null
             active: root.active
             expandable: true
             expandedRows: root.expandedRows

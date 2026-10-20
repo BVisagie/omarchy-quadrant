@@ -4,6 +4,7 @@ import QtQuick.Window
 import Quickshell
 import QtTest
 import qs.Commons as Commons
+import "components" as Components
 import "tabs" as Tabs
 import "lib/index.mjs" as Model
 
@@ -20,6 +21,7 @@ ShellRoot {
   Component { id: memoryComponent; Tabs.MemoryTab { } }
   Component { id: diskComponent; Tabs.DiskTab { } }
   Component { id: networkComponent; Tabs.NetworkTab { } }
+  Component { id: storeComponent; Components.Store { } }
   Component { id: disclosureSpy; SignalSpy { signalName: "disclosuresChanged" } }
   TestCase {
     id: testCase
@@ -31,6 +33,17 @@ ShellRoot {
     }
     function cleanup() {
       if (qtest_results.failed) console.error("QPANELUI failure: " + qtest_results.functionName + " " + qtest_results.dataTag)
+    }
+    function test_process_views_use_the_shared_store_resolver() {
+      var store = createTemporaryObject(storeComponent, testCase, { saveIntervalMs: 60000 })
+      verify(store)
+      for (var component of [cpuComponent, memoryComponent, diskComponent, networkComponent, gpuComponent]) {
+        var view = createTemporaryObject(component, testWindow.contentItem, { width: 720, model: store })
+        verify(view)
+        compare(view.processList.apps, store.processApps)
+        compare(view.processList.appResolver, store.processApps)
+        view.destroy()
+      }
     }
     function test_process_updates_do_not_rescan_details() {
       Commons.Style.applyShellValues({ "font.base-size": 12 })

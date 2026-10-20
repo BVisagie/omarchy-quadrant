@@ -224,6 +224,7 @@ Item {
             id: processRoster
             title: "Traffic by process"
             panel: root.panel
+            apps: root.model && root.model.processApps ? root.model.processApps : null
             active: root.active
             scopeText: "Per-process TCP attribution from visible sockets; UDP and other users may be missing. Full-roster search is unavailable."
             width: parent.width

@@ -23,6 +23,14 @@ Item {
   property var runCommand: null
   property bool embedded: false
 
+  readonly property var processApps: appResolver
+  Components.ProcessApps {
+    id: appResolver
+    active: store.openPanels > 0 && (store.cpuTabViewers > 0 || store.memTabViewers > 0
+      || store.diskTabViewers > 0 || store.netTabViewers > 0 || store.gpuTabViewers > 0)
+    nativeAppLibrary: store.shell && store.shell.appLibrary ? store.shell.appLibrary : null
+  }
+
   readonly property string moduleName: "dev.bvisagie.quadrant"
 
   function localPath(rel) {
@@ -728,6 +736,7 @@ Item {
   }
 
   function refreshHardware() {
+    appResolver.refreshIcons()
     refreshSysInfo()
     refreshDiskInfo()
     refreshGpuList()
