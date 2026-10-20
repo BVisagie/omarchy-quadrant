@@ -1,9 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-10-20
+
+Process exploration, hardware diagnostics, panel actions, optional graph
+and bar trend layouts, and a grouped, wider panel.
 
 ### Added
 
+- **Show all** on CPU, Memory and Drives collects the full process roster
+  while a viewer requests it, with name, desktop-name and member-PID search,
+  group counts and a virtualized list. Compact collection stays bounded and
+  labels its coverage; expanded memory uses explicitly labelled RSS.
 - Conditional Hardware diagnostics: device-owned temperature/fan inventory,
   stable sensor pins, Celsius/Fahrenheit across panels, readable CPU package
   watts, and individual system/peripheral battery health, capacity, cycles,
@@ -29,6 +36,11 @@
 - Equal tab slots wrap on narrow panels, device choices keep full names in
   tooltips, and the bar switch names its resource. Hardware details adapt to
   narrow widths; memory explains used/composition accounting.
+
+- AMD telemetry follows device/view demand and runtime power state:
+  hidden or sleeping cards are not woken for sampling, and changing the GPU
+  no longer restarts unrelated collection. Retained readings show their
+  age, and hour history omits buckets touched by suppression.
 
 ### Changed
 
@@ -112,6 +124,12 @@
   device ID and revision; without a match the panel lists every model
   that shares the ID instead of the first one.
   ([#24](https://github.com/BVisagie/omarchy-quadrant/issues/24))
+- Process rows resolve app icons and names through launcher executables,
+  desktop IDs, startup classes and known aliases, and pick up icons
+  installed after an initial miss. Shared launchers no longer hide the main
+  app; generic runtimes and `xdg-open` remain unresolved.
+- A sampler that stalls after startup or a settings change is restarted by
+  the watchdog.
 
 ## 1.0.0 — 2026-10-02
 
