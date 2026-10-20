@@ -16,7 +16,8 @@
 # tests/stream-forks.sh enforces this by watching the process's
 # waited-for-children counters stay flat across ticks.
 #
-# Usage: quadrant-stream [interval_ms] [gpu_device_path] [gpu_vendor]
+# Usage: quadrant-stream [interval_ms] [--control file | gpu_device_path gpu_vendor]
+#   --control file   private atomic, leased runtime device/demand configuration
 #   interval_ms      tick cadence, 250..60000 (default 1000)
 #   gpu_device_path  e.g. /sys/class/drm/card0/device (optional)
 #   gpu_vendor       amd | intel (optional; nvidia is never sampled here —
@@ -33,10 +34,17 @@ fi
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=gpu-intel-paths.sh
 source "$SCRIPT_DIR/gpu-intel-paths.sh"
+# shellcheck source=gpu-policy.sh
+source "$SCRIPT_DIR/gpu-policy.sh"
 
 interval_ms=${1:-1000}
 gpu_path=${2:-}
 gpu_vendor=${3:-}
+gpu_control=""
+if [[ $gpu_path == --control ]]; then
+  gpu_control=$gpu_vendor
+  gpu_path="" gpu_vendor=""
+fi
 
 [[ $interval_ms =~ ^[0-9]+$ ]] || { echo "quadrant-stream: bad interval '$interval_ms'" >&2; exit 2; }
 (( interval_ms < 250 )) && interval_ms=250
@@ -62,9 +70,10 @@ fi
 # (watchdog, shell crash) never ran its EXIT trap, so sweep directories
 # whose owner is gone before creating ours. Directories of live samplers —
 # another monitor's copy, a dev instance — are left alone.
-for stale in "$XDG_RUNTIME_DIR"/quadrant-stream.*; do
+for stale in "$XDG_RUNTIME_DIR"/quadrant-stream.* "$XDG_RUNTIME_DIR"/quadrant-control.*; do
   [[ -d $stale ]] || continue
   owner=${stale##*/quadrant-stream.}
+  owner=${owner##*/quadrant-control.}
   owner=${owner%%.*}
   if [[ $owner =~ ^[0-9]+$ ]]; then
     kill -0 "$owner" 2>/dev/null && continue
@@ -180,43 +189,50 @@ if (( ${#CPU_FREQ_PATHS[@]} == 0 )) && [[ -r /sys/devices/system/cpu/cpu0/cpufre
   CPU_FREQ_PATHS+=(/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq)
 fi
 
-# GPU startup probes.
-gpu_busy_f="" gpu_vram_used_f="" gpu_vram_total_f=""
-gpu_temp_edge_f="" gpu_power_f="" gpu_sclk_f=""
-gpu_mem_busy_f=""
-gpu_freq_cur_f="" gpu_freq_max_f="" gpu_temp_f=""
+# GPU probes only discover paths. Re-run when the runtime target changes.
+probe_gpu() {
+  local h eng_dir eng_name eng_key
+  gpu_busy_f="" gpu_vram_used_f="" gpu_vram_total_f=""
+  gpu_temp_edge_f="" gpu_power_f="" gpu_sclk_f=""
+  gpu_mem_busy_f=""
+  gpu_freq_cur_f="" gpu_freq_max_f="" gpu_temp_f=""
+  GPU_ENG_PATHS=() GPU_ENG_KEYS=()
+  if [[ $gpu_vendor == amd ]]; then
+    [[ -r $gpu_path/gpu_busy_percent ]] && gpu_busy_f=$gpu_path/gpu_busy_percent
+    [[ -r $gpu_path/mem_busy_percent ]] && gpu_mem_busy_f=$gpu_path/mem_busy_percent
+    [[ -r $gpu_path/mem_info_vram_used ]] && gpu_vram_used_f=$gpu_path/mem_info_vram_used
+    [[ -r $gpu_path/mem_info_vram_total ]] && gpu_vram_total_f=$gpu_path/mem_info_vram_total
+    for h in "$gpu_path"/hwmon/hwmon*; do
+      [[ -d $h ]] || continue
+      [[ -r $h/temp1_input ]] && gpu_temp_edge_f=$h/temp1_input
+      [[ -r $h/power1_average ]] && gpu_power_f=$h/power1_average
+      break
+    done
+    [[ -r $gpu_path/pp_dpm_sclk ]] && gpu_sclk_f=$gpu_path/pp_dpm_sclk
+    for eng_dir in "$gpu_path"/engine/*; do
+      [[ -d $eng_dir && -r $eng_dir/busy_percent ]] || continue
+      eng_name=${eng_dir##*/}
+      eng_key=${eng_name,,}
+      eng_key=${eng_key//./_}
+      eng_key=${eng_key//-/_}
+      [[ $eng_key =~ ^[a-z0-9_]+$ ]] || continue
+      GPU_ENG_PATHS+=("$eng_dir/busy_percent")
+      GPU_ENG_KEYS+=("$eng_key")
+      (( ${#GPU_ENG_KEYS[@]} >= 32 )) && break
+    done
+  elif [[ $gpu_vendor == intel ]]; then
+    # i915 may keep gt files on the card node; xe nests them under tile/gt.
+    intel_freq_cur_path "$gpu_path" gpu_freq_cur_f || gpu_freq_cur_f=""
+    intel_freq_max_path "$gpu_path" gpu_freq_max_f || gpu_freq_max_f=""
+    for h in "$gpu_path"/hwmon/hwmon*; do
+      [[ -d $h && -r $h/temp1_input ]] && { gpu_temp_f=$h/temp1_input; break; }
+    done
+  fi
+  return 0
+}
 declare -a GPU_ENG_PATHS=() GPU_ENG_KEYS=()
-if [[ $gpu_vendor == amd ]]; then
-  [[ -r $gpu_path/gpu_busy_percent ]] && gpu_busy_f=$gpu_path/gpu_busy_percent
-  [[ -r $gpu_path/mem_busy_percent ]] && gpu_mem_busy_f=$gpu_path/mem_busy_percent
-  [[ -r $gpu_path/mem_info_vram_used ]] && gpu_vram_used_f=$gpu_path/mem_info_vram_used
-  [[ -r $gpu_path/mem_info_vram_total ]] && gpu_vram_total_f=$gpu_path/mem_info_vram_total
-  for h in "$gpu_path"/hwmon/hwmon*; do
-    [[ -d $h ]] || continue
-    [[ -r $h/temp1_input ]] && gpu_temp_edge_f=$h/temp1_input
-    [[ -r $h/power1_average ]] && gpu_power_f=$h/power1_average
-    break
-  done
-  [[ -r $gpu_path/pp_dpm_sclk ]] && gpu_sclk_f=$gpu_path/pp_dpm_sclk
-  for eng_dir in "$gpu_path"/engine/*; do
-    [[ -d $eng_dir && -r $eng_dir/busy_percent ]] || continue
-    eng_name=${eng_dir##*/}
-    eng_key=${eng_name,,}
-    eng_key=${eng_key//./_}
-    eng_key=${eng_key//-/_}
-    [[ $eng_key =~ ^[a-z0-9_]+$ ]] || continue
-    GPU_ENG_PATHS+=("$eng_dir/busy_percent")
-    GPU_ENG_KEYS+=("$eng_key")
-    (( ${#GPU_ENG_KEYS[@]} >= 32 )) && break
-  done
-elif [[ $gpu_vendor == intel ]]; then
-  # i915 may keep gt files on the card node; xe nests them under tile/gt.
-  gpu_freq_cur_f=$(intel_freq_cur_path "$gpu_path") || gpu_freq_cur_f=""
-  gpu_freq_max_f=$(intel_freq_max_path "$gpu_path") || gpu_freq_max_f=""
-  for h in "$gpu_path"/hwmon/hwmon*; do
-    [[ -d $h && -r $h/temp1_input ]] && { gpu_temp_f=$h/temp1_input; break; }
-  done
-fi
+probe_gpu
+gpu_probed_generation=-1
 
 # --- per-file readers --------------------------------------------------------
 
@@ -383,11 +399,12 @@ read_routes6() {
   done < /proc/net/ipv6_route
 }
 
-read_gpu() {
+read_gpu_fields() {
   # Rewrites global GPU_JSON with a JSON object or the string "null".
   GPU_JSON="null"
   if [[ $gpu_vendor == amd ]]; then
     local busy vru vrt te pw mb="" sclk="" eng_json="" ev i
+    GPU_READING_OK=0
     read_int_file "$gpu_busy_f" busy
     read_int_file "$gpu_mem_busy_f" mb
     read_int_file "$gpu_vram_used_f" vru
@@ -416,6 +433,7 @@ read_gpu() {
       [[ -n $eng_json ]] && eng_json+=","
       eng_json+="\"${GPU_ENG_KEYS[$i]}\":$ev"
     done
+    [[ -n $busy$vru$vrt$te$pw$mb$sclk$eng_json ]] && GPU_READING_OK=1
     GPU_JSON="{\"busy\":${busy:-null},\"mb\":${mb:-null},\"vrU\":${vru:-null},\"vrT\":${vrt:-null},\"t\":${te:-null},\"w\":${pw:-null},\"mhz\":${sclk:-null},\"eng\":{${eng_json}},\"kind\":\"amd\"}"
   elif [[ $gpu_vendor == intel ]]; then
     local fc fm t
@@ -424,6 +442,46 @@ read_gpu() {
     read_int_file "$gpu_temp_f" t
     if [[ -n $t ]]; then t=$(( t / 1000 )); fi
     GPU_JSON="{\"busy\":null,\"fc\":${fc:-null},\"fm\":${fm:-null},\"t\":${t:-null},\"kind\":\"intel\"}"
+  fi
+}
+
+# Runtime control is read every tick. Expired/malformed control fails closed.
+# A device or viewer change never exits this process.
+read_gpu() {
+  local target="$gpu_path" vendor="$gpu_vendor" demand=1 generation=0 state=fresh pm=unknown
+  if [[ -n $gpu_control ]]; then
+    if gpu_policy_control "$gpu_control"; then
+      target=$GPU_POLICY_PATH vendor=$GPU_POLICY_VENDOR demand=$GPU_POLICY_DEMAND
+      generation=$GPU_POLICY_GEN
+      [[ $target == - ]] && target=""
+      [[ $vendor == - ]] && vendor=""
+    else
+      GPU_JSON=null
+      return
+    fi
+  fi
+  if [[ $target != "$gpu_path" || $vendor != "$gpu_vendor" || $generation != "$gpu_probed_generation" ]]; then
+    gpu_path=$target gpu_vendor=$vendor
+    probe_gpu
+    gpu_probed_generation=$generation
+  fi
+  GPU_JSON=null
+  [[ -n $gpu_vendor ]] || return 0
+  gpu_policy_clock
+  if [[ $gpu_vendor == amd ]]; then
+    if [[ $demand != 1 ]]; then state=held
+    elif ! gpu_policy_pm "$gpu_path"; then state=$GPU_POLICY_STATE; pm=$GPU_POLICY_PM
+    else pm=$GPU_POLICY_PM
+    fi
+  fi
+  if [[ $gpu_vendor != amd || $state == fresh ]]; then
+    local acquired=$EPOCHREALTIME
+    read_gpu_fields
+    if [[ $gpu_vendor == amd && $GPU_READING_OK == 0 ]]; then state=failed; fi
+    printf -v GPU_JSON '%s,"state":"%s","pm":"%s","generation":%s,"at":%s,"monoMs":%s,"sequence":"%s","path":"%s"}' \
+        "${GPU_JSON%\}}" "$state" "$pm" "$generation" "$acquired" "$GPU_POLICY_NOW" "$$:$ticks" "$gpu_path"
+  else
+    GPU_JSON='{ "kind":"amd","state":"'"$state"'","pm":"'"$pm"'","generation":'"$generation"',"path":"'"$gpu_path"'"}'
   fi
 }
 

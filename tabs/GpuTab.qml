@@ -160,7 +160,8 @@ Item {
           Components.MetricReadout {
             width: parent.width
             value: root.display ? (root.display.estimated ? "~" : "") + Model.formatPct(root.display.pct, 1) : "--"
-            hint: root.display && root.display.estimated ? "Frequency estimate · not measured busy time" : "Busy · per card"
+            hint: root.model && root.model.gpuCollectionText ? root.model.gpuCollectionText
+              : root.display && root.display.estimated ? "Frequency estimate · not measured busy time" : "Busy · per card"
           }
 
           Components.GraphBlock {

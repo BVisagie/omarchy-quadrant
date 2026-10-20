@@ -61,6 +61,8 @@ JQ=$(resolve_bin jq) || fail "jq not found"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=gpu-intel-paths.sh
 source "$SCRIPT_DIR/gpu-intel-paths.sh"
+# shellcheck source=gpu-policy.sh
+if [[ -f $SCRIPT_DIR/gpu-policy.sh ]]; then source "$SCRIPT_DIR/gpu-policy.sh"; fi
 
 trim() {
   local s=$1
@@ -241,6 +243,19 @@ cmd_sample_amd() {
   local dev=$1
   PAYLOAD=""
   DRM_JSON="null"
+  local state=fresh pm=unknown
+  declare -F gpu_policy_pm >/dev/null || fail "AMD policy unavailable"
+  if [[ -n ${2:-} ]] && ! gpu_policy_requested "$2" "${3:-}" "$dev"; then
+    state=held
+  elif ! gpu_policy_pm "$dev"; then state=$GPU_POLICY_STATE; pm=$GPU_POLICY_PM
+  else pm=$GPU_POLICY_PM
+  fi
+  if [[ $state != fresh ]]; then
+    "$JQ" -cn --arg state "$state" --arg pm "$pm" '{ok:true,vendor:"amd",state:$state,pm:$pm}'
+    return
+  fi
+  gpu_policy_clock
+  local acquired=$EPOCHREALTIME mono=$GPU_POLICY_NOW
   local slot=""
   if slot=$(uevent_field "$dev/uevent" PCI_SLOT_NAME); then
     [[ $slot =~ ^[0-9a-fA-F:.]+$ ]] || slot=""
@@ -283,7 +298,9 @@ cmd_sample_amd() {
       fail "no readable amd metrics under $dev"
     fi
   fi
-  emit_sample amd
+  "$JQ" -cn --arg ts "$acquired" --arg mono "$mono" --arg generation "${3:-0}" \
+    --arg payload "$PAYLOAD" --arg pm "$pm" --arg sequence "$$:$acquired" --argjson drm "$DRM_JSON" \
+    '{ok:true,vendor:"amd",state:"fresh",pm:$pm,ts:($ts|tonumber),monoMs:($mono|tonumber),generation:($generation|tonumber),sequence:$sequence,payload:$payload,drm:$drm}'
 }
 
 cmd_sample_intel() {
@@ -364,7 +381,7 @@ case ${1:-} in
         ;;
       *) fail "usage: gpu-stats sample amd|intel|nvidia <path|index>" ;;
     esac
-    "cmd_sample_$vendor" "$target"
+    "cmd_sample_$vendor" "$target" "${4:-}" "${5:-}"
     ;;
   *)
     fail "usage: gpu-stats list | sample <vendor> <target>"
