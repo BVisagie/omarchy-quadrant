@@ -161,6 +161,7 @@ ShellRoot {
         settingsOpen: fakePanel.settingsOpen
         resourceName: fakePanel.tabLabels[harness.tab] || "CPU"
         barToggleVisible: !fakePanel.settingsOpen && harness.tab !== "hardware"
+        barToggleReserved: true
         barEnabled: renderStore.segmentEnabled(harness.tab === "mem" ? "memory" : harness.tab === "disk" ? "disk" : harness.tab === "net" ? "network" : harness.tab)
       }
       Ui.PanelSeparator { visible: harness.showHeader; width: parent.width }

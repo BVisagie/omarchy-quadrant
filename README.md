@@ -120,7 +120,7 @@ to close settings or the panel.
 
 The default bar shows CPU, dedicated GPU, memory, and network. Without a
 dedicated GPU, Drives appears after Memory instead of the GPU segment;
-integrated graphics appear on the CPU tab. Use each tab's **Show … in bar** switch
+integrated graphics appear on the CPU tab. Use each tab's **Show in bar** switch
 to change what appears.
 
 In settings, use the segment arrows to change their order and choose

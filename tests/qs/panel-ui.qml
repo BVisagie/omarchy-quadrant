@@ -58,6 +58,7 @@ ShellRoot {
         settingsOpen: fakePanel.settingsOpen
         resourceName: fakePanel.labels[fakePanel.currentTab]
         barToggleVisible: fakePanel.barAvailable
+        barToggleReserved: true
         barEnabled: fakePanel.barEnabled
         onTabSelected: function (value) { fakePanel.currentTab = value; fakePanel.settingsOpen = false }
         onToggleBar: fakePanel.barEnabled = !fakePanel.barEnabled
@@ -165,7 +166,10 @@ ShellRoot {
       fakePanel.barAvailable = false
       mouseClick(findChild(header, "panelSettings"))
       verify(fakePanel.settingsOpen)
-      verify(!findChild(header, "barVisibility").visible)
+      var reserved = findChild(header, "barVisibility")
+      compare(reserved.opacity, 0)
+      verify(!reserved.enabled)
+      verify(findChild(header, "barVisibilitySwitch").Accessible.ignored)
       keyClick(Qt.Key_Escape)
       verify(!fakePanel.settingsOpen)
       compare(fakePanel.closes, 0)
@@ -313,6 +317,32 @@ ShellRoot {
       verify(!view.inlineActions)
       verify(toggle.y >= flow.implicitHeight)
       verify(view.implicitHeight >= toggle.y + toggle.implicitHeight)
+    }
+    function test_header_geometry_matches_across_tabs_and_settings_data() {
+      return [{ tag: "inline", width: Commons.Style.space(720) }, { tag: "stacked", width: Commons.Style.space(320) }]
+    }
+    // Hardware has no bar segment and settings hides the switch; neither may
+    // resize the tabs or change the header height.
+    function test_header_geometry_matches_across_tabs_and_settings(data) {
+      var options = ["cpu", "gpu", "mem", "disk", "net", "hardware"].map(function (t) {
+        return { value: t, label: t === "hardware" ? "Hardware" : fakePanel.labels[t] }
+      })
+      var view = createTemporaryObject(headerComponent, keys, {
+        width: data.width, options: options, barToggleVisible: true, barToggleReserved: true, resourceName: "CPU"
+      })
+      verify(view); wait(20)
+      function geometry() {
+        var tab = findChild(view, "panelTab_mem")
+        return JSON.stringify([tab.x, tab.y, tab.width, view.implicitHeight])
+      }
+      var expected = geometry()
+      view.resourceName = "Network"; wait(20)
+      compare(geometry(), expected, "label length does not resize tabs")
+      view.barToggleVisible = false; view.resourceName = "Hardware"; wait(20)
+      compare(geometry(), expected, "Hardware keeps the switch's slot")
+      compare(findChild(view, "barVisibility").opacity, 0)
+      view.barToggleVisible = true; view.settingsOpen = true; wait(20)
+      compare(geometry(), expected, "settings keeps the switch's slot")
     }
     function test_responsive_columns_preserve_process_view_and_disclosure_state() {
       var view = createTemporaryObject(memoryComponent, keys, { width: Commons.Style.space(720) })

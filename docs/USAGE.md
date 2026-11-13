@@ -54,10 +54,12 @@ multiple GPUs, or unavailable cards are found. It lists per-device diagnostics;
 a missing saved sensor or collection error also keeps it accessible. See
 [Hardware diagnostics](HARDWARE.md) for pinning, units, and source limits.
 
-Tabs use equal slots and wrap on narrow panels. The resource-specific
-**Show … in bar** switch names its current target; the gear remains separate
-from the tab strip. On wider panels, the switch shares the tab row. Device
-choices wrap too, with full names in tooltips.
+Tabs use equal slots and wrap on narrow panels. The **Show in bar** switch
+acts on the current tab, and its tooltip and accessible name say which
+resource; the gear remains separate from the tab strip. On wider panels, the
+switch shares the tab row. A tab without a bar segment, and settings, keep the
+switch's space empty so the tabs never move. Device choices wrap too, with
+full names in tooltips.
 
 The panel prefers a theme-scaled width of 720 logical units, fitted to the
 available monitor. Each resource uses framed groups, with headline readings

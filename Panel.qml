@@ -194,6 +194,7 @@ Panel {
           currentTab: root.currentTab
           settingsOpen: root.settingsOpen
           barToggleVisible: root.store !== null && root.barSegmentKey !== ""
+          barToggleReserved: root.store !== null
           barEnabled: root.barSegmentEnabled
           resourceName: root.tabLabels[root.currentTab] || root.currentTab
           onTabSelected: function (value) { root.currentTab = value; root.settingsOpen = false }
