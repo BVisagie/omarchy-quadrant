@@ -267,7 +267,7 @@ BarWidget {
     if (!root.vertical) return Commons.Style.font.caption
     // Keep every visible percentage at the same size. A hidden Intel GPU
     // must not make CPU/Memory/Drives text smaller.
-    var reserve = metric === "net" ? rateReserve : valueReserveFor(
+    var reserve = metric === "net" ? rateReserve : metric === "temp" ? valueReserveFor("temp") : valueReserveFor(
       reserveEstimatePrefix && visibleBarCells.indexOf("gpu") >= 0 ? "gpu" : "cpu")
     return Math.max(1, Math.min(Commons.Style.font.caption,
       Math.floor(Commons.Style.font.caption * Math.max(1, verticalSlot) / reserve)))

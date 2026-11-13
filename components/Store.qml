@@ -709,10 +709,9 @@ Item {
     }
     prevDiskCounters = s.disk
     prevDiskTarget = diskRuntimeKey
-    if (s.tempC !== null) {
-      cpuTempAvailable = true
-      tempHistory = Model.pushTimedWindow(tempHistory, { c: s.tempC }, s.ts, 60, historyLimit)
-    }
+    if (s.tempC !== null) cpuTempAvailable = true
+    // Null readings stay in the trend as gaps rather than freezing it.
+    if (cpuTempAvailable) tempHistory = Model.pushTimedWindow(tempHistory, { c: s.tempC }, s.ts, 60, historyLimit)
     prevSample = s
     sample = s
     streamLive = true

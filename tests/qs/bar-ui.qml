@@ -255,6 +255,11 @@ ShellRoot {
       compare(findChild(temp, "barValue").text, "212°F")
       assertFits(findChild(temp, "barValue"))
       verify(first.tempHot, "100 °C is in the hot band")
+      host.vertical = true; wait(50)
+      assertFits(findChild(cell(first, "temp"), "barValue"))
+      shared.applySettings({ segments: ["cpu", "temp"] }); wait(50)
+      assertFits(findChild(cell(first, "temp"), "barValue"))
+      host.vertical = false
       shared.persistSettings({ barStyle: "graph-text" }); wait(50)
       compare(trend(first, "temp").samples.map(function (point) { return point.v }).join(","), "70,72")
       shared.applySettings({ segments: Model.DEFAULT_BAR_SEGMENTS }); wait(50)
