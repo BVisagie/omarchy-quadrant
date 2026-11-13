@@ -206,7 +206,7 @@ BarWidget {
   readonly property string slotTooltip: {
     if (!streamLive) return "Quadrant: sampler offline"
     if (!showMonitorFallback) return ""
-    return "Quadrant"
+    return "Quadrant · click for details · add readouts with Show in bar"
   }
 
   // ---- sizing ----------------------------------------------------------

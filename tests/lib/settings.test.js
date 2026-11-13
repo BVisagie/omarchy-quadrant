@@ -91,9 +91,17 @@ test("manifest schema uses first-party field types and matches defaults", () => 
   }
 });
 
+test("a fresh install starts with an icon-only bar", () => {
+  const manifest = require("../../manifest.json");
+  assert.deepEqual(Model.DEFAULT_BAR_SEGMENTS, []);
+  assert.deepEqual(manifest.barWidget.defaults.segments, []);
+  assert.deepEqual(manifest.barWidget.schema.find(field => field.key === "segments").defaultValue, []);
+  for (const unset of [null, undefined, "", "[oops"]) assert.deepEqual(Model.readSettings({ segments: unset }).segments, []);
+  assert.deepEqual(Model.readSettings({}).segments, []);
+});
+
 test("toggleSegment adds, removes, and allows an empty list", () => {
   const def = ["cpu", "gpu", "memory", "network"];
-  assert.deepEqual(Model.segmentsFromSetting(null), def);
   assert.deepEqual(Model.segmentsFromSetting(["cpu", "foo", "disk", "cpu"]), ["cpu", "disk"]);
   assert.deepEqual(Model.segmentsFromSetting([]), []);
   assert.equal(Model.segmentKeyForTab("mem"), "memory");

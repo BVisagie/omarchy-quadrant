@@ -240,6 +240,7 @@ ShellRoot {
       shared.persistSettings({ segments: [], barStyle: "graph-text", barOrder: order })
       wait(200)
       verify(first.showMonitorFallback && second.showMonitorFallback)
+      compare(first.slotTooltip, "Quadrant · click for details · add readouts with Show in bar")
       compare(first.visibleBarCells.length, 0)
       verify(!findChild(first, "barTrend"))
       compare(host.targets.filter(function (target) { return target && target.objectName && target.objectName.indexOf("barCell_") === 0 }).length, 0)
@@ -282,7 +283,7 @@ ShellRoot {
       compare(shared.cfg.barOrder.join(","), Model.BAR_SEGMENTS.join(","))
     }
     function test_settings_drives_switch_controls_the_fallback() {
-      shared.applySettings({ segments: Model.DEFAULT_BAR_SEGMENTS })
+      shared.applySettings({ segments: ["cpu", "gpu", "memory", "network"] })
       shared.discreteGpuAvailable = false
       var settings = createTemporaryObject(settingsComponent, win.contentItem, { x: 650, width: 288, store: shared })
       verify(settings); wait(20)

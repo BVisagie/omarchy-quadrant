@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- The bar starts as a single Quadrant icon; turn readouts on with each tab's
+  **Show in bar** switch or in settings. If you never chose segments, the bar
+  becomes the icon after updating. To restore the previous four readouts:
+  `omarchy-shell dev.bvisagie.quadrant set segments '["cpu","gpu","memory","network"]'`.
+- The **Show in bar** switch keeps its place on every tab and in settings, so
+  the tab strip no longer reflows on Hardware.
+- Animations follow Omarchy's animation setting.
+
+### Fixed
+
+- Hardware no longer grows and collapses lines while its first readings
+  arrive.
+
 ## 1.1.0 — 2026-10-20
 
 Process exploration, hardware diagnostics, panel actions, optional graph

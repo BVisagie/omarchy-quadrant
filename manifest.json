@@ -21,12 +21,7 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "segments": [
-        "cpu",
-        "gpu",
-        "memory",
-        "network"
-      ],
+      "segments": [],
       "processCount": 5,
       "barIntervalMs": 1000,
       "panelIntervalMs": 2000,
@@ -92,12 +87,7 @@
         "noSelectionText": "Icon only",
         "placeholderText": "Search segments...",
         "emptyText": "No segments",
-        "defaultValue": [
-          "cpu",
-          "gpu",
-          "memory",
-          "network"
-        ]
+        "defaultValue": []
       },
       {
         "key": "processCount",

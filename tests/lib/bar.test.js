@@ -27,8 +27,8 @@ test("style, width and order survive save, toggles, reload, downgrade and reset"
   const order = ["network", "disk", "cpu", "memory", "gpu"];
   let raw = Model.settingsPatch({ userNote: "keep" }, { barStyle: '"GRAPH-TEXT"', barGraphWidth: "999", barOrder: order });
   assert.equal(raw.barStyle, "graph-text"); assert.equal(raw.barGraphWidth, 64);
-  raw = Model.settingsPatch(raw, { segments: Model.toggleSegment(Model.readSettings(raw).segments, "gpu", false) });
   raw = Model.settingsPatch(raw, { segments: Model.toggleSegment(Model.readSettings(raw).segments, "gpu", true) });
+  raw = Model.settingsPatch(raw, { segments: Model.toggleSegment(Model.readSettings(raw).segments, "gpu", false) });
   const oldWrite = Released.settingsPatch(JSON.parse(JSON.stringify(raw)), { processCount: 7 });
   const cfg = Model.readSettings(oldWrite);
   assert.deepEqual(cfg.barOrder, order); assert.equal(cfg.barStyle, "graph-text"); assert.equal(cfg.barGraphWidth, 64);
@@ -59,7 +59,7 @@ test("every saved order keeps Drives' position through GPU fallback without dupl
 });
 
 test("effective Drives switches handle fallback and explicit membership even with GPU disabled", () => {
-  let cfg = Model.readSettings({ barOrder: ["network", "disk", "cpu"], diskFallbackWithoutGpu: false });
+  let cfg = Model.readSettings({ segments: ["cpu", "gpu", "memory", "network"], barOrder: ["network", "disk", "cpu"], diskFallbackWithoutGpu: false });
   let patch = Model.barSegmentPatch(cfg, "disk", true, true);
   assert.deepEqual(patch, { diskFallbackWithoutGpu: true });
   cfg = Model.readSettings({ ...cfg, ...patch });
