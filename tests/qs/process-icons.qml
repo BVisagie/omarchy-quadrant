@@ -15,6 +15,9 @@ ShellRoot {
       desktopValues: [
         { id: "t3code", name: "T3 Code Nightly", startupClass: "t3code", icon: "quadrant-test-t3", command: ["t3code-nightly", "%U"] },
         { id: "brave-origin", name: "Brave Origin", icon: "quadrant-test-brave", command: ["brave-origin", "%U"] },
+        // Browser web apps launch the browser binary; they must not hide its icon.
+        { id: "brave-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-Default", name: "Web App", startupClass: "crx_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", icon: "quadrant-test-brave", command: ["/opt/brave-origin-bin/brave-origin", "--app-id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"] },
+        { id: "brave-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-Default", name: "Other Web App", startupClass: "crx_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", icon: "quadrant-test-brave", command: ["/opt/brave-origin-bin/brave-origin", "--app-id=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"] },
         { id: "absolute-app", name: "Absolute App", icon: Quickshell.env("QUADRANT_ABSOLUTE_ICON"), command: ["absolute-app"] }
       ]
     }

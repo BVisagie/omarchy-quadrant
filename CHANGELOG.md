@@ -22,6 +22,8 @@
 
 - Hardware no longer grows and collapses lines while its first readings
   arrive.
+- Browser processes keep their icon when browser web apps (Brave or Chrome
+  "install as app" shortcuts) launch through the same browser binary.
 
 ## 1.1.0 — 2026-10-20
 

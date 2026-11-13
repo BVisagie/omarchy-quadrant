@@ -47,6 +47,29 @@ test("ambiguous families and conflicting group identities never depend on invent
   }
 })
 
+test("browser web apps that share the launcher do not hide the browser's icon", () => {
+  const pwa = id => ({ id: `brave-${id}-Default`, name: "Recharge Log", startupClass: `crx_${id}`,
+    icon: `/home/user/.local/share/icons/hicolor/512x512/apps/brave-${id}-Default.png`,
+    command: ["/opt/brave-origin-bin/brave-origin", "--profile-directory=Default", `--app-id=${id}`] })
+  const apps = [pwa("enplfbdkckjenjbdahddcpjihdfkkdcj"), pwa("fejogpciljadbemallmeihbimegnnmai")]
+  const row = { comm: "brave", appKeys: ["brave", "/opt/brave-origin-bin/brave"] }
+  for (const entries of [[brave, ...apps], [...apps, brave]])
+    assert.equal(processDesktopEntry(processAppIndex(entries), row), brave)
+  const chrome = { id: "google-chrome", name: "Google Chrome", startupClass: "google-chrome",
+    icon: "google-chrome", command: ["/usr/bin/google-chrome-stable", "%U"] }
+  const chromeApp = { id: "chrome-abcdefghijklmnopabcdefghijklmnop-Default", name: "Docs", icon: "/tmp/docs.png",
+    startupClass: "crx_abcdefghijklmnopabcdefghijklmnop", command: ["/opt/google/chrome/google-chrome", "--app-id=abcdefghijklmnopabcdefghijklmnop"] }
+  for (const entries of [[chrome, chromeApp], [chromeApp, chrome]])
+    assert.equal(processDesktopEntry(processAppIndex(entries), { comm: "chrome", appKeys: ["chrome", "/opt/google/chrome/chrome"] }), chrome)
+})
+
+test("an ambiguous identity alias never falls through to a launcher alias", () => {
+  const origin = { id: "brave-origin", name: "Brave Origin", command: ["origin-wrapper"] }
+  const browser = { id: "brave-browser", name: "Brave Browser", command: ["brave-bin"] }
+  for (const entries of [[origin, browser], [browser, origin]])
+    assert.equal(processDesktopEntry(processAppIndex(entries), { comm: "brave" }), null)
+})
+
 test("shared launcher and icon keys do not hide an application's desktop identity", () => {
   const fixtures = [
     { comm: "foot", exe: "foot", app: { id: "foot", name: "Foot", icon: "foot", command: ["foot"] },
