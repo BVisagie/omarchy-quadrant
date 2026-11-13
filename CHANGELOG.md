@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- An opt-in **Temperature** bar segment with the CPU temperature, in Celsius or
+  Fahrenheit. It is off unless you turn it on from Hardware's **Show in bar**
+  switch or in settings, and it is hidden without a supported CPU sensor.
+
+### Changed
+
+- The bar starts as a single Quadrant icon; turn readouts on with each tab's
+  **Show in bar** switch or in settings. If you never chose segments, the bar
+  becomes the icon after updating. To restore the previous four readouts:
+  `omarchy-shell dev.bvisagie.quadrant set segments '["cpu","gpu","memory","network"]'`.
+- The **Show in bar** switch keeps its place on every tab and in settings, so
+  the tab strip no longer reflows on Hardware.
+- Animations follow Omarchy's animation setting.
+
+### Fixed
+
+- Hardware no longer grows and collapses lines while its first readings
+  arrive.
+- Browser processes keep their icon when browser web apps (Brave or Chrome
+  "install as app" shortcuts) launch through the same browser binary.
+
 ## 1.1.0 — 2026-10-20
 
 Process exploration, hardware diagnostics, panel actions, optional graph

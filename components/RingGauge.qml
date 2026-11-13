@@ -21,7 +21,7 @@ Item {
   readonly property color dim: Model.dimColor(String(foreground), String(Commons.Color.background))
 
   property real shown: 0
-  Behavior on shown { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+  Behavior on shown { NumberAnimation { duration: Commons.Style.duration(240); easing.type: Easing.OutCubic } }
   onFractionChanged: shown = Math.max(0, Math.min(1, fraction))
   Component.onCompleted: shown = Math.max(0, Math.min(1, fraction))
 

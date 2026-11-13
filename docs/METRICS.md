@@ -251,7 +251,10 @@ fields may be omitted or shown as `--`.
 
 The Hardware detail tab adds non-GPU hwmon channels without changing those
 summary sensor choices. Every panel temperature uses the selected Celsius or
-Fahrenheit unit; stored values and thresholds remain Celsius. A fan's measured
+Fahrenheit unit; stored values and thresholds remain Celsius. The opt-in `temp`
+bar segment shows the same CPU sensor from the stream at no extra cost, turns
+urgent at 90 °C (leaving below 80 °C), and is hidden on machines without one of
+those sensors. A fan's measured
 zero is distinct from an unreadable channel. Battery diagnostics retain
 per-device scope and matching Wh/Ah capacity pairs. See [Hardware diagnostics](HARDWARE.md).
 

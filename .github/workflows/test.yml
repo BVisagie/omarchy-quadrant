@@ -18,6 +18,11 @@ jobs:
           check-latest: true
       - name: Manifest parses
         run: jq -e '.id and .kinds and .entryPoints.barWidget and .barWidget.schema' manifest.json
+      - name: No symlinks
+        # omarchy plugin add/update reject a plugin folder that holds a symlink.
+        run: |
+          links=$(git ls-files -s | awk '$1 == "120000" { print $4 }')
+          if [ -n "$links" ]; then echo "symlinks are not allowed in the plugin tree:"; echo "$links"; exit 1; fi
       - name: Model tests
         run: node --test tests/lib/*.test.js
       - name: qmllint gate

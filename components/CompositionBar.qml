@@ -41,7 +41,7 @@ Item {
         }
         color: modelData && modelData.color ? modelData.color : "transparent"
         visible: width > 0
-        Behavior on width { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+        Behavior on width { NumberAnimation { duration: Commons.Style.duration(240); easing.type: Easing.OutCubic } }
       }
     }
   }

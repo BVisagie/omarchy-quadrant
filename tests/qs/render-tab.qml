@@ -8,6 +8,7 @@ import "components" as Components
 import "." as Plugin
 import "tabs" as Tabs
 import "graph-data.mjs" as Fixture
+import "lib/index.mjs" as Model
 
 ShellRoot {
   id: harness
@@ -159,9 +160,10 @@ ShellRoot {
         options: fakePanel.tabKeys.map(function (t) { return { value: t, label: fakePanel.tabLabels[t] } })
         currentTab: harness.tab
         settingsOpen: fakePanel.settingsOpen
-        resourceName: fakePanel.tabLabels[harness.tab] || "CPU"
-        barToggleVisible: !fakePanel.settingsOpen && harness.tab !== "hardware"
-        barEnabled: renderStore.segmentEnabled(harness.tab === "mem" ? "memory" : harness.tab === "disk" ? "disk" : harness.tab === "net" ? "network" : harness.tab)
+        resourceName: harness.tab === "hardware" ? "temperature" : fakePanel.tabLabels[harness.tab] || "CPU"
+        barToggleVisible: !fakePanel.settingsOpen
+        barToggleReserved: true
+        barEnabled: renderStore.segmentEnabled(Model.segmentKeyForTab(harness.tab))
       }
       Ui.PanelSeparator { visible: harness.showHeader; width: parent.width }
       Loader {

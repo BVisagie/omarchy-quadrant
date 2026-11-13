@@ -3,19 +3,20 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const Model = require("../../lib/index.mjs");
 const Released = require("../fixtures/settings-v1.mjs");
-const canonical = ["cpu", "gpu", "memory", "disk", "network"];
+const canonical = ["cpu", "gpu", "memory", "disk", "network", "temp"];
 
 test("bar order normalizes typed, legacy and partial lists without losing hidden positions", () => {
   for (const input of [["network", "gpu", "network", "unknown"], '["network","gpu","network","unknown"]', '"network, gpu, network, unknown"'])
-    assert.deepEqual(Model.barOrderFromSetting(input), ["network", "gpu", "cpu", "memory", "disk"]);
+    assert.deepEqual(Model.barOrderFromSetting(input), ["network", "gpu", "cpu", "memory", "disk", "temp"]);
   for (const invalid of [null, undefined, 12, true, {}, { 0: "network", length: 1 }, "[oops", [], ["unknown"]])
     assert.deepEqual(Model.barOrderFromSetting(invalid), canonical);
-  const order = ["network", "disk", "memory", "gpu", "cpu"];
+  const order = ["network", "disk", "memory", "gpu", "cpu", "temp"];
   const moved = Model.moveBarSegment(order, "gpu", -1);
-  assert.deepEqual(moved, ["network", "disk", "gpu", "memory", "cpu"]);
-  assert.deepEqual(order, ["network", "disk", "memory", "gpu", "cpu"], "movement is pure");
+  assert.deepEqual(moved, ["network", "disk", "gpu", "memory", "cpu", "temp"]);
+  assert.deepEqual(order, ["network", "disk", "memory", "gpu", "cpu", "temp"], "movement is pure");
   assert.deepEqual(Model.moveBarSegment(order, "network", -1), order);
-  assert.deepEqual(Model.moveBarSegment(order, "cpu", 1), order);
+  assert.deepEqual(Model.moveBarSegment(order, "temp", 1), order);
+  assert.deepEqual(Model.barOrderFromSetting(["network", "disk", "memory", "gpu", "cpu"]), order, "a saved five-segment order gains temp last");
   assert.deepEqual(Model.moveBarSegment(order, "unknown", 1), order);
   assert.deepEqual(Model.moveBarSegment(order, "cpu", 2), order);
 });
@@ -24,11 +25,11 @@ test("style, width and order survive save, toggles, reload, downgrade and reset"
   assert.equal(Model.readSettings({}).barStyle, "text");
   assert.equal(Model.readSettings({}).barGraphWidth, 32);
   assert.deepEqual(Model.readSettings({}).barOrder, canonical);
-  const order = ["network", "disk", "cpu", "memory", "gpu"];
+  const order = ["network", "disk", "cpu", "memory", "gpu", "temp"];
   let raw = Model.settingsPatch({ userNote: "keep" }, { barStyle: '"GRAPH-TEXT"', barGraphWidth: "999", barOrder: order });
   assert.equal(raw.barStyle, "graph-text"); assert.equal(raw.barGraphWidth, 64);
-  raw = Model.settingsPatch(raw, { segments: Model.toggleSegment(Model.readSettings(raw).segments, "gpu", false) });
   raw = Model.settingsPatch(raw, { segments: Model.toggleSegment(Model.readSettings(raw).segments, "gpu", true) });
+  raw = Model.settingsPatch(raw, { segments: Model.toggleSegment(Model.readSettings(raw).segments, "gpu", false) });
   const oldWrite = Released.settingsPatch(JSON.parse(JSON.stringify(raw)), { processCount: 7 });
   const cfg = Model.readSettings(oldWrite);
   assert.deepEqual(cfg.barOrder, order); assert.equal(cfg.barStyle, "graph-text"); assert.equal(cfg.barGraphWidth, 64);
@@ -48,7 +49,7 @@ test("every saved order keeps Drives' position through GPU fallback without dupl
       const absent = Model.effectiveSegments(configured, true, false, true, true, order);
       assert.deepEqual(absent, order.filter(key => key !== "gpu"));
       assert.equal(absent.filter(key => key === "disk").length, 1);
-      assert.deepEqual(Model.visibleBarCells(absent, false, false), absent.filter(key => key !== "disk").map(key => key === "memory" ? "mem" : key === "network" ? "net" : key));
+      assert.deepEqual(Model.visibleBarCells(absent, false, false, true), absent.filter(key => key !== "disk").map(key => key === "memory" ? "mem" : key === "network" ? "net" : key));
       const recovered = Model.effectiveSegments(configured, true, true, true, true, order);
       assert.deepEqual(recovered, order.filter(key => explicitDisk || key !== "disk"));
       for (const state of [[false, false, true, true], [true, false, true, false], [true, false, false, true]])
@@ -59,7 +60,7 @@ test("every saved order keeps Drives' position through GPU fallback without dupl
 });
 
 test("effective Drives switches handle fallback and explicit membership even with GPU disabled", () => {
-  let cfg = Model.readSettings({ barOrder: ["network", "disk", "cpu"], diskFallbackWithoutGpu: false });
+  let cfg = Model.readSettings({ segments: ["cpu", "gpu", "memory", "network"], barOrder: ["network", "disk", "cpu"], diskFallbackWithoutGpu: false });
   let patch = Model.barSegmentPatch(cfg, "disk", true, true);
   assert.deepEqual(patch, { diskFallbackWithoutGpu: true });
   cfg = Model.readSettings({ ...cfg, ...patch });

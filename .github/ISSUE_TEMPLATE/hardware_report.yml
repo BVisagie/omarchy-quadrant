@@ -1,0 +1,56 @@
+name: Hardware report
+description: A reading is missing, wrong, or labelled oddly on your GPU, sensors, drives, or battery.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports from real machines are how Quadrant learns new hardware. A report is useful even when everything looks right.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Dedicated GPU
+        - Integrated GPU
+        - Temperatures or fans
+        - Package power
+        - Battery
+        - Drives
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and driver
+      description: For example "Radeon RX 7800 XT, amdgpu" or "Arc A770, xe".
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Output of `omarchy-version`, and the Quadrant version from `jq -r .version ~/.config/omarchy/plugins/dev.bvisagie.quadrant/manifest.json`.
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What you see, and what you expected
+      description: A screenshot of the panel tab helps.
+    validations:
+      required: true
+  - type: textarea
+    id: helpers
+    attributes:
+      label: Helper output
+      description: |
+        Run these from the plugin folder (`cd ~/.config/omarchy/plugins/dev.bvisagie.quadrant`) and paste the output. They only read hardware details and change nothing. Look over the text before posting and remove anything you would rather keep private.
+
+        ```sh
+        scripts/system-info
+        scripts/gpu-stats list
+        python3 scripts/hardware-info.py list
+        ```
+      render: json

@@ -91,9 +91,30 @@ test("manifest schema uses first-party field types and matches defaults", () => 
   }
 });
 
+test("a fresh install starts with an icon-only bar", () => {
+  const manifest = require("../../manifest.json");
+  assert.deepEqual(Model.DEFAULT_BAR_SEGMENTS, []);
+  assert.deepEqual(manifest.barWidget.defaults.segments, []);
+  assert.deepEqual(manifest.barWidget.schema.find(field => field.key === "segments").defaultValue, []);
+  for (const unset of [null, undefined, "", "[oops"]) assert.deepEqual(Model.readSettings({ segments: unset }).segments, []);
+  assert.deepEqual(Model.readSettings({}).segments, []);
+});
+
+test("temperature is an opt-in segment that paints only with a CPU sensor", () => {
+  assert.ok(!Model.readSettings({}).segments.includes("temp"));
+  assert.equal(Model.readSettings({}).barOrder.at(-1), "temp");
+  assert.equal(Model.segmentKeyForTab("hardware"), "temp");
+  const cfg = Model.readSettings({ segments: ["cpu"] });
+  assert.deepEqual(Model.barSegmentPatch(cfg, "temp", true, false), { segments: ["cpu", "temp"] });
+  const segments = Model.effectiveSegments(["cpu", "temp"], true, true, true, true, cfg.barOrder);
+  assert.deepEqual(Model.visibleBarCells(segments, true, true, false), ["cpu"]);
+  assert.deepEqual(Model.visibleBarCells(segments, true, true, true), ["cpu", "temp"]);
+  assert.deepEqual(Model.effectiveSegments(["temp"], true, false, true, true), ["temp"], "GPU fallback never adds or replaces temp");
+  assert.deepEqual(Model.barTrendPoints([{ t: 1, c: 48 }, { t: 2, c: null }], "temp").map(point => point.v), [48, null]);
+});
+
 test("toggleSegment adds, removes, and allows an empty list", () => {
   const def = ["cpu", "gpu", "memory", "network"];
-  assert.deepEqual(Model.segmentsFromSetting(null), def);
   assert.deepEqual(Model.segmentsFromSetting(["cpu", "foo", "disk", "cpu"]), ["cpu", "disk"]);
   assert.deepEqual(Model.segmentsFromSetting([]), []);
   assert.equal(Model.segmentKeyForTab("mem"), "memory");

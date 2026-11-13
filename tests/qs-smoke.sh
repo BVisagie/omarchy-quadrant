@@ -53,14 +53,15 @@ s = a["stream"]
 assert s["live"] and s["hasCpu"] and s["cores"] > 0 and s["memUsed"] is not None, s
 assert s["gpuReady"], s
 assert s["cpuHistory"] >= 2 and s["cpuLong"] >= 1 and s["memLong"] >= 1, s
-assert "cpu" in s["cells"] and "mem" in s["cells"], s
+# Fresh install: icon-only bar, while the sampler and history keep running.
+assert s["cells"] == [], s
 assert a["settings-legacy"] == {"processCount": 8, "diskDevice": "nvme0n1"}, a["settings-legacy"]
 sp = a["settings-persist"]
-assert sp["segments"] == ["cpu", "gpu", "memory"], sp
+assert sp["segments"] == ["cpu", "memory"], sp
 assert sp["pending"] is None, sp   # fake shell echoed the entry back → pending cleared
-w = sp["writes"][0]
+w = sp["writes"][-1]
 assert w["id"] == "dev.bvisagie.quadrant"
-assert w["settings"] == {"segments": ["cpu", "gpu", "memory"], "processCount": 8, "diskDevice": "nvme0n1"}, w
+assert w["settings"] == {"segments": ["cpu", "memory"], "processCount": 8, "diskDevice": "nvme0n1"}, w
 v = a["viewers"]
 assert v == {"gpuSeg": 2, "gpuTab": 1, "cpuTab": 1, "open": 2, "discretePoll": v["discretePoll"], "procWanted": True, "netWanted": True}, v
 p = a["procs"]

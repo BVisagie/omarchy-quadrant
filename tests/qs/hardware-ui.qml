@@ -214,6 +214,21 @@ ShellRoot {
         checkStatus(state.expected, state.charge)
       }
     }
+    // Entering Hardware clears readings until the helper answers; the tab must
+    // not grow lines that collapse a moment later.
+    function test_pending_readings_keep_loaded_height() {
+      var base = { hardwareInventory: fixture.hardwareInventory, detectedGpus: [], cfg: fixture.cfg }
+      var settled = fixture.packageReadings.map(function (row) { return Object.assign({}, row, { status: "" }) })
+      var pending = createTemporaryObject(hardwareComponent, win.contentItem)
+      var loaded = createTemporaryObject(hardwareComponent, win.contentItem)
+      check(pending && loaded)
+      pending.model = Object.assign({ hardwareReadings: null, packageReadings: [] }, base)
+      loaded.model = Object.assign({ hardwareReadings: fixture.hardwareReadings, packageReadings: settled }, base)
+      waitForRendering(win.contentItem)
+      check(Object.keys(loaded.sensorValues).length > 0, "loaded view has readings")
+      check(pending.implicitHeight > 0)
+      equal(pending.implicitHeight, loaded.implicitHeight)
+    }
     function test_core_summary_single_equal_and_missing_readings_data() {
       return [
         { tag: "one core", values: [50], label: "1 core", range: "50°C", warning: "", unit: "celsius" },

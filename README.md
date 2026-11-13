@@ -118,10 +118,10 @@ Use `←` / `→` to switch tabs, **1 min** / **1 hour** or uppercase `H` to
 switch the panel's graphs together, `S` or the gear to open settings, and `Esc`
 to close settings or the panel.
 
-The default bar shows CPU, dedicated GPU, memory, and network. Without a
-dedicated GPU, Drives appears after Memory instead of the GPU segment;
-integrated graphics appear on the CPU tab. Use each tab's **Show … in bar** switch
-to change what appears.
+Quadrant starts as a single icon in the bar, so you choose what it adds. Turn
+on a readout with the **Show in bar** switch on its tab, or all at once in
+settings. Without a dedicated GPU, a GPU segment shows Drives in its place;
+integrated graphics appear on the CPU tab.
 
 In settings, use the segment arrows to change their order and choose
 **graph + text** to add minute trends. Text remains the default; hidden or

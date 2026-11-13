@@ -48,6 +48,8 @@ Panel {
   readonly property bool gpuAvailable: store ? store.discreteGpuAvailable === true : false
   readonly property var tabs: Model.panelTabs(gpuAvailable, store ? store.hardwareAvailable === true : false)
   readonly property var tabLabels: ({ "cpu": "CPU", "gpu": "GPU", "mem": "Memory", "disk": "Drives", "net": "Network", "hardware": "Hardware" })
+  // The switch names its segment; on Hardware that is the CPU temperature.
+  readonly property string barResourceName: currentTab === "hardware" ? "temperature" : (tabLabels[currentTab] || currentTab)
   readonly property var tabOptions: {
     var out = []
     for (var i = 0; i < tabs.length; i++) out.push({ value: tabs[i], label: tabLabels[tabs[i]] || tabs[i] })
@@ -174,7 +176,6 @@ Panel {
       var natural = header.implicitHeight + headerSep.implicitHeight + bodyColumn.implicitHeight + sp * 2 + Commons.Style.space(6)
       return panel.fittedContentHeight(natural)
     }
-    Behavior on contentHeight { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     Components.PanelKeys {
       id: keyCatcher
@@ -193,9 +194,10 @@ Panel {
           options: root.tabOptions
           currentTab: root.currentTab
           settingsOpen: root.settingsOpen
-          barToggleVisible: root.store !== null && root.barSegmentKey !== ""
+          barToggleVisible: root.store !== null && root.barSegmentKey !== "" && (root.barSegmentKey !== "temp" || root.store.cpuTempAvailable)
+          barToggleReserved: root.store !== null
           barEnabled: root.barSegmentEnabled
-          resourceName: root.tabLabels[root.currentTab] || root.currentTab
+          resourceName: root.barResourceName
           onTabSelected: function (value) { root.currentTab = value; root.settingsOpen = false }
           onToggleBar: if (root.store) root.store.setBarSegment(root.barSegmentKey, !root.barSegmentEnabled)
           onToggleSettings: root.settingsOpen = !root.settingsOpen

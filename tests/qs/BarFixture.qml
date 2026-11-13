@@ -23,7 +23,10 @@ QtObject {
   property bool discreteGpuAvailable: true
   property bool diskAvailable: true
   readonly property var effectiveBarSegments: Model.effectiveSegments(segmentsSetting, gpuTopologyReady, discreteGpuAvailable, diskFallbackWithoutGpu, !gpuListFailed, barOrder)
-  readonly property var visibleBarCells: Model.visibleBarCells(effectiveBarSegments, discreteGpuAvailable, diskAvailable)
+  readonly property var visibleBarCells: Model.visibleBarCells(effectiveBarSegments, discreteGpuAvailable, diskAvailable, cpuTempAvailable)
+  property bool cpuTempAvailable: false
+  property bool hardwareAvailable: true
+  property var tempHistory: []
   property bool streamLive: true
   property var cpuPct: ({ nonIdle: 42, user: 30, system: 8, iowait: 3, steal: 1 })
   property var memComp: ({ usedPct: 62, usedK: 20000000 })

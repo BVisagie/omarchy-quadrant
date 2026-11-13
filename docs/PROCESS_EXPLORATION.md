@@ -48,7 +48,9 @@ hints still stop the lookup, including matches across different metadata
 fields. The friendly
 label is only a fallback when the retained hints do not resolve an app.
 This also handles `brave-origin` launching a process named
-`brave`. Generic runtimes and arbitrary command-line arguments do not identify
+`brave`. A family name taken from an entry's own ID or startup class outranks
+one taken only from the program it launches, so browser web apps that launch
+the browser binary do not hide the browser's icon. Generic runtimes and arbitrary command-line arguments do not identify
 an app. Conflicting or truncated evidence uses the generic icon. Group totals,
 PID/start identities and selection behavior are unchanged. GPU and Network
 continue to use the names available from their attribution helpers.

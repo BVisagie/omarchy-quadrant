@@ -12,6 +12,10 @@ Item {
   property string currentTab: "cpu"
   property bool settingsOpen: false
   property bool barToggleVisible: false
+  // Keep the switch's slot when the current view has no bar segment, so
+  // tabs keep the same size and rows on every tab and in settings.
+  property bool barToggleReserved: false
+  readonly property bool barToggleActive: barToggleVisible && !settingsOpen
   property bool barEnabled: false
   property string resourceName: "CPU"
   readonly property string barLabel: "Show " + resourceName + " in bar"
@@ -94,7 +98,9 @@ Item {
     objectName: "barVisibility"
     x: root.inlineActions ? gear.x - width - Commons.Style.space(8) : 0
     y: root.inlineActions ? (root.topHeight - implicitHeight) / 2 : root.topHeight + Commons.Style.space(4)
-    visible: root.barToggleVisible && !root.settingsOpen
+    visible: root.barToggleReserved || root.barToggleActive
+    opacity: root.barToggleActive ? 1 : 0
+    enabled: root.barToggleActive
     spacing: Commons.Style.space(6)
 
     Ui.ToggleSwitch {
@@ -102,17 +108,18 @@ Item {
       objectName: "barVisibilitySwitch"
       checked: root.barEnabled
       trackHeight: Math.max(16, Math.round(Commons.Style.spacing.controlHeight * 0.5))
+      Accessible.ignored: !root.barToggleActive
       Accessible.role: Accessible.CheckBox
       Accessible.name: root.barLabel
       Accessible.checkable: true
       Accessible.checked: checked
       Accessible.onToggleAction: root.toggleBar()
       onToggled: root.toggleBar()
-      Ui.PanelToolTip { visible: barToggle.containsMouse; text: root.barLabel }
+      Ui.PanelToolTip { visible: barToggle.containsMouse && root.barToggleActive; text: root.barLabel }
     }
     Text {
       textFormat: Text.PlainText
-      text: root.barLabel
+      text: "Show in bar"
       color: root.dim
       font.family: Commons.Style.font.family
       font.pixelSize: Commons.Style.font.caption

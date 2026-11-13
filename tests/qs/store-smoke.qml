@@ -60,7 +60,8 @@ ShellRoot {
       // settings: typed apply + optimistic pending + persist
       store.applySettings({ id: "dev.bvisagie.quadrant", processCount: "8", diskDevice: "\"nvme0n1\"" })
       harness.report("settings-legacy", { processCount: store.processCount, diskDevice: store.diskDevice })
-      store.setBarSegment("network", false)
+      store.setBarSegment("cpu", true)
+      store.setBarSegment("memory", true)
       harness.report("settings-persist", {
         segments: store.segmentsSetting,
         pending: store.pendingSettings,

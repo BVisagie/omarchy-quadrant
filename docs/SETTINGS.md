@@ -23,8 +23,8 @@ time any setting is saved.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `segments` | `["cpu","gpu","memory","network"]` | Bar segments to show; any subset of `cpu gpu memory disk network`. An empty list keeps a compact icon. |
-| `barOrder` | `["cpu","gpu","memory","disk","network"]` | Saved order of all five resources, independent of enabled segments and hardware presence |
+| `segments` | `[]` | Bar segments to show; any subset of `cpu gpu memory disk network temp`. The empty default keeps a compact icon. `temp` (CPU temperature) is never enabled unless you add it. |
+| `barOrder` | `["cpu","gpu","memory","disk","network","temp"]` | Saved order of all six resources, independent of enabled segments and hardware presence. An older five-entry order gains `temp` last |
 | `barStyle` | `"text"` | `text` or `graph-text`: optional minute trends beside values |
 | `barGraphWidth` | `32` | Trend width in logical pixels (16–64), scaled by shell spacing; vertical bars clamp it to the strip width |
 | `processCount` | `5` | Top-process rows per tab (1–10) |

@@ -21,12 +21,7 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "segments": [
-        "cpu",
-        "gpu",
-        "memory",
-        "network"
-      ],
+      "segments": [],
       "processCount": 5,
       "barIntervalMs": 1000,
       "panelIntervalMs": 2000,
@@ -49,7 +44,8 @@
         "gpu",
         "memory",
         "disk",
-        "network"
+        "network",
+        "temp"
       ],
       "barStyle": "text",
       "barGraphWidth": 32,
@@ -61,7 +57,7 @@
         "key": "segments",
         "type": "multiselect",
         "label": "Bar segments",
-        "description": "Which metric segments appear in the bar slot. Each resource tab's in bar switch updates this list. An empty list keeps a compact system-monitor icon. The GPU segment is dedicated cards only; when none is detected the gpu token is shown as Drives unless diskFallbackWithoutGpu is false.",
+        "description": "Which metric segments appear in the bar slot; empty by default. Each resource tab's in bar switch updates this list. An empty list keeps a compact system-monitor icon. The GPU segment is dedicated cards only; when none is detected the gpu token is shown as Drives unless diskFallbackWithoutGpu is false.",
         "options": [
           {
             "value": "cpu",
@@ -87,17 +83,17 @@
             "value": "network",
             "label": "Network",
             "description": "Up/down rates"
+          },
+          {
+            "value": "temp",
+            "label": "Temperature",
+            "description": "CPU temperature (off unless enabled)"
           }
         ],
         "noSelectionText": "Icon only",
         "placeholderText": "Search segments...",
         "emptyText": "No segments",
-        "defaultValue": [
-          "cpu",
-          "gpu",
-          "memory",
-          "network"
-        ]
+        "defaultValue": []
       },
       {
         "key": "processCount",
@@ -296,7 +292,7 @@
         "key": "barOrder",
         "type": "multiselect",
         "label": "Bar segment order",
-        "description": "Order of all five segments, including hidden devices; this is not an enabled set. Reorder with the panel arrows or an ordered JSON array through the CLI. Missing names append in canonical order; use segments to enable or disable resources.",
+        "description": "Order of all six segments, including hidden devices; this is not an enabled set. Reorder with the panel arrows or an ordered JSON array through the CLI. Missing names append in canonical order; use segments to enable or disable resources.",
         "options": [
           {
             "value": "cpu",
@@ -317,6 +313,10 @@
           {
             "value": "network",
             "label": "Network"
+          },
+          {
+            "value": "temp",
+            "label": "Temperature"
           }
         ],
         "defaultValue": [
@@ -324,7 +324,8 @@
           "gpu",
           "memory",
           "disk",
-          "network"
+          "network",
+          "temp"
         ]
       }
     ]
