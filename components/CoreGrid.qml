@@ -96,7 +96,7 @@ Item {
               height: width
               radius: Commons.Style.space(2)
               color: Model.heatColor(usage, root.pal.faint, root.pal.primary, root.pal.hot, 4)
-              Behavior on color { ColorAnimation { duration: 320 } }
+              Behavior on color { ColorAnimation { duration: Commons.Style.duration(240) } }
             }
           }
         }

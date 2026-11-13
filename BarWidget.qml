@@ -416,7 +416,7 @@ BarWidget {
       rowSpacing: root.segmentGap
       verticalItemAlignment: Grid.AlignVCenter
       horizontalItemAlignment: Grid.AlignLeft
-      move: Transition { NumberAnimation { properties: "x,y"; duration: 160; easing.type: Easing.OutCubic } }
+      move: Transition { NumberAnimation { properties: "x,y"; duration: Commons.Style.duration(160); easing.type: Easing.OutCubic } }
 
       Repeater {
         id: cells
@@ -503,7 +503,7 @@ BarWidget {
         anchors.fill: parent
         horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
-        Behavior on color { ColorAnimation { duration: 320 } }
+        Behavior on color { ColorAnimation { duration: Commons.Style.duration(240) } }
       }
       Text {
         objectName: "barDown"

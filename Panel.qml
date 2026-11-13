@@ -174,7 +174,6 @@ Panel {
       var natural = header.implicitHeight + headerSep.implicitHeight + bodyColumn.implicitHeight + sp * 2 + Commons.Style.space(6)
       return panel.fittedContentHeight(natural)
     }
-    Behavior on contentHeight { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     Components.PanelKeys {
       id: keyCatcher
