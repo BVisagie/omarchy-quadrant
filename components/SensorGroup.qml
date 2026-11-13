@@ -12,6 +12,8 @@ Column {
   readonly property var cores: group.kind === "temperature" ? group.sensors.filter(function (s) { return /^Core\s+\d+$/.test(s.label) }) : []
   readonly property var other: group.sensors.filter(function (s) { return root.cores.indexOf(s) < 0 })
   readonly property var coreSummary: Model.coreTemperatureSummary(cores, readings)
+  // Before the first sample every core would count as missing; say nothing yet.
+  readonly property int missingCores: Object.keys(readings).length > 0 ? coreSummary.missing : 0
   readonly property color dim: Model.dimColor(String(Commons.Color.foreground), String(Commons.Color.background))
   readonly property color track: Model.seriesPalette(String(Commons.Color.accent), String(Commons.Color.urgent),
                                                      String(Commons.Color.foreground), String(Commons.Color.background)).track
@@ -72,8 +74,9 @@ Column {
       }
       Text {
         textFormat: Text.PlainText
-        text: cell.reading ? cell.reading.status
-              : cell.sensor.gpu ? "Read on the GPU detail tab" : "Waiting for a reading…"
+        // Before the first sample the value shows "--" and no line is added,
+        // so the tab keeps its size when readings arrive.
+        text: cell.reading ? cell.reading.status : cell.sensor.gpu ? "Read on the GPU detail tab" : ""
         visible: text !== ""
         color: root.dim
         font.family: Commons.Style.font.family
@@ -115,10 +118,10 @@ Column {
     objectName: "coreTemperatureWarnings"
     textFormat: Text.PlainText
     width: parent.width
-    visible: root.cores.length > 0 && (root.coreSummary.missing > 0 || root.coreSummary.critical > 0)
+    visible: root.cores.length > 0 && (root.missingCores > 0 || root.coreSummary.critical > 0)
     text: {
       var bits = []
-      if (root.coreSummary.missing) bits.push(root.coreSummary.missing + " unavailable")
+      if (root.missingCores) bits.push(root.missingCores + " unavailable")
       if (root.coreSummary.critical) bits.push(root.coreSummary.critical + " at or above critical temperature")
       return bits.join(" · ")
     }

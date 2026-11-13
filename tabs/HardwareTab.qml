@@ -66,7 +66,7 @@ Item {
     Note { text: sensorRow.sensor ? sensorRow.sensor.driver + " · " + sensorRow.sensor.owner : "" }
     Note {
       visible: text !== ""
-      text: sensorRow.reading ? sensorRow.reading.status : (sensorRow.sensor && sensorRow.sensor.gpu ? "Read on the GPU detail tab" : "Waiting for a reading…")
+      text: sensorRow.reading ? sensorRow.reading.status : (sensorRow.sensor && sensorRow.sensor.gpu ? "Read on the GPU detail tab" : "")
     }
   }
 
@@ -85,8 +85,6 @@ Item {
         return sensors + (sensors === 1 ? " sensor · " : " sensors · ") + batteries + (batteries === 1 ? " battery" : " batteries")
       }
     }
-
-    Note { text: "↑/↓ scroll · D details · S units and sensor pin" }
 
     Note {
       objectName: "hardwareError"
@@ -227,8 +225,8 @@ Item {
               }
               Components.CompositionBar {
                 width: parent.width
-                visible: !batteryRow.peripheral && batteryRow.reading !== null && batteryRow.reading.chargePct !== null
-                segments: [{ fraction: batteryRow.reading ? batteryRow.reading.chargePct / 100 : 0, color: Commons.Color.accent }]
+                visible: !batteryRow.peripheral
+                segments: [{ fraction: batteryRow.reading && batteryRow.reading.chargePct !== null ? batteryRow.reading.chargePct / 100 : 0, color: Commons.Color.accent }]
               }
               Components.StatRow { visible: !batteryRow.peripheral || (batteryRow.reading && batteryRow.reading.healthPct !== null); wrapValue: true; width: parent.width; label: "Health / design"; value: Model.formatPct(batteryRow.reading ? batteryRow.reading.healthPct : null, 1) }
               Components.StatRow { visible: !batteryRow.peripheral || (batteryRow.reading && (batteryRow.reading.fullWh !== null || batteryRow.reading.fullAh !== null)); wrapValue: true; width: parent.width; label: "Full capacity"; value: Model.batteryCapacity(batteryRow.reading) }
@@ -270,10 +268,8 @@ Item {
                 label: packageRow.modelData.label
                 value: Model.formatWatts(packageRow.reading ? packageRow.reading.watts : null)
               }
-              Note {
-                visible: text !== ""
-                text: packageRow.reading ? packageRow.reading.status : "Waiting for a reading…"
-              }
+              // Always one caption, so "Measuring…" settling does not move the card.
+              Note { text: packageRow.reading && packageRow.reading.status ? packageRow.reading.status : packageRow.modelData.source }
             }
           }
 
