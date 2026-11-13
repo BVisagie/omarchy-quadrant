@@ -110,6 +110,8 @@ BarWidget {
   readonly property var memComp: store ? store.memComp : null
   readonly property var diskRates: store ? store.diskRates : null
   readonly property var ifaceRates: store ? store.ifaceRates : null
+  readonly property var tempC: store && store.sample ? store.sample.tempC : null
+  readonly property string temperatureUnit: store && store.cfg ? (store.cfg.temperatureUnit || "celsius") : "celsius"
   readonly property var gpuDisplay: store ? store.gpuDisplay : null
   readonly property var gpu: store ? store.gpu : null
   readonly property bool streamLive: store ? store.streamLive : false
@@ -145,10 +147,12 @@ BarWidget {
   property bool memHot: false
   property bool gpuHot: false
   property bool diskHot: false
+  property bool tempHot: false
   onCpuPctChanged: cpuHot = Model.band(cpuHot, cpuPct ? cpuPct.nonIdle : null, 90, 80)
   onMemCompChanged: memHot = Model.band(memHot, memComp ? memComp.usedPct : null, 90, 80)
   onGpuDisplayChanged: gpuHot = Model.band(gpuHot, gpuDisplay ? gpuDisplay.pct : null, 90, 80)
   onDiskRatesChanged: diskHot = Model.band(diskHot, diskRates ? diskRates.utilPct : null, 90, 80)
+  onTempCChanged: tempHot = Model.band(tempHot, tempC, 90, 80)   // °C, same band as the percentages
 
   // Value colour per palette mode:
   //   theme  foreground, urgent while hot
@@ -173,6 +177,7 @@ BarWidget {
     return (gpuDisplay.estimated ? "~" : "") + Model.formatPct(gpuDisplay.pct)
   }
   readonly property string diskValueText: diskRates ? Model.formatPct(diskRates.utilPct) : "--"
+  readonly property string tempValueText: Model.formatTemp(tempC, temperatureUnit)
   readonly property string netUpText: ifaceRates ? Model.formatRateCompact(ifaceRates.txBps) : "--"
   readonly property string netDownText: ifaceRates ? Model.formatRateCompact(ifaceRates.rxBps) : "--"
 
@@ -189,6 +194,7 @@ BarWidget {
     if (metric === "net") return ifaceRates
       ? "Network ↓ " + Model.formatRateUnit(ifaceRates.rxBps, rateUnit) + " · ↑ " + Model.formatRateUnit(ifaceRates.txBps, rateUnit)
       : "Network --"
+    if (metric === "temp") return "CPU temperature " + tempValueText
     return "Quadrant"
   }
 
@@ -200,6 +206,7 @@ BarWidget {
       var ceiling = Model.graphAxis(points, ["rx", "tx"], { minimumMax: 1024 }).max
       return text + "\nMinute trend: down / up · 0–" + Model.formatRateUnit(ceiling, rateUnit)
     }
+    if (metric === "temp") return text + "\nMinute trend: " + Model.formatTemp(0, temperatureUnit) + "–" + Model.formatTemp(100, temperatureUnit)
     return text + "\nMinute trend: 0–100%"
   }
 
@@ -247,6 +254,7 @@ BarWidget {
   function valueReserveFor(metric) {
     if (captionFm.font.pixelSize <= 0) return 0
     if (metric === "net") return root.vertical ? rateReserve : rateReserve * 2 + rateGap
+    if (metric === "temp") return Math.ceil(captionFm.advanceWidth(temperatureUnit === "fahrenheit" ? "212°F" : "100°C"))
     return Math.ceil(captionFm.advanceWidth(metric === "gpu" && reserveEstimatePrefix ? "~100%" : "100%"))
   }
   function cellReserveFor(metric) {
@@ -273,21 +281,24 @@ BarWidget {
     if (metric === "cpu") return cpuValueText
     if (metric === "gpu") return gpuValueText
     if (metric === "mem") return memValueText
+    if (metric === "temp") return tempValueText
     return diskValueText
   }
   function percentFor(metric) {
     if (metric === "cpu") return cpuPct ? cpuPct.nonIdle : null
     if (metric === "gpu") return gpuDisplay ? gpuDisplay.pct : null
     if (metric === "mem") return memComp ? memComp.usedPct : null
+    if (metric === "temp") return tempC   // heat palette: °C read on the 0–100 scale
     return metric === "disk" && diskRates ? diskRates.utilPct : null
   }
-  function hotFor(metric) { return metric === "cpu" ? cpuHot : metric === "gpu" ? gpuHot : metric === "mem" ? memHot : metric === "disk" ? diskHot : false }
+  function hotFor(metric) { return metric === "cpu" ? cpuHot : metric === "gpu" ? gpuHot : metric === "mem" ? memHot : metric === "disk" ? diskHot : metric === "temp" ? tempHot : false }
   function historyFor(metric) {
     if (!store) return []
     if (metric === "cpu") return store.cpuHistory
     if (metric === "gpu") return store.gpuHistory
     if (metric === "mem") return store.memHistory
     if (metric === "disk") return store.diskHistory
+    if (metric === "temp") return store.tempHistory
     return store.netHistory
   }
 
@@ -440,7 +451,8 @@ BarWidget {
   component MetricCell: Item {
     id: cell
     property string metric: ""
-    readonly property string tab: metric
+    // Temperature opens Hardware, the tab with every sensor; CPU when there is none.
+    readonly property string tab: metric !== "temp" ? metric : root.store && root.store.hardwareAvailable ? "hardware" : "cpu"
     readonly property color valueColor: root.valueColorFor(metric, root.percentFor(metric), root.hotFor(metric))
     readonly property bool pressable: true
     readonly property bool interactive: true

@@ -39,6 +39,7 @@ ShellRoot {
       shared.cpuPct = { nonIdle: 42 }; shared.memComp = { usedPct: 62 }
       shared.gpuDisplay = { pct: 38, estimated: false }; shared.diskRates = { utilPct: 18 }
       shared.ifaceRates = { rxBps: 1024, txBps: 20 }
+      shared.cpuTempAvailable = false; shared.sample = null; shared.tempHistory = []
       shared.seed(1000)
       first.close(); second.close()
       wait(200)
@@ -105,7 +106,7 @@ ShellRoot {
       wait(200)
       verify(!cell(first, "gpu")); verify(host.targets.indexOf(removed) < 0)
       compare(first.visibleBarCells.join(","), "net,disk,cpu,mem")
-      compare(shared.cfg.barOrder.join(","), order.join(","))
+      compare(shared.cfg.barOrder.join(","), order.concat(["temp"]).join(","))
       shared.diskAvailable = false; wait(200)
       verify(!cell(first, "disk"))
       shared.discreteGpuAvailable = true; shared.diskAvailable = true; wait(200)
@@ -235,6 +236,30 @@ ShellRoot {
         wait(20)
       }
     }
+    function test_temperature_segment_is_opt_in_and_needs_a_sensor() {
+      shared.applySettings({ segments: ["cpu", "temp"] })
+      wait(50)
+      verify(!cell(first, "temp"), "no CPU sensor, no cell")
+      shared.cpuTempAvailable = true; shared.sample = { tempC: 72 }
+      shared.tempHistory = [{ t: 999, c: 70 }, { t: 1000, c: 72 }]
+      wait(50)
+      var temp = cell(first, "temp")
+      verify(temp)
+      compare(findChild(temp, "barValue").text, "72°C")
+      compare(first.readingTooltipFor("temp"), "CPU temperature 72°C")
+      compare(temp.tab, "hardware")
+      assertFits(findChild(temp, "barValue"))
+      shared.applySettings({ segments: ["cpu", "temp"], temperatureUnit: "fahrenheit" })
+      shared.sample = { tempC: 100 }
+      wait(50)
+      compare(findChild(temp, "barValue").text, "212°F")
+      assertFits(findChild(temp, "barValue"))
+      verify(first.tempHot, "100 °C is in the hot band")
+      shared.persistSettings({ barStyle: "graph-text" }); wait(50)
+      compare(trend(first, "temp").samples.map(function (point) { return point.v }).join(","), "70,72")
+      shared.applySettings({ segments: Model.DEFAULT_BAR_SEGMENTS }); wait(50)
+      verify(!cell(first, "temp"), "the default bar has no temperature")
+    }
     function test_icon_only_and_hardware_return_keep_order() {
       var order = ["network", "gpu", "memory", "disk", "cpu"]
       shared.persistSettings({ segments: [], barStyle: "graph-text", barOrder: order })
@@ -255,17 +280,17 @@ ShellRoot {
       shared.discreteGpuAvailable = true
       wait(200)
       compare(first.visibleBarCells.join(","), "gpu")
-      compare(shared.cfg.barOrder.join(","), order.join(","))
+      compare(shared.cfg.barOrder.join(","), order.concat(["temp"]).join(","))
     }
     function test_settings_moves_toggles_and_reset() {
       var settings = createTemporaryObject(settingsComponent, win.contentItem, { x: 650, width: 288, store: shared })
       verify(settings); wait(20)
       mouseClick(findChild(settings, "moveEarlier_network"))
       wait(20)
-      compare(shared.cfg.barOrder.join(","), "cpu,gpu,memory,network,disk")
+      compare(shared.cfg.barOrder.join(","), "cpu,gpu,memory,network,disk,temp")
       var up = findChild(settings, "moveEarlier_network")
       up.forceActiveFocus(); keyClick(Qt.Key_Return); wait(20)
-      compare(shared.cfg.barOrder.join(","), "cpu,gpu,network,memory,disk")
+      compare(shared.cfg.barOrder.join(","), "cpu,gpu,network,memory,disk,temp")
       verify(findChild(settings, "moveEarlier_network").activeFocus)
       mouseClick(findChild(settings, "segmentSwitch_network")); wait(20)
       verify(shared.cfg.segments.indexOf("network") < 0)
@@ -304,7 +329,7 @@ ShellRoot {
       verify(store)
       // createObject initial properties use QVariantList, as host APIs can.
       compare(store.cfg.segments.join(","), "cpu")
-      compare(store.cfg.barOrder.join(","), "network,disk,cpu,gpu,memory")
+      compare(store.cfg.barOrder.join(","), "network,disk,cpu,gpu,memory,temp")
       store.gpuTopologyReady = true; store.gpuListFailed = false; store.setGpu(null)
       var order = store.cfg.barOrder.join(",")
       store.setBarSegment("disk", true)

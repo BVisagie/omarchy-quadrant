@@ -38,7 +38,7 @@ Column {
     else set("segments", Model.toggleSegment(cfg.segments, name, enabled))
   }
 
-  readonly property var segmentLabels: ({ cpu: "CPU", gpu: "GPU", memory: "Memory", disk: "Drives", network: "Network" })
+  readonly property var segmentLabels: ({ cpu: "CPU", gpu: "GPU", memory: "Memory", disk: "Drives", network: "Network", temp: "Temperature" })
   function moveSegment(name, direction) {
     set("barOrder", Model.moveBarSegment(cfg.barOrder, name, direction))
     Qt.callLater(function () {

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- An opt-in **Temperature** bar segment with the CPU temperature, in Celsius or
+  Fahrenheit. It is off unless you turn it on from Hardware's **Show in bar**
+  switch or in settings, and it is hidden without a supported CPU sensor.
+
 ### Changed
 
 - The bar starts as a single Quadrant icon; turn readouts on with each tab's

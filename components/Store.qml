@@ -428,7 +428,9 @@ Item {
   // ---- derived bar lists -----------------------------------------------
   readonly property var effectiveBarSegments: Model.effectiveSegments(
     segmentsSetting, gpuTopologyReady, discreteGpuAvailable, diskFallbackWithoutGpu, gpuListFailed !== true, barOrder)
-  readonly property var visibleBarCells: Model.visibleBarCells(effectiveBarSegments, discreteGpuAvailable, diskAvailable)
+  readonly property var visibleBarCells: Model.visibleBarCells(effectiveBarSegments, discreteGpuAvailable, diskAvailable, cpuTempAvailable)
+  // Latched so one failed read cannot make the temperature cell flicker.
+  property bool cpuTempAvailable: false
 
   // ---- stream state ----------------------------------------------------
   property var sample: null
@@ -448,6 +450,7 @@ Item {
   property var gpuHistory: []
   property var netHistory: []
   property var diskHistory: []
+  property var tempHistory: []   // bar trend only; never saved
   property var diskRateList: null
   property var diskRates: null
   readonly property var cpuFreqMhz: sample && sample.cpuFreqMhz !== undefined ? sample.cpuFreqMhz : null
@@ -706,6 +709,10 @@ Item {
     }
     prevDiskCounters = s.disk
     prevDiskTarget = diskRuntimeKey
+    if (s.tempC !== null) {
+      cpuTempAvailable = true
+      tempHistory = Model.pushTimedWindow(tempHistory, { c: s.tempC }, s.ts, 60, historyLimit)
+    }
     prevSample = s
     sample = s
     streamLive = true

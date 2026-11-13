@@ -222,7 +222,8 @@ See [measurement limits](METRICS.md) for what each process value represents.
 
 The shell must be running with Quadrant enabled. Tab names in IPC are
 `cpu`, `gpu`, `mem`, `disk`, `net`, and `hardware`; segment names are `cpu`, `gpu`,
-`memory`, `disk`, and `network`. Unknown or unavailable tabs are ignored.
+`memory`, `disk`, `network`, and `temp` (CPU temperature, switched on from
+Hardware). Unknown or unavailable tabs are ignored.
 The `set` method takes its value as JSON text:
 
 ```sh

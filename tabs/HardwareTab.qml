@@ -3,8 +3,9 @@ import qs.Commons as Commons
 import "../lib/index.mjs" as Model
 import "../components" as Components
 
-// Additional diagnostics, not a new bar meter. Inventory rows remain stable
-// while their values update. GPUs retain their existing detail collectors.
+// Additional diagnostics; its only bar meter is the opt-in CPU temperature
+// segment, fed by the stream. Inventory rows remain stable while their values
+// update. GPUs retain their existing detail collectors.
 Item {
   id: root
   property var panel: null
