@@ -1,12 +1,18 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-11-13
+
+An icon-only bar by default, an opt-in temperature segment, a panel that
+keeps its shape across tabs, and motion that follows Omarchy's animation
+setting.
 
 ### Added
 
 - An opt-in **Temperature** bar segment with the CPU temperature, in Celsius or
   Fahrenheit. It is off unless you turn it on from Hardware's **Show in bar**
   switch or in settings, and it is hidden without a supported CPU sensor.
+- A hardware report issue template for missing or wrong GPU, sensor, drive
+  and battery readings.
 
 ### Changed
 
