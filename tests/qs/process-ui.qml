@@ -16,8 +16,10 @@ ShellRoot {
   QtObject {
     id: fakePanel
     property int switches: 0
+    property bool resetOnSwitch: false
     function focusProcessKeys() { catcher.forceActiveFocus() }
-    function switchPanel(direction) { switches += direction }
+    // The real panel closes on a switch, which resets every process list.
+    function switchPanel(direction) { switches += direction; if (resetOnSwitch) roster.reset() }
     function scrollProcessCursor(item) { }
   }
   Ui.PanelKeyCatcher {
@@ -57,7 +59,10 @@ ShellRoot {
       r.valueText = String(value)
       return r
     }
+    function searchField() { return findChild(roster, "processSearch") }
     function init() {
+      roster.active = true
+      roster.visible = true
       roster.reset()
       roster.errorText = ""
       roster.rows = [group(1, 1, "first", 1), group(2, 2, "second", 2)]
@@ -65,6 +70,7 @@ ShellRoot {
       roster.sortMode = "sticky"
       roster.width = 420
       fakePanel.switches = 0
+      fakePanel.resetOnSwitch = false
       catcher.moves = 0; catcher.activations = 0; catcher.deletions = 0; catcher.closes = 0
       catcher.forceActiveFocus()
       wait(20)
@@ -300,6 +306,42 @@ ShellRoot {
       mouseClick(button)
       verify(!roster.expanded)
       verify(!roster.searchFocused)
+    }
+    function test_search_field_exists_only_while_shown() {
+      // A text input subscribes to clipboard changes, so none may live hidden.
+      tryVerify(function () { return searchField() === null }, 1000, "collapsed list has no field")
+      roster.focusSearch()
+      tryCompare(roster, "searchFocused", true)
+      verify(searchField() !== null)
+      keyClick(Qt.Key_Q)
+      roster.active = false
+      tryVerify(function () { return searchField() === null }, 1000, "inactive tab has no field")
+      verify(!roster.searchFocused)
+      roster.active = true
+      tryVerify(function () { return searchField() !== null })
+      compare(searchField().text, "q")
+      roster.visible = false
+      tryVerify(function () { return searchField() === null }, 1000, "hidden list has no field")
+      roster.visible = true
+      tryVerify(function () { return searchField() !== null })
+      compare(searchField().text, "q")
+      roster.expanded = false
+      tryVerify(function () { return searchField() === null }, 1000, "Show less removes the field")
+    }
+    function test_tab_out_of_search_survives_panel_reset() {
+      fakePanel.resetOnSwitch = true
+      roster.focusSearch()
+      tryCompare(roster, "searchFocused", true)
+      keyClick(Qt.Key_Tab)
+      compare(fakePanel.switches, 1)
+      verify(!roster.expanded)
+      verify(!roster.searchFocused)
+      tryVerify(function () { return searchField() === null })
+      roster.focusSearch()
+      tryCompare(roster, "searchFocused", true)
+      keyClick(Qt.Key_Backtab, Qt.ShiftModifier)
+      compare(fakePanel.switches, 0)
+      tryVerify(function () { return searchField() === null })
     }
   }
 }

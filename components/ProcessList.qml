@@ -7,8 +7,10 @@ import "../lib/index.mjs" as Model
 
 // Complete groups are searched before the 256-row presentation cap. ListView
 // creates only visible delegates; compact lists keep the store's sticky order.
-// Desktop identities are indexed once per inventory change. No clipboard
-// data is requested here; TextField paste requires the user's normal shortcut.
+// Desktop identities are indexed once per inventory change. The search field
+// exists only while the expanded list shows on the open panel's current tab:
+// Qt text inputs may query the clipboard whenever it changes, so none is kept
+// hidden. Paste still requires the user's normal shortcut.
 Column {
   id: root
   // No disclosures here; keep the details scan independent of live delegates.
@@ -44,7 +46,7 @@ Column {
   property string presentedQuery: ""
   property string presentedSort: "sticky"
   property bool presentedExpanded: false
-  readonly property bool searchFocused: searchField.activeFocus
+  readonly property bool searchFocused: searchLoader.item !== null && searchLoader.item.activeFocus
   readonly property int rowHeight: Commons.Style.space(42)
   readonly property int displayLimit: 256
   readonly property int visibleRowCount: displayRows.length
@@ -63,10 +65,10 @@ Column {
   function focusSearch() {
     if (!expandable) return
     expanded = true
-    Qt.callLater(function () { searchField.forceActiveFocus(); ensureCursorVisible() })
+    Qt.callLater(function () { if (searchLoader.item) searchLoader.item.forceActiveFocus(); ensureCursorVisible() })
   }
   function leaveSearch() {
-    searchField.focus = false
+    suspendSearch()
     if (panel && panel.focusProcessKeys) panel.focusProcessKeys()
   }
   function enterResults() {
@@ -74,7 +76,7 @@ Column {
     leaveSearch()
     selectRow(0)
   }
-  function suspendSearch() { searchField.focus = false }
+  function suspendSearch() { if (searchLoader.item) searchLoader.item.focus = false }
   function reset() { expanded = false; query = ""; suspendSearch(); clearCursor() }
   function clearCursor() { cursorActive = false; cursorIndex = -1; selectedRow = null }
   function selectRow(index, reveal) {
@@ -200,10 +202,25 @@ Column {
     visible: root.expanded
     width: root.width
     spacing: Commons.Style.space(6)
-    Ui.TextField {
-      id: searchField
-      objectName: "processSearch"
+    Loader {
+      id: searchLoader
       width: parent.width - clearButton.width - parent.spacing
+      active: root.active && root.expanded && root.visible
+      sourceComponent: searchComponent
+    }
+    Ui.Button {
+      id: clearButton
+      objectName: "processClear"
+      text: "Clear"
+      enabled: root.query !== ""
+      onClicked: { root.query = ""; if (searchLoader.item) searchLoader.item.forceActiveFocus() }
+    }
+  }
+
+  Component {
+    id: searchComponent
+    Ui.TextField {
+      objectName: "processSearch"
       text: root.query
       placeholderText: "Name or PID  ·  / to search"
       maximumLength: 128
@@ -214,26 +231,21 @@ Column {
         else root.leaveSearch()
         event.accepted = true
       }
+      // Switching panels resets the list and destroys this field, so it is
+      // the last statement.
       Keys.onTabPressed: function (event) {
+        event.accepted = true
         root.leaveSearch()
         if (root.panel && root.panel.switchPanel) root.panel.switchPanel(1)
-        event.accepted = true
       }
       Keys.onBacktabPressed: function (event) {
+        event.accepted = true
         root.leaveSearch()
         if (root.panel && root.panel.switchPanel) root.panel.switchPanel(-1)
-        event.accepted = true
       }
       Keys.onDownPressed: function (event) { root.enterResults(); event.accepted = true }
       Keys.onReturnPressed: function (event) { root.enterResults(); event.accepted = true }
       Keys.onEnterPressed: function (event) { root.enterResults(); event.accepted = true }
-    }
-    Ui.Button {
-      id: clearButton
-      objectName: "processClear"
-      text: "Clear"
-      enabled: root.query !== ""
-      onClicked: { root.query = ""; searchField.forceActiveFocus() }
     }
   }
 
