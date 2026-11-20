@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1 — 2026-11-20
+
+### Fixed
+
+- The process search field exists only while you are searching on the open
+  panel. Hidden tabs no longer keep a text field that, on some Qt builds,
+  reads the clipboard each time it changes and could stall the shell.
+
 ## 1.2.0 — 2026-11-13
 
 An icon-only bar by default, an opt-in temperature segment, a panel that

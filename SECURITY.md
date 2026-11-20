@@ -84,8 +84,9 @@ hint travels in the JSON sample to the naming logic; raw argument lists
 are not displayed or saved in the counter cache. Script basenames and
 recognized app labels may appear in the panel. Expanded memory uses RSS and
 does not read every `smaps_rollup`. Search and icons use the collected roster
-and local desktop-entry inventory. The search component requests no clipboard
-data on creation, focus, or hiding; paste requires an explicit user action.
+and local desktop-entry inventory. The search field exists only while the expanded
+process list is shown on the open panel's current tab; Qt's text input may
+check the clipboard while it exists. Paste requires an explicit user action.
 `environ` is never read.
 
 GPU attribution reads DRM `fdinfo` and process names, or NVIDIA compute-app

@@ -229,6 +229,23 @@ ShellRoot {
       keyClick(Qt.Key_S); check(fakePanel.settingsOpen); check(!disk.actionList.keyboardActive)
       keyClick(Qt.Key_Escape); check(!fakePanel.settingsOpen)
     }
+    function test_hidden_tabs_hold_no_search_field() {
+      function field(tab) { return findChild(tab.processList, "processSearch") }
+      network.processList.reset(); disk.processList.reset()
+      fakePanel.currentTab = "disk"; wait(20)
+      check(field(network) === null && field(disk) === null, "no field before search")
+      keyClick("/"); wait(20)
+      check(fakePanel.searchFocused); check(field(disk) !== null)
+      check(field(network) === null, "hidden tab has no field")
+      fakePanel.currentTab = "net"
+      tryVerify(function () { return field(disk) === null }, 1000, "leaving the tab removes its field")
+      check(disk.processList.expanded)
+      fakePanel.currentTab = "disk"
+      tryVerify(function () { return field(disk) !== null }, 1000, "returning restores the field")
+      fakePanel.opened = false
+      tryVerify(function () { return field(disk) === null }, 1000, "closed panel has no field")
+      disk.processList.reset()
+    }
     function test_selecting_a_process_returns_navigation_from_actions() {
       fixture.netRows = [{ pid: 42, comm: "fixture-client", sortKey: 1000, rx: 700, tx: 300, history: [] }]
       wait(20)
